@@ -30,13 +30,24 @@
   .lbl b{color:var(--coral-d);margin-right:6px}
   .lbl.on{border-color:var(--coral);background:#fff}
   .lbl.compact span{display:none}.lbl.compact b{margin:0}
-  .controls{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);display:flex;gap:10px;align-items:center;z-index:3}
-  .btn{font-family:var(--px);font-size:.95rem;color:var(--ink);background:var(--mint);border:3px solid var(--outline);padding:8px 16px;box-shadow:4px 4px 0 #1C1430;cursor:pointer}
-  .btn.alt{background:var(--honey)}
-  .btn:hover{transform:translate(-1px,-1px)}.btn:active{transform:translate(3px,3px);box-shadow:1px 1px 0 #1C1430}
-  .btn:focus-visible,.lbl:focus-visible,.pcard:focus-visible{outline:3px solid var(--cream);outline-offset:3px}
-  .count{font-family:var(--px);color:var(--cream);min-width:64px;text-align:center;background:#2A1F45;border:3px solid #1C1430;padding:6px 10px}
-  #panel{position:absolute;right:20px;top:84px;bottom:84px;width:min(400px,38vw);overflow:auto;background:#FFF9F2f5;color:var(--ink);border:3px solid #1C1430;border-radius:14px;box-shadow:6px 6px 0 #1C1430;padding:18px 20px;z-index:2;backdrop-filter:blur(4px)}
+  .controls{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:12px;z-index:3;max-width:96vw}
+  .dots{display:flex;gap:6px;align-items:center;background:#2A1F45cc;border:3px solid #1C1430;border-radius:999px;padding:6px 12px}
+  .dot{width:14px;height:14px;padding:0;border:2px solid #1C1430;border-radius:4px;background:var(--c);cursor:pointer;transition:transform .15s}
+  .dot:hover{transform:scale(1.25)}
+  .dot.on{transform:scale(1.45);box-shadow:0 0 0 2px var(--cream)}
+  .row{display:flex;gap:10px;align-items:center}
+  .cbtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--px);font-size:1rem;font-weight:600;color:var(--ink);background:var(--cream);border:3px solid #1C1430;border-radius:12px;padding:0 18px;min-height:46px;box-shadow:0 4px 0 #1C1430;cursor:pointer;transition:transform .12s,box-shadow .12s,background .15s}
+  .cbtn svg{width:18px;height:18px;flex:none}
+  .cbtn.pri{background:var(--mint)}
+  .cbtn.ico{background:var(--honey);padding:0;width:46px}
+  .cbtn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 0 #1C1430}
+  .cbtn:active:not(:disabled){transform:translateY(3px);box-shadow:0 1px 0 #1C1430}
+  .cbtn:disabled{opacity:.45;cursor:not-allowed}
+  .btn:focus-visible,.cbtn:focus-visible,.dot:focus-visible,.lbl:focus-visible,.pcard:focus-visible{outline:3px solid var(--cream);outline-offset:3px}
+  .count{font-family:var(--px);color:var(--cream);min-width:128px;text-align:center;background:#2A1F45;border:3px solid #1C1430;border-radius:12px;padding:10px 12px;min-height:46px;display:flex;flex-direction:column;justify-content:center;line-height:1.1}
+  .count small{font-size:.62rem;letter-spacing:.14em;color:var(--lav)}
+  .count b{font-size:1rem;font-weight:700}
+  #panel{position:absolute;right:20px;top:84px;bottom:128px;width:min(400px,38vw);overflow:auto;background:#FFF9F2f5;color:var(--ink);border:3px solid #1C1430;border-radius:14px;box-shadow:6px 6px 0 #1C1430;padding:18px 20px;z-index:2;backdrop-filter:blur(4px)}
   #panel h2{font-family:var(--px);font-size:1.35rem;line-height:1.15;margin:.2rem 0 .5rem}
   #panel h4{font-family:var(--px);color:var(--honey-d);font-size:.85rem;letter-spacing:.12em;margin:1rem 0 .3rem;font-weight:700}
   .tag{display:inline-block;font-family:var(--px);font-size:.75rem;padding:2px 10px;background:var(--c,var(--mint));color:var(--ink);border:2px solid var(--outline);border-radius:6px}
@@ -76,12 +87,13 @@
     #stage{min-height:520px}
     .hero{left:14px;top:12px;max-width:80vw}.hero p{display:none}.kicker{font-size:.72rem}
     .hud{display:none}
-    #panel{left:10px;right:10px;top:auto;bottom:calc(66px + env(safe-area-inset-bottom));width:auto;max-height:38svh;padding:12px 14px;border-radius:12px}
+    #panel{left:10px;right:10px;top:auto;bottom:calc(104px + env(safe-area-inset-bottom));width:auto;max-height:36svh;padding:12px 14px;border-radius:12px}
     #panel h2{font-size:1.1rem}
     #stage.ov #panel{max-height:24svh}
-    .controls{gap:6px;bottom:calc(10px + env(safe-area-inset-bottom))}
-    .btn{min-height:44px;padding:8px 12px;font-size:.85rem}
-    .count{min-width:52px;padding:10px 8px;font-size:.85rem}
+    .controls{gap:8px;bottom:calc(10px + env(safe-area-inset-bottom))}
+    .dots{gap:4px;padding:5px 9px}.dot{width:12px;height:12px}
+    .row{gap:6px}.cbtn{padding:0 12px;font-size:.85rem;min-height:44px}.cbtn.ico{width:44px;padding:0}
+    .count{min-width:84px;padding:6px 8px}.count b{font-size:.85rem}
     .lbl span{display:none}.lbl.on span{display:inline;max-width:60vw;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
     .lbl{font-size:.68rem;padding:1px 5px;box-shadow:none}
     #all{padding:40px 16px 56px}#all h2,#daily h2{font-size:1.4rem}
@@ -104,10 +116,13 @@
   <div class="hud" aria-hidden="true"><span>LV 1 DEV</span><div class="bar"><i id="hudfill"></i></div><span>LV 2 AI ENGINEER</span></div>
   <aside id="panel" aria-live="polite" tabindex="-1"></aside>
   <div class="controls">
-    <button class="btn alt" id="prev" aria-label="Previous module">&#9664; Prev</button>
-    <span class="count" id="count">Map</span>
-    <button class="btn" id="next" aria-label="Next module">Next &#9654;</button>
-    <button class="btn alt" id="ov" aria-label="Show the whole path">Map</button>
+    <div class="dots" id="dots" aria-label="Jump to a module"></div>
+    <div class="row">
+      <button class="cbtn" id="prev" aria-label="Previous module"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="square"><path d="M15 5l-7 7 7 7"/></svg><span id="prevlbl">Back</span></button>
+      <div class="count" id="count" aria-live="polite"></div>
+      <button class="cbtn pri" id="next" aria-label="Next module"><span id="nextlbl">Start</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="square"><path d="M9 5l7 7-7 7"/></svg></button>
+      <button class="cbtn ico" id="ov" aria-label="Show the whole map" title="Show the whole map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></button>
+    </div>
   </div>
 </section>
 
@@ -185,11 +200,14 @@ function renderPanel() {
 
 function updateUI() {
   stage.classList.toggle("ov", sel<0);
-  $("count").textContent = sel<0 ? "Map" : sel+1+" / "+MODULES.length;
+  const last = sel>=MODULES.length-1;
+  $("count").innerHTML = sel<0 ? "<small>QUEST MAP</small><b>13 levels</b>" : "<small>LEVEL</small><b>"+(sel+1)+" / "+MODULES.length+"</b>";
   $("hudfill").style.width = sel<0 ? "0%" : ((sel+1)/MODULES.length*100)+"%";
-  $("prev").disabled = false;
-  $("next").disabled = sel>=MODULES.length-1;
-  $("next").style.opacity = $("next").disabled ? .5 : 1;
+  $("prev").disabled = sel<0;
+  $("prevlbl").textContent = sel===0 ? "Map" : "Back";
+  $("next").disabled = last;
+  $("nextlbl").textContent = sel<0 ? "Start" : last ? "Done" : "Next";
+  document.querySelectorAll(".dot").forEach((d,i)=>{ d.classList.toggle("on",i===sel); d.setAttribute("aria-current", i===sel ? "true":"false"); });
   renderPanel();
   try { history.replaceState(null,"", sel<0 ? location.pathname+location.search : "#m"+MODULES[sel].num); } catch(e){}
 }
@@ -200,6 +218,10 @@ function select(i) {
   updateUI();
   if (three) three.onSelect();
 }
+MODULES.forEach((m,i)=>{
+  const d=el("button",{class:"dot",type:"button",title:"M"+m.num+" "+m.title,"aria-label":"Go to module "+m.num+": "+m.title,style:"--c:"+PHASES[m.phase].css});
+  d.addEventListener("click",()=>select(i)); $("dots").append(d);
+});
 $("prev").addEventListener("click",()=>select(sel-1));
 $("next").addEventListener("click",()=>select(sel+1));
 $("ov").addEventListener("click",()=>select(-1));
