@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>My Learning - From Dev to AI Engineer</title>
 <meta name="description" content="Learn along: sign in, follow a day-by-day plan, tick your checklist and unlock the next day.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="From Dev to AI Engineer">
+<meta property="og:description" content="A free 6-month quest: 13 levels, 1 real project, built in public. Sign in, follow the plan, tick your checklist and unlock the next day.">
+<meta property="og:url" content="https://dev-to-ai-engineer.vercel.app/">
+<meta property="og:image" content="https://dev-to-ai-engineer.vercel.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="config.js"></script>
@@ -59,6 +67,7 @@
   .items{list-style:none;padding:0;display:grid;gap:8px;margin:12px 0}
   .items li{background:var(--cream);border:2px solid var(--line);border-radius:10px;padding:10px 12px}
   .items li.done{background:#E3F8EF;border-color:var(--mint-d)}
+  .items li a.small{display:inline-block;margin:4px 0 0 32px}
   .items li.done span.t{text-decoration:line-through;color:var(--muted)}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .banner{color:var(--cream);background:#1C1430cc;border:2px solid var(--honey);border-radius:10px;padding:8px 14px;margin:0 max(16px,4vw) 8px;font-size:.88rem}
@@ -83,16 +92,84 @@
 const CURRICULUM = {
   "days": [
     {
+      "id": 0,
+      "gate": false,
+      "title": "Setup: get your tools ready",
+      "summary": "Do this once, before Day 1. Everything here is free and takes about 30 minutes. Sign in first (you already have), so your checklist is saved while you tick each step. This day does not lock anything: if you already have the tools, tick them and move on.",
+      "slides": null,
+      "items": [
+        {
+          "id": "signin",
+          "text": "Sign in on this page and bookmark it, so your progress is saved"
+        },
+        {
+          "id": "github",
+          "text": "Create a free GitHub account",
+          "link": {
+            "text": "github.com/signup",
+            "url": "https://github.com/signup"
+          }
+        },
+        {
+          "id": "git",
+          "text": "Install Git, then open a terminal and run git --version",
+          "link": {
+            "text": "git-scm.com/downloads",
+            "url": "https://git-scm.com/downloads"
+          }
+        },
+        {
+          "id": "editor",
+          "text": "Install Visual Studio Code (or the editor you like best)",
+          "link": {
+            "text": "code.visualstudio.com",
+            "url": "https://code.visualstudio.com/"
+          }
+        },
+        {
+          "id": "uv",
+          "text": "Install uv, then run uv --version (uv can install Python for you)",
+          "link": {
+            "text": "uv installation guide",
+            "url": "https://docs.astral.sh/uv/getting-started/installation/"
+          }
+        },
+        {
+          "id": "python",
+          "text": "Run uv python install 3.12, then uv run --python 3.12 python --version"
+        },
+        {
+          "id": "folder",
+          "text": "Create a folder for your work, open it in your editor, and open a terminal inside it"
+        }
+      ]
+    },
+    {
       "id": 1,
       "title": "Python type hints",
       "summary": "Type hints describe what a function takes and returns. Python does not check them while the program runs: your editor and tools like mypy read them. Checking at runtime needs validation (Pydantic, Day 3).",
       "slides": "slides/day-01-python-fundamentals-and-type-hints.html",
       "items": [
-        {"id": "read", "text": "Read the Day 1 slides"},
-        {"id": "code", "text": "Write word_count, top_n_words and find_user with type hints in practice_types.py and run the file"},
-        {"id": "wrong", "text": "Call one function with a wrong-typed argument and note what happens"},
-        {"id": "mypy", "text": "Run mypy on the file and read one error message"},
-        {"id": "sentence", "text": "Write one sentence in your own words: what does a type hint guarantee in Python?"}
+        {
+          "id": "read",
+          "text": "Read the Day 1 slides"
+        },
+        {
+          "id": "code",
+          "text": "Write word_count, top_n_words and find_user with type hints in practice_types.py and run the file"
+        },
+        {
+          "id": "wrong",
+          "text": "Call one function with a wrong-typed argument and note what happens"
+        },
+        {
+          "id": "mypy",
+          "text": "Run mypy on the file and read one error message"
+        },
+        {
+          "id": "sentence",
+          "text": "Write one sentence in your own words: what does a type hint guarantee in Python?"
+        }
       ]
     },
     {
@@ -101,12 +178,30 @@ const CURRICULUM = {
       "summary": "uv creates the project, the virtual environment and the dependency lock file in one tool. A src-layout keeps your package importable only when installed, which catches path bugs early. pyproject.toml is the single file that describes your project.",
       "slides": null,
       "items": [
-        {"id": "selfcheck", "text": "Answer from memory: what does a type hint do at runtime, and why will Pydantic matter?"},
-        {"id": "install", "text": "Install uv and run uv --version"},
-        {"id": "init", "text": "Create a project with uv init --package <name> --lib and look at the src-layout"},
-        {"id": "module", "text": "Add a typed module (for example a Document dataclass with two typed functions)"},
-        {"id": "run", "text": "Run it with uv run python -c ... to confirm the package imports"},
-        {"id": "git", "text": "Run git init and make your first commit, then add a short Status note to the README"}
+        {
+          "id": "selfcheck",
+          "text": "Answer from memory: what does a type hint do at runtime, and why will Pydantic matter?"
+        },
+        {
+          "id": "install",
+          "text": "Install uv and run uv --version"
+        },
+        {
+          "id": "init",
+          "text": "Create a project with uv init --package <name> --lib and look at the src-layout"
+        },
+        {
+          "id": "module",
+          "text": "Add a typed module (for example a Document dataclass with two typed functions)"
+        },
+        {
+          "id": "run",
+          "text": "Run it with uv run python -c ... to confirm the package imports"
+        },
+        {
+          "id": "git",
+          "text": "Run git init and make your first commit, then add a short Status note to the README"
+        }
       ]
     },
     {
@@ -115,18 +210,38 @@ const CURRICULUM = {
       "summary": "An AI call spends most of its time waiting. async lets Python do other work while it waits, so three one-second calls can finish in about one second with asyncio.gather. Pydantic turns type hints into real runtime checks and raises a ValidationError on bad data.",
       "slides": "slides/day-03-async-and-pydantic.html",
       "items": [
-        {"id": "read", "text": "Read the Day 3 slides"},
-        {"id": "install", "text": "Install Pydantic with uv add pydantic"},
-        {"id": "gather", "text": "Build async_demo.py with asyncio.gather and time it (about 1 second)"},
-        {"id": "sequential", "text": "Change it to three sequential awaits and time it again (about 3 seconds)"},
-        {"id": "model", "text": "Build a ChatRequest model with a question (1-2000 characters) and top_k (1-10, default 3)"},
-        {"id": "inputs", "text": "Try valid input, top_k given as the text \"5\" (coerced) and invalid input (read the ValidationError)"},
-        {"id": "commit", "text": "Run mypy, fix what it reports in your new files, and commit"}
+        {
+          "id": "read",
+          "text": "Read the Day 3 slides"
+        },
+        {
+          "id": "install",
+          "text": "Install Pydantic with uv add pydantic"
+        },
+        {
+          "id": "gather",
+          "text": "Build async_demo.py with asyncio.gather and time it (about 1 second)"
+        },
+        {
+          "id": "sequential",
+          "text": "Change it to three sequential awaits and time it again (about 3 seconds)"
+        },
+        {
+          "id": "model",
+          "text": "Build a ChatRequest model with a question (1-2000 characters) and top_k (1-10, default 3)"
+        },
+        {
+          "id": "inputs",
+          "text": "Try valid input, top_k given as the text \"5\" (coerced) and invalid input (read the ValidationError)"
+        },
+        {
+          "id": "commit",
+          "text": "Run mypy, fix what it reports in your new files, and commit"
+        }
       ]
     }
   ]
-}
-;
+};
 const CFG = window.APP_CONFIG || {};
 const $ = id => document.getElementById(id);
 const app = $("app");
@@ -176,14 +291,15 @@ let user=null, profile=null, done=new Set(); // "day|item"
 let optimisticError="";
 const key=(d,i)=>d+"|"+i;
 const isDayDone = day => day.items.every(i=>done.has(key(day.id,i.id)));
-const isUnlocked = idx => idx===0 || isDayDone(CURRICULUM.days[idx-1]);
+const prevGate = idx => { for (let j=idx-1;j>=0;j--) if (CURRICULUM.days[j].gate!==false) return CURRICULUM.days[j]; return null; };
+const isUnlocked = idx => { const p=prevGate(idx); return !p || isDayDone(p); };
 
 /* ---------- dates: planned from the member's first login, in their own time zone ---------- */
 const tz = () => (profile && profile.tz) || Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Bangkok";
 const ymd = (date, zone) => new Intl.DateTimeFormat("en-CA",{timeZone:zone,year:"numeric",month:"2-digit",day:"2-digit"}).format(date);
 const startYmd = () => ymd(new Date(profile.started_at), tz());
 const addDays = (iso, n) => { const [y,m,d]=iso.split("-").map(Number); return new Date(Date.UTC(y,m-1,d+n)); };
-const plannedDate = n => addDays(startYmd(), n-1);
+const plannedDate = n => addDays(startYmd(), Math.max(n-1,0));
 const plannedYmd = n => plannedDate(n).toISOString().slice(0,10);
 const todayYmd = () => ymd(new Date(), tz());
 const fmtDate = d => d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short",year:"numeric",timeZone:"UTC"});
@@ -202,6 +318,7 @@ function viewLogin(){
     setHero("LEARN ALONG",[document.createTextNode("From "),el("em",{text:"Dev"}),document.createTextNode(" to AI Engineer")],"A day-by-day plan with a checklist that remembers you."),
     el("div",{class:"card"},[
       el("h2",{text:"Start your quest"}),
+      el("div",{class:"notice",text:"Why sign in? It saves your checklist, plans your dates from your first day, and unlocks each new day when you finish the last one. Without signing in, nothing is remembered."}),
       el("p",{text:"Sign in to get your own plan. Your Day 1 starts the day you sign in, each day has a checklist, and finishing a day's checklist unlocks the next day."}),
       el("ul",{class:"steps"},[
         step(1,"Sign in with Google"),
@@ -268,14 +385,14 @@ function viewDashboard(){
     det.append(sum);
     if (!unlocked) {
       sum.addEventListener("click",e=>{ e.preventDefault(); });
-      det.append(el("div",{class:"body"},[el("p",{class:"small",text:"Finish the Day "+(d.id-1)+" checklist to unlock this day."})]));
+      det.append(el("div",{class:"body"},[el("p",{class:"small",text:"Finish the Day "+prevGate(idx).id+" checklist to unlock this day."})]));
       return det;
     }
     const list = el("ul",{class:"items"});
     d.items.forEach(it=>{
       const id="c-"+d.id+"-"+it.id, on=done.has(key(d.id,it.id));
       const cb=el("input",{type:"checkbox",id}); cb.checked=on;
-      const li=el("li",{class:on?"done":""},[el("label",{class:"check",for:id},[cb,el("span",{class:"t",text:it.text})])]);
+      const li=el("li",{class:on?"done":""},[el("label",{class:"check",for:id},[cb,el("span",{class:"t",text:it.text})]), it.link?el("a",{class:"small",href:it.link.url,target:"_blank",rel:"noopener",text:it.link.text+" \u2197"}):null]);
       cb.addEventListener("change", async ()=>{
         const val=cb.checked, k=key(d.id,it.id);
         val?done.add(k):done.delete(k);
@@ -292,7 +409,7 @@ function viewDashboard(){
       d.slides?el("div",{class:"row"},[el("a",{class:"btn alt",href:d.slides,text:"Open the slides"})]):null,
       el("p",{class:"small",text:count+" of "+d.items.length+" done"}),
       list,
-      finished?el("div",{class:"notice",text: idx<CURRICULUM.days.length-1?"Day "+d.id+" complete. Day "+(d.id+1)+" is unlocked.":"Day "+d.id+" complete."}):null
+      finished?el("div",{class:"notice",text: d.gate===false?"Setup complete. You are ready for Day 1.":(idx<CURRICULUM.days.length-1?"Day "+d.id+" complete. Day "+(d.id+1)+" is unlocked.":"Day "+d.id+" complete.")}):null
     ]));
     return det;
   });
