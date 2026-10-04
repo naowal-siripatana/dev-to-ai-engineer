@@ -73,9 +73,20 @@
   .no3d #panel{position:relative;inset:auto;width:auto;margin:96px 20px 20px}
   .no3d{height:auto!important}
   @media (max-width:760px){
-    #panel{left:12px;right:12px;top:auto;bottom:74px;width:auto;max-height:42vh;padding:14px 16px}
-    .hero{left:14px;top:14px;max-width:72vw}.hud{display:none}
-    .controls{gap:6px;bottom:14px}.btn{padding:7px 11px;font-size:.85rem}
+    #stage{min-height:520px}
+    .hero{left:14px;top:12px;max-width:80vw}.hero p{display:none}.kicker{font-size:.72rem}
+    .hud{display:none}
+    #panel{left:10px;right:10px;top:auto;bottom:calc(66px + env(safe-area-inset-bottom));width:auto;max-height:38svh;padding:12px 14px;border-radius:12px}
+    #panel h2{font-size:1.1rem}
+    #stage.ov #panel{max-height:24svh}
+    .controls{gap:6px;bottom:calc(10px + env(safe-area-inset-bottom))}
+    .btn{min-height:44px;padding:8px 12px;font-size:.85rem}
+    .count{min-width:52px;padding:10px 8px;font-size:.85rem}
+    .lbl span{display:none}.lbl.on span{display:inline;max-width:60vw;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
+    .lbl{font-size:.68rem;padding:1px 5px;box-shadow:none}
+    #all{padding:40px 16px 56px}#all h2,#daily h2{font-size:1.4rem}
+    #daily{padding:0 16px 48px}
+    footer{padding:0 16px 40px}
   }
   @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.hud .bar i,.lbl{transition:none}}
 </style>
@@ -173,6 +184,7 @@ function renderPanel() {
 }
 
 function updateUI() {
+  stage.classList.toggle("ov", sel<0);
   $("count").textContent = sel<0 ? "Map" : sel+1+" / "+MODULES.length;
   $("hudfill").style.width = sel<0 ? "0%" : ((sel+1)/MODULES.length*100)+"%";
   $("prev").disabled = false;
@@ -201,7 +213,7 @@ addEventListener("keydown",e=>{
 try {
   const canvas = $("gl");
   const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio,innerWidth<=760?1.5:2));
   renderer.setClearColor(0x000000,0);
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x7A5A8C, 0.010);
@@ -282,7 +294,7 @@ try {
   const spot = i => pos[i].clone().add(DOG_OFF);
   fetch.from.copy(spot(0)); fetch.to.copy(spot(0));
   function target() {
-    if (sel<0) { const k=camera.aspect<1?1.9:1; tPos.set(100*k,38*k,-4*k); tLook.set(4,9,-54); }
+    if (sel<0) { if (camera.aspect<1) { tPos.set(0,170,56); tLook.set(0,6,-54); } else { tPos.set(100,38,-4); tLook.set(4,9,-54); } }
     else { const p=pos[sel]; tPos.set(p.x+5,p.y+4.2,p.z+12); tLook.set(p.x,p.y+0.8,p.z-3); }
   }
   function resize(){
@@ -303,7 +315,8 @@ try {
   const pick=e=>{ const r=canvas.getBoundingClientRect(); ndc.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1); ray.setFromCamera(ndc,camera);
     const h=ray.intersectObjects(islands.map(n=>n.g),true)[0]; if(!h) return -1; let o=h.object; while(o&&o.userData.index===undefined) o=o.parent; return o?o.userData.index:-1; };
   canvas.addEventListener("pointerdown",e=>{down=[e.clientX,e.clientY];});
-  canvas.addEventListener("pointerup",e=>{ if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>6){down=null;return;} down=null; const i=pick(e); if(i>=0) select(i); });
+  canvas.addEventListener("pointerup",e=>{ if(down){ const dx=e.clientX-down[0], dy=e.clientY-down[1]; if(Math.abs(dx)>50&&Math.abs(dy)<40){ down=null; select(sel+(dx<0?1:-1)); return; } }
+    if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>6){down=null;return;} down=null; const i=pick(e); if(i>=0) select(i); });
   canvas.addEventListener("pointermove",e=>{ canvas.style.cursor = pick(e)>=0 ? "pointer":"default"; });
 
   const clock=new THREE.Clock(), v=new THREE.Vector3(), up=new THREE.Vector3(0,3.9,0);
@@ -313,9 +326,10 @@ try {
     const k=reduce?1:0.06;
     target(); camPos.lerp(tPos,k); camLook.lerp(tLook,k);
     camera.position.copy(camPos); camera.lookAt(camLook);
-    const W=stage.clientWidth,H=stage.clientHeight, wantOff=W>760?(sel<0?W*0.06:Math.min(210,W*0.15)):0;
+    const W=stage.clientWidth,H=stage.clientHeight, wide=W>760;
+    const wantOff = wide ? (sel<0?W*0.06:Math.min(210,W*0.15)) : H*(sel<0?0.27:0.34);
     vOff+=(wantOff-vOff)*(reduce?1:0.08);
-    if (W>760) camera.setViewOffset(W,H,vOff,0,W,H); else camera.clearViewOffset();
+    if (wide) camera.setViewOffset(W,H,vOff,0,W,H); else camera.setViewOffset(W,H,0,vOff,W,H);
     scene.fog.density += ((sel<0?0.002:0.012)-scene.fog.density)*(reduce?1:0.08);
 
     islands.forEach((n,i)=>{
