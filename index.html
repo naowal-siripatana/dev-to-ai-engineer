@@ -25,7 +25,10 @@
   .hero p{color:var(--lav);font-weight:700;font-size:clamp(.85rem,1.6vw,1.05rem)}
   .join{pointer-events:auto;display:inline-block;margin-top:12px;font-family:var(--px);font-weight:600;color:var(--ink);background:var(--honey);border:3px solid #1C1430;border-radius:12px;padding:8px 16px;box-shadow:0 4px 0 #1C1430;text-decoration:none}
   .join:hover{transform:translateY(-2px)}
-  .hud{position:absolute;right:24px;top:22px;font-family:var(--px);font-size:.9rem;display:flex;gap:10px;align-items:center;pointer-events:none;color:var(--cream)}
+  .login{position:absolute;top:14px;right:20px;z-index:4;display:inline-flex;align-items:center;gap:8px;font-family:var(--px);font-weight:600;font-size:.95rem;color:var(--ink);background:var(--honey);border:3px solid #1C1430;border-radius:12px;padding:0 16px;min-height:44px;box-shadow:0 4px 0 #1C1430;text-decoration:none;transition:transform .12s,box-shadow .12s}
+  .login:hover{transform:translateY(-2px);box-shadow:0 6px 0 #1C1430}
+  .login svg{width:18px;height:18px}
+  .hud{position:absolute;right:190px;top:22px;font-family:var(--px);font-size:.9rem;display:flex;gap:10px;align-items:center;pointer-events:none;color:var(--cream)}
   .hud .bar{width:clamp(80px,14vw,200px);height:14px;background:#3A2C5E;border:3px solid #1C1430;position:relative}
   .hud .bar i{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,var(--mint),var(--coral));transition:width .5s}
   .lbl{position:absolute;left:0;top:0;transform:translate(-50%,-100%);font-family:var(--px);font-size:.82rem;white-space:nowrap;padding:3px 8px;background:#FFF9F2ee;border:2px solid var(--line);color:var(--ink);cursor:pointer;opacity:0;transition:opacity .2s;will-change:transform;box-shadow:2px 2px 0 #1C143066}
@@ -89,6 +92,8 @@
     #stage{min-height:520px}
     .hero{left:14px;top:12px;max-width:80vw}.hero p{display:none}.kicker{font-size:.72rem}
     .hud{display:none}
+    .login{top:10px;right:10px;min-height:40px;padding:0 12px;font-size:.85rem}
+    .hero{max-width:60vw}
     #panel{left:10px;right:10px;top:auto;bottom:calc(104px + env(safe-area-inset-bottom));width:auto;max-height:36svh;padding:12px 14px;border-radius:12px}
     #panel h2{font-size:1.1rem}
     #stage.ov #panel{max-height:24svh}
@@ -110,6 +115,7 @@
 <main>
 <section id="stage" aria-label="Interactive map of the 6-month learning path">
   <canvas id="gl" aria-hidden="true"></canvas>
+  <a class="login" id="loginLink" href="learn.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/></svg><span id="loginTxt">Sign in</span></a>
   <div class="hero">
     <div class="kicker">A 6-MONTH QUEST</div>
     <h1>From <em>Dev</em><br>to AI Engineer</h1>
@@ -153,6 +159,7 @@ const PHASES = [
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const $ = id => document.getElementById(id);
 const stage = $("stage"), panel = $("panel");
+try { const k=Object.keys(localStorage).find(x=>/^sb-.*-auth-token$/.test(x)); if (k && localStorage.getItem(k)) $("loginTxt").textContent="My learning"; } catch(e){}
 const fmt = (a,b) => {
   const f = (s,o) => new Date(s+"T00:00:00").toLocaleDateString("en-GB",o);
   return f(a,{day:"numeric",month:"short"})+" - "+f(b,{day:"numeric",month:"short",year:"numeric"});
