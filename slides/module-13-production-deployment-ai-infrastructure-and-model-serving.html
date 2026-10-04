@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Module 13 &middot; Production Deployment, AI Infrastructure & Model Serving</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --accent: #6ee7b7; --accent2: #7dd3fc;
+    --text: #e8eaed; --muted: #9aa0ab; --border: #262a33; --code-bg: #1c2028;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  #deck { position: relative; height: 100vh; overflow: hidden; }
+  .slide {
+    position: absolute; inset: 0; display: none; flex-direction: column; justify-content: center;
+    padding: 6vh 8vw; opacity: 0; transition: opacity .25s ease;
+  }
+  .slide.active { display: flex; opacity: 1; }
+  .kicker { color: var(--accent2); font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.6rem; font-weight: 600; }
+  h1 { font-size: clamp(1.6rem, 4vw, 2.6rem); margin: 0 0 0.4rem; line-height: 1.15; }
+  h2 { font-size: clamp(1.2rem, 2.6vw, 1.7rem); margin: 0 0 1rem; color: var(--accent); }
+  .sub { color: var(--muted); font-size: clamp(0.95rem, 1.6vw, 1.15rem); margin-bottom: 1.2rem; }
+  ul { margin: 0; padding-left: 1.2em; }
+  li { margin-bottom: 0.55rem; line-height: 1.5; font-size: clamp(0.95rem, 1.5vw, 1.15rem); }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem 2rem; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; }
+  .card h3 { margin: 0 0 0.35rem; font-size: 1rem; color: var(--accent2); }
+  .card p { margin: 0; color: var(--text); font-size: 0.95rem; line-height: 1.5; }
+  .box { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 1.1rem 1.4rem; font-size: clamp(0.95rem, 1.5vw, 1.1rem); line-height: 1.6; }
+  .box.warn { border-left-color: #f59e0b; }
+  .box.cap { border-left-color: var(--accent2); }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 0.1em 0.4em; font-size: 0.9em; }
+  .badge { display: inline-block; background: var(--code-bg); border: 1px solid var(--border); border-radius: 999px; padding: 0.3rem 0.9rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }
+  .bar { position: fixed; top: 0; left: 0; height: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s ease; z-index: 10; }
+  .nav { position: fixed; bottom: 18px; right: 24px; display: flex; gap: 0.5rem; align-items: center; color: var(--muted); font-size: 0.85rem; z-index: 10; }
+  .nav button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem; }
+  .nav button:hover { border-color: var(--accent); }
+  .clickzone { position: absolute; top: 0; bottom: 0; width: 15%; z-index: 5; cursor: pointer; }
+  .clickzone.left { left: 0; } .clickzone.right { right: 0; }
+  .footer-title { position: fixed; bottom: 18px; left: 24px; color: var(--muted); font-size: 0.8rem; z-index: 10; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar" style="width:0%"></div>
+<div id="deck">
+
+<div class="slide active">
+  <div class="kicker">Modern AI Engineering Bootcamp &middot; Module 13 / 13</div>
+  <h1>Production Deployment, AI Infrastructure & Model Serving</h1>
+  <div class="sub">Sessions 23-24 &middot; 2027-02-23, 2027-03-02</div>
+  <div class="box">Your goal-plan alignment: <strong>Builds on the Docker/DB work you started in January; feeds the March portfolio push</strong></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Where This Fits</div>
+  <h2>Roadmap position</h2>
+  <ul>
+    <li><strong>Bootcamp schedule:</strong> Sessions 23-24 &middot; 2027-02-23, 2027-03-02</li>
+    <li><strong>Your 6-month plan:</strong> Builds on the Docker/DB work you started in January; feeds the March portfolio push</li>
+    <li>Capstone project: <code>ai-knowledge-assistant</code> &mdash; every module adds one piece to it, see the Capstone Tie-In slide.</li>
+  </ul>
+</div>
+
+<div class="slide">
+  <div class="kicker">What You'll Learn</div>
+  <h2>Topics covered in this module</h2>
+  <div class="grid">
+    <ul><li>Docker containerization</li><li>Docker Compose</li><li>Production configuration</li><li>Environment/secret management</li><li>HTTPS & reverse proxy</li><li>CI/CD</li><li>Health checks</li><li>Monitoring</li><li>Open-weight models & Hugging Face</li></ul>
+    <ul><li>Local AI & GPU fundamentals</li><li>VRAM</li><li>Quantization (FP16/BF16/INT8/INT4)</li><li>KV cache</li><li>Throughput vs. latency</li><li>Model serving (OpenAI-compatible APIs, Ollama, llama.cpp, vLLM)</li><li>Cloud vs. local vs. hybrid architectures</li><li>Fine-tuning fundamentals</li><li>Cost/performance trade-offs</li></ul>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Core Concepts</div>
+  <h2>The ideas worth actually understanding</h2>
+  <div class="grid"><div class="card"><h3>Docker Compose</h3><p>One command (<code>docker compose up</code>) brings up React, ASP.NET Core, Python FastAPI, and PostgreSQL together &mdash; the single most important 'does this look like a real system' signal for a reviewer.</p></div><div class="card"><h3>Quantization</h3><p>Shrinking a model's weights (FP16 &rarr; INT8/INT4) to trade a little quality for much lower VRAM/cost &mdash; relevant if you ever explore running a model locally instead of via API.</p></div><div class="card"><h3>Model serving (Ollama/vLLM)</h3><p>Running an LLM as a local, OpenAI-compatible API endpoint &mdash; useful to know even if your capstone stays cloud-API-based, since 'when would I go local' is a real interview question.</p></div><div class="card"><h3>CI/CD & health checks</h3><p>Automating build/test/deploy and exposing a status endpoint &mdash; standard practice you already follow, now applied to a system with an AI service in the mix.</p></div></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">From .NET To This</div>
+  <h2>Bridging from what you already know</h2>
+  <div class="box">You already do Docker and CI/CD-adjacent work; the new material is squarely in local model serving/GPU territory (quantization, VRAM, vLLM). Given your plan explicitly says 'no fine-tuning, no Kubernetes yet', treat the local-serving content as valuable context, not a mandate to swap your cloud API calls for a self-hosted model this quarter.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Hands-On Checkpoint</div>
+  <h2>What "done" looks like for this module</h2>
+  <div class="box">Write a <code>docker-compose.yml</code> that brings up all four services (React, ASP.NET Core, Python AI, PostgreSQL) with one command, plus a GitHub Actions workflow that runs your tests and builds the images on push.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Capstone Tie-In</div>
+  <h2>How this plugs into <code>ai-knowledge-assistant</code></h2>
+  <div class="box cap">This is the final infrastructure piece <code>ai-knowledge-assistant</code> needs before the March portfolio push: 'clone the repo, run one command, it works' is the bar for a project reviewers will actually try.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Watch Out</div>
+  <h2>Pitfalls &amp; anti-patterns</h2>
+  <div class="box warn"><ul><li>Don't chase local model serving (Ollama/vLLM) as a scope addition this late &mdash; it's good context, not a March deliverable.</li><li>Don't leave secrets (API keys) in the repo or the Docker image &mdash; use environment/secret management properly.</li></ul></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Key Takeaways</div>
+  <h2>Before you move on</h2>
+  <ul><li>`docker compose up` working end-to-end is worth more to a reviewer than any single feature.</li><li>Local model serving is worth understanding conceptually; don't let it become new scope this late in the plan.</li><li>This module closes the infrastructure story &mdash; March is about polish and applying, not new tech.</li></ul>
+  <div class="badge" style="margin-top:1.2rem;">Next: Final On-site Workshop (27-28 March 2027) &mdash; Portfolio & Demo</div>
+</div>
+
+</div>
+
+<div class="clickzone left" onclick="go(-1)"></div>
+<div class="clickzone right" onclick="go(1)"></div>
+<div class="footer-title">Module 13 &middot; Production Deployment, AI Infrastructure & Model Serving</div>
+<div class="nav">
+  <button onclick="go(-1)">&larr;</button>
+  <span id="counter">1 / N</span>
+  <button onclick="go(1)">&rarr;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let i = 0;
+  function render() {
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    document.getElementById('counter').textContent = (i+1) + ' / ' + slides.length;
+    document.getElementById('bar').style.width = ((i+1)/slides.length*100) + '%';
+  }
+  function go(delta) {
+    i = Math.max(0, Math.min(slides.length - 1, i + delta));
+    render();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) go(1);
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) go(-1);
+  });
+  render();
+</script>
+</body>
+</html>

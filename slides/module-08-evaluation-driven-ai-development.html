@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Module 08 &middot; Evaluation-Driven AI Development</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --accent: #6ee7b7; --accent2: #7dd3fc;
+    --text: #e8eaed; --muted: #9aa0ab; --border: #262a33; --code-bg: #1c2028;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  #deck { position: relative; height: 100vh; overflow: hidden; }
+  .slide {
+    position: absolute; inset: 0; display: none; flex-direction: column; justify-content: center;
+    padding: 6vh 8vw; opacity: 0; transition: opacity .25s ease;
+  }
+  .slide.active { display: flex; opacity: 1; }
+  .kicker { color: var(--accent2); font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.6rem; font-weight: 600; }
+  h1 { font-size: clamp(1.6rem, 4vw, 2.6rem); margin: 0 0 0.4rem; line-height: 1.15; }
+  h2 { font-size: clamp(1.2rem, 2.6vw, 1.7rem); margin: 0 0 1rem; color: var(--accent); }
+  .sub { color: var(--muted); font-size: clamp(0.95rem, 1.6vw, 1.15rem); margin-bottom: 1.2rem; }
+  ul { margin: 0; padding-left: 1.2em; }
+  li { margin-bottom: 0.55rem; line-height: 1.5; font-size: clamp(0.95rem, 1.5vw, 1.15rem); }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem 2rem; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; }
+  .card h3 { margin: 0 0 0.35rem; font-size: 1rem; color: var(--accent2); }
+  .card p { margin: 0; color: var(--text); font-size: 0.95rem; line-height: 1.5; }
+  .box { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 1.1rem 1.4rem; font-size: clamp(0.95rem, 1.5vw, 1.1rem); line-height: 1.6; }
+  .box.warn { border-left-color: #f59e0b; }
+  .box.cap { border-left-color: var(--accent2); }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 0.1em 0.4em; font-size: 0.9em; }
+  .badge { display: inline-block; background: var(--code-bg); border: 1px solid var(--border); border-radius: 999px; padding: 0.3rem 0.9rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }
+  .bar { position: fixed; top: 0; left: 0; height: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s ease; z-index: 10; }
+  .nav { position: fixed; bottom: 18px; right: 24px; display: flex; gap: 0.5rem; align-items: center; color: var(--muted); font-size: 0.85rem; z-index: 10; }
+  .nav button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem; }
+  .nav button:hover { border-color: var(--accent); }
+  .clickzone { position: absolute; top: 0; bottom: 0; width: 15%; z-index: 5; cursor: pointer; }
+  .clickzone.left { left: 0; } .clickzone.right { right: 0; }
+  .footer-title { position: fixed; bottom: 18px; left: 24px; color: var(--muted); font-size: 0.8rem; z-index: 10; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar" style="width:0%"></div>
+<div id="deck">
+
+<div class="slide active">
+  <div class="kicker">Modern AI Engineering Bootcamp &middot; Module 08 / 13</div>
+  <h1>Evaluation-Driven AI Development</h1>
+  <div class="sub">Session 17 &middot; 2027-01-12</div>
+  <div class="box">Your goal-plan alignment: <strong>January 2027, ahead of your own 'Feb evaluation' target &mdash; a head start</strong></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Where This Fits</div>
+  <h2>Roadmap position</h2>
+  <ul>
+    <li><strong>Bootcamp schedule:</strong> Session 17 &middot; 2027-01-12</li>
+    <li><strong>Your 6-month plan:</strong> January 2027, ahead of your own 'Feb evaluation' target &mdash; a head start</li>
+    <li>Capstone project: <code>ai-knowledge-assistant</code> &mdash; every module adds one piece to it, see the Capstone Tie-In slide.</li>
+  </ul>
+</div>
+
+<div class="slide">
+  <div class="kicker">What You'll Learn</div>
+  <h2>Topics covered in this module</h2>
+  <div class="grid">
+    <ul><li>Evaluation strategy & success criteria</li><li>Test/golden datasets & dataset versioning</li><li>Automated evaluation</li><li>Deterministic metrics</li><li>LLM-as-a-Judge</li><li>Pairwise comparison</li><li>Human evaluation</li></ul>
+    <ul><li>RAG/agent evaluation</li><li>Failure analysis</li><li>Regression testing</li><li>Offline vs. online evaluation</li><li>A/B testing</li><li>User feedback loops</li><li>Evaluation gates in CI/CD</li></ul>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Core Concepts</div>
+  <h2>The ideas worth actually understanding</h2>
+  <div class="grid"><div class="card"><h3>Golden dataset</h3><p>A fixed set of representative questions with known-good answers &mdash; your regression test suite for a probabilistic system.</p></div><div class="card"><h3>LLM-as-a-judge</h3><p>Using a second LLM call to score an answer's quality when there's no exact-match ground truth &mdash; imperfect, but far better than eyeballing outputs.</p></div><div class="card"><h3>Offline vs. online evaluation</h3><p>Testing against your golden set before shipping (offline) vs. watching real user feedback after shipping (online) &mdash; you need both, they catch different failures.</p></div><div class="card"><h3>Evaluation gates in CI/CD</h3><p>The AI-system equivalent of a failing test blocking a merge &mdash; a prompt/RAG change that regresses answer quality should fail the pipeline too.</p></div></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">From .NET To This</div>
+  <h2>Bridging from what you already know</h2>
+  <div class="box">This module gives you back the thing that's felt missing since Module 3: a test suite. You already believe in regression testing for deterministic code &mdash; this is the same instinct applied to a system where 'correct' is fuzzier and has to be measured, not just asserted.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Hands-On Checkpoint</div>
+  <h2>What "done" looks like for this module</h2>
+  <div class="box">Write 15-20 golden questions with expected answers/sources for your knowledge assistant. Build a script that runs them against the current pipeline and scores the results (exact-match where possible, LLM-as-judge otherwise).</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Capstone Tie-In</div>
+  <h2>How this plugs into <code>ai-knowledge-assistant</code></h2>
+  <div class="box cap">From this point on, every change to <code>ai-knowledge-assistant</code>'s prompt, chunking, or retrieval logic gets measured against this golden set instead of judged by feel &mdash; the difference between a toy and an engineered system.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Watch Out</div>
+  <h2>Pitfalls &amp; anti-patterns</h2>
+  <div class="box warn"><ul><li>Don't skip a golden set because 'it's subjective' &mdash; an imperfect measurement beats no measurement.</li><li>Don't let LLM-as-judge be your only signal; spot-check it against your own human judgment periodically.</li></ul></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Key Takeaways</div>
+  <h2>Before you move on</h2>
+  <ul><li>A golden dataset is your regression suite for a probabilistic system.</li><li>LLM-as-judge is a useful, imperfect tool &mdash; sanity-check it.</li><li>You're ahead of your original February target here &mdash; use the slack, don't skip the module.</li></ul>
+  <div class="badge" style="margin-top:1.2rem;">Next: Module 9: Coding Agents & AI-Assisted Software Engineering</div>
+</div>
+
+</div>
+
+<div class="clickzone left" onclick="go(-1)"></div>
+<div class="clickzone right" onclick="go(1)"></div>
+<div class="footer-title">Module 08 &middot; Evaluation-Driven AI Development</div>
+<div class="nav">
+  <button onclick="go(-1)">&larr;</button>
+  <span id="counter">1 / N</span>
+  <button onclick="go(1)">&rarr;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let i = 0;
+  function render() {
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    document.getElementById('counter').textContent = (i+1) + ' / ' + slides.length;
+    document.getElementById('bar').style.width = ((i+1)/slides.length*100) + '%';
+  }
+  function go(delta) {
+    i = Math.max(0, Math.min(slides.length - 1, i + delta));
+    render();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) go(1);
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) go(-1);
+  });
+  render();
+</script>
+</body>
+</html>

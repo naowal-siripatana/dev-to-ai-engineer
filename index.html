@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>From Dev to AI Engineer</title>
+<meta name="description" content="A 6-month, 13-module path from developer to AI engineer, from any programming background, built around one project: an AI knowledge assistant.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--night:#2A1F45;--night2:#3A2C5E;--cream:#FFF1E2;--card:#FFF9F2;--ink:#3A2450;--muted:#7A6590;--line:#E3C3A5;--shadow:#F2D2B6;--outline:#1C1430;
+    --coral:#FF6B4A;--coral-d:#D9472A;--honey:#FFC15E;--honey-d:#B86E00;--blush:#FF9EC4;--mint:#7FE0C2;--mint-d:#17806A;--lav:#C9BCEF;
+    --px:'Pixelify Sans',monospace;--body:'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif;
+    --p0:var(--mint);--p1:var(--lav);--p2:var(--honey);--p3:var(--coral)}
+  *{box-sizing:border-box;margin:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--night);color:var(--cream);font-family:var(--body);line-height:1.55}
+  a{color:var(--mint)}
+  #stage{position:relative;height:100vh;height:100svh;min-height:560px;overflow:hidden;background:linear-gradient(180deg,#2A1F45 0%,#4B3873 34%,#B77C9E 70%,#FFC4A3 100%)}
+  #gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y}
+  .hero{position:absolute;left:24px;top:20px;max-width:min(560px,60vw);pointer-events:none}
+  .kicker{font-family:var(--px);color:var(--mint);letter-spacing:.2em;font-size:.85rem;font-weight:700}
+  .hero h1{font-family:var(--px);font-size:clamp(1.5rem,4vw,2.7rem);line-height:1.08;margin:.3rem 0 .4rem;color:var(--cream);text-shadow:4px 4px 0 #1C1430aa}
+  .hero h1 em{font-style:normal;color:var(--honey)}
+  .hero p{color:var(--lav);font-weight:700;font-size:clamp(.85rem,1.6vw,1.05rem)}
+  .hud{position:absolute;right:24px;top:22px;font-family:var(--px);font-size:.9rem;display:flex;gap:10px;align-items:center;pointer-events:none;color:var(--cream)}
+  .hud .bar{width:clamp(80px,14vw,200px);height:14px;background:#3A2C5E;border:3px solid #1C1430;position:relative}
+  .hud .bar i{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,var(--mint),var(--coral));transition:width .5s}
+  .lbl{position:absolute;left:0;top:0;transform:translate(-50%,-100%);font-family:var(--px);font-size:.82rem;white-space:nowrap;padding:3px 8px;background:#FFF9F2ee;border:2px solid var(--line);color:var(--ink);cursor:pointer;opacity:0;transition:opacity .2s;will-change:transform;box-shadow:2px 2px 0 #1C143066}
+  .lbl b{color:var(--coral-d);margin-right:6px}
+  .lbl.on{border-color:var(--coral);background:#fff}
+  .lbl.compact span{display:none}.lbl.compact b{margin:0}
+  .controls{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);display:flex;gap:10px;align-items:center;z-index:3}
+  .btn{font-family:var(--px);font-size:.95rem;color:var(--ink);background:var(--mint);border:3px solid var(--outline);padding:8px 16px;box-shadow:4px 4px 0 #1C1430;cursor:pointer}
+  .btn.alt{background:var(--honey)}
+  .btn:hover{transform:translate(-1px,-1px)}.btn:active{transform:translate(3px,3px);box-shadow:1px 1px 0 #1C1430}
+  .btn:focus-visible,.lbl:focus-visible,.pcard:focus-visible{outline:3px solid var(--cream);outline-offset:3px}
+  .count{font-family:var(--px);color:var(--cream);min-width:64px;text-align:center;background:#2A1F45;border:3px solid #1C1430;padding:6px 10px}
+  #panel{position:absolute;right:20px;top:84px;bottom:84px;width:min(400px,38vw);overflow:auto;background:#FFF9F2f5;color:var(--ink);border:3px solid #1C1430;border-radius:14px;box-shadow:6px 6px 0 #1C1430;padding:18px 20px;z-index:2;backdrop-filter:blur(4px)}
+  #panel h2{font-family:var(--px);font-size:1.35rem;line-height:1.15;margin:.2rem 0 .5rem}
+  #panel h4{font-family:var(--px);color:var(--honey-d);font-size:.85rem;letter-spacing:.12em;margin:1rem 0 .3rem;font-weight:700}
+  .tag{display:inline-block;font-family:var(--px);font-size:.75rem;padding:2px 10px;background:var(--c,var(--mint));color:var(--ink);border:2px solid var(--outline);border-radius:6px}
+  .when{color:var(--muted);font-size:.85rem;margin-left:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chips span{font-size:.78rem;background:#FFE9D2;border:1px solid var(--line);padding:2px 9px;border-radius:99px}
+  .pcard{display:block;width:100%;text-align:left;font:inherit;color:inherit;background:var(--cream);border:2px solid var(--line);border-left:8px solid var(--c);border-radius:10px;padding:10px 12px;margin-bottom:10px;cursor:pointer}
+  .pcard:hover{background:#FFE9D2}
+  .pcard b{font-family:var(--px);display:block}
+  .pcard small{color:var(--muted)}
+  #panel a{color:var(--mint-d)}
+  .deck{display:inline-block;margin-top:1rem;font-size:.85rem}
+  #all{max-width:980px;margin:0 auto;padding:64px 24px 80px}
+  #all h2{font-family:var(--px);font-size:1.8rem;margin-bottom:6px;color:var(--cream)}
+  #all>p{color:var(--lav);margin-bottom:24px}
+  #all ul{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+  #all li{background:var(--card);color:var(--ink);border:3px solid #1C1430;border-radius:14px;box-shadow:4px 4px 0 #1C1430;padding:14px 16px}
+  #all h3{font-family:var(--px);font-size:1.02rem;color:var(--coral-d);margin-bottom:6px}
+  #all .ship{color:var(--muted);font-size:.9rem;margin-top:6px}
+  #all .ship b{color:var(--mint-d)}
+  #daily{max-width:980px;margin:0 auto;padding:0 24px 64px}
+  #daily h2{font-family:var(--px);font-size:1.8rem;margin-bottom:12px;color:var(--cream)}
+  .stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+  .stat{background:var(--card);border:3px solid #1C1430;border-radius:12px;box-shadow:4px 4px 0 #1C1430;padding:8px 16px}
+  .stat .num{font-family:var(--px);font-size:1.6rem;color:var(--coral-d)}
+  .stat .label{font-size:.78rem;color:var(--muted)}
+  #daily table{width:100%;border-collapse:collapse}
+  #daily th,#daily td{text-align:left;padding:.7rem .6rem;border-bottom:1px solid #4A3B73;font-size:.92rem}
+  #daily th{color:var(--lav);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+  #daily .badge{font-family:var(--px);font-size:.78rem;background:#FFE9D2;color:var(--ink);padding:2px 8px;border:2px solid #1C1430;border-radius:6px}
+  .scroll{overflow-x:auto}
+  footer{max-width:980px;margin:0 auto;padding:0 24px 56px;display:flex;flex-wrap:wrap;gap:8px 22px;font-size:.9rem;color:var(--lav)}
+  .no3d #gl,.no3d .legend,.no3d .controls,.no3d .lbl{display:none}
+  .no3d #panel{position:relative;inset:auto;width:auto;margin:96px 20px 20px}
+  .no3d{height:auto!important}
+  @media (max-width:760px){
+    #panel{left:12px;right:12px;top:auto;bottom:74px;width:auto;max-height:42vh;padding:14px 16px}
+    .hero{left:14px;top:14px;max-width:72vw}.hud{display:none}
+    .controls{gap:6px;bottom:14px}.btn{padding:7px 11px;font-size:.85rem}
+  }
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.hud .bar i,.lbl{transition:none}}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+</head>
+<body>
+<main>
+<section id="stage" aria-label="Interactive map of the 6-month learning path">
+  <canvas id="gl" aria-hidden="true"></canvas>
+  <div class="hero">
+    <div class="kicker">A 6-MONTH QUEST</div>
+    <h1>From <em>Dev</em><br>to AI Engineer</h1>
+    <p>13 modules &middot; 1 real project &middot; built in public</p>
+  </div>
+  <div class="hud" aria-hidden="true"><span>LV 1 DEV</span><div class="bar"><i id="hudfill"></i></div><span>LV 2 AI ENGINEER</span></div>
+  <aside id="panel" aria-live="polite" tabindex="-1"></aside>
+  <div class="controls">
+    <button class="btn alt" id="prev" aria-label="Previous module">&#9664; Prev</button>
+    <span class="count" id="count">Map</span>
+    <button class="btn" id="next" aria-label="Next module">Next &#9654;</button>
+    <button class="btn alt" id="ov" aria-label="Show the whole path">Map</button>
+  </div>
+</section>
+
+<section id="all">
+  <h2>All 13 modules</h2>
+  <p>The same path as a plain list. Every module ends with something you build and ship.</p>
+  <ul><li><h3>M01 Python &amp; Software Engineering for AI</h3><p>Write clean, typed, tested Python and set up a project the way a professional does.</p><p class="ship"><b>You ship:</b> A uv-managed Python package with tests, logging and Git history: the skeleton of the AI service.</p></li><li><h3>M02 AI Backend Development</h3><p>Build and test a FastAPI service that calls an LLM.</p><p class="ship"><b>You ship:</b> POST /api/chat, /api/summarize and /api/extract: validated, logged, documented, on GitHub.</p></li><li><h3>M03 Data, Machine Learning &amp; LLM Foundations</h3><p>Explain tokens, context windows, embeddings and attention in plain language.</p><p class="ship"><b>You ship:</b> Two short design notes: how tokens limit the assistant, and why embeddings beat keyword search.</p></li><li><h3>M04 Building Applications with LLMs</h3><p>Make LLM calls reliable: structured output, streaming, retries and rate limits.</p><p class="ship"><b>You ship:</b> Structured JSON answers (answer, sources, confidence) with streaming, retries and basic rate limiting.</p></li><li><h3>M05 Prompt, Context &amp; Harness Engineering</h3><p>Design prompts and context so the assistant cites sources and admits when it does not know.</p><p class="ship"><b>You ship:</b> A rewritten system prompt with few-shot examples and a before/after comparison.</p></li><li><h3>M06 Grounding Models with Data &amp; RAG</h3><p>Build retrieval-augmented generation on PostgreSQL with pgvector.</p><p class="ship"><b>You ship:</b> A pipeline that chunks a mock knowledge base, embeds it, retrieves the top results and answers with citations.</p></li><li><h3>M07 Tool Calling, MCP &amp; Agentic Systems</h3><p>Let the model act: call tools, and expose them over MCP.</p><p class="ship"><b>You ship:</b> One real tool (look up an error code) through function calling, optionally as a minimal MCP server.</p></li><li><h3>M08 Evaluation-Driven AI Development</h3><p>Measure quality with data instead of feelings.</p><p class="ship"><b>You ship:</b> 15-20 golden questions and a script that scores the pipeline.</p></li><li><h3>M09 Coding Agents &amp; AI-Assisted Software Engineering</h3><p>Use AI coding agents deliberately and safely on a real repository.</p><p class="ship"><b>You ship:</b> An AGENTS.md / CLAUDE.md, plus one real feature built with an agent and reviewed like a pull request.</p></li><li><h3>M10 Shaping the Build &amp; AI System Design</h3><p>Frame a problem and justify design decisions.</p><p class="ship"><b>You ship:</b> One architecture decision record: why RAG, why pgvector, and one thing deliberately not built.</p></li><li><h3>M11 AI Security, Guardrails &amp; Governance</h3><p>Spot and block prompt injection, data leakage and tool abuse.</p><p class="ship"><b>You ship:</b> An allow-list guardrail for tool calls and an audit log of questions, sources and tool calls.</p></li><li><h3>M12 LLMOps &amp; Operating AI Systems in Production</h3><p>Operate an AI system in production: tracing, cost, latency and feedback.</p><p class="ship"><b>You ship:</b> A dashboard with question count, success rate, response time, AI cost and failed queries.</p></li><li><h3>M13 Production Deployment, AI Infrastructure &amp; Model Serving</h3><p>Package and deploy the whole system.</p><p class="ship"><b>You ship:</b> One command (docker compose up) for React, ASP.NET Core, Python AI and PostgreSQL, plus a CI workflow.</p></li></ul>
+</section>
+
+</main>
+<footer>
+  <span>Tip: arrow keys move between modules, M shows the map.</span>
+</footer>
+
+<script type="module">
+import * as THREE from "three";
+
+const MODULES = [{"num": "01", "title": "Python & Software Engineering for AI", "start": "2026-09-22", "end": "2026-10-05", "topics": ["Python fundamentals & type hints", "async / await", "Pydantic models", "Package management (uv)", "Project structure & configuration", "Error handling & logging", "Unit / integration testing", "Git workflows"], "outcome": "Write clean, typed, tested Python and set up a project the way a professional does.", "ship": "A uv-managed Python package with tests, logging and Git history: the skeleton of the AI service.", "phase": 0, "deck": "slides/module-01-python-and-software-engineering-for-ai.html"}, {"num": "02", "title": "AI Backend Development", "start": "2026-10-06", "end": "2026-10-19", "topics": ["RESTful API basics", "FastAPI framework", "Request/response validation", "Dependency injection", "Async APIs", "Service architecture", "Background tasks", "API security", "Testing", "Logging"], "outcome": "Build and test a FastAPI service that calls an LLM.", "ship": "POST /api/chat, /api/summarize and /api/extract: validated, logged, documented, on GitHub.", "phase": 0, "deck": "slides/module-02-ai-backend-development.html"}, {"num": "03", "title": "Data, Machine Learning & LLM Foundations", "start": "2026-10-20", "end": "2026-11-09", "topics": ["Data engineering basics", "Pandas data processing", "ML fundamentals", "Train/validation/test splits", "Neural networks", "Transformers", "Tokenization", "Context windows", "Embeddings", "Attention", "LLM training vs. inference", "Reasoning models", "Multimodal systems"], "outcome": "Explain tokens, context windows, embeddings and attention in plain language.", "ship": "Two short design notes: how tokens limit the assistant, and why embeddings beat keyword search.", "phase": 1, "deck": "slides/module-03-data-machine-learning-and-llm-foundations.html"}, {"num": "04", "title": "Building Applications with LLMs", "start": "2026-11-10", "end": "2026-11-23", "topics": ["LLM API development", "Provider/model selection", "Messages, roles, system instructions", "Structured output", "JSON Schema", "Streaming", "Token management", "Cost/latency considerations", "Timeouts, retry logic", "Rate limiting", "Error handling", "Model routing"], "outcome": "Make LLM calls reliable: structured output, streaming, retries and rate limits.", "ship": "Structured JSON answers (answer, sources, confidence) with streaming, retries and basic rate limiting.", "phase": 1, "deck": "slides/module-04-building-applications-with-llms.html"}, {"num": "05", "title": "Prompt, Context & Harness Engineering", "start": "2026-11-24", "end": "2026-11-30", "topics": ["Prompt engineering techniques", "Instruction design", "Few-shot prompting", "Structured prompting", "Failure modes", "Context engineering", "Context window management", "Conversation history", "User / retrieved / tool / runtime context", "Context selection & compression", "Context rot", "Harness engineering"], "outcome": "Design prompts and context so the assistant cites sources and admits when it does not know.", "ship": "A rewritten system prompt with few-shot examples and a before/after comparison.", "phase": 1, "deck": "slides/module-05-prompt-context-and-harness-engineering.html"}, {"num": "06", "title": "Grounding Models with Data & RAG", "start": "2026-12-01", "end": "2026-12-21", "topics": ["Embeddings & semantic search", "Vector databases", "PostgreSQL + pgvector", "Retrieval-augmented generation", "Document processing & chunking strategies", "Metadata filtering", "Retrieval pipeline", "Citation & grounding", "Hybrid search", "Reranking", "Query transformation", "Production RAG architecture", "Incremental indexing", "Permission-aware retrieval", "Tenant isolation", "Retrieval caching", "SQL/REST API grounding", "GraphRAG concepts"], "outcome": "Build retrieval-augmented generation on PostgreSQL with pgvector.", "ship": "A pipeline that chunks a mock knowledge base, embeds it, retrieves the top results and answers with citations.", "phase": 2, "deck": "slides/module-06-grounding-models-with-data-and-rag.html"}, {"num": "07", "title": "Tool Calling, MCP & Agentic Systems", "start": "2026-12-22", "end": "2027-01-11", "topics": ["Tool calling / function calling", "Tool schema design", "Input/output validation", "Error handling", "Permission control", "Database/REST API/search tools", "Business system integration", "Model Context Protocol (MCP)", "MCP architecture & server development", "Agent fundamentals", "Agent loops", "State & memory", "Planning", "Human-in-the-loop", "Agentic workflow patterns (sequential, parallel, router, orchestrator-worker)", "Single vs. multi-agent trade-offs"], "outcome": "Let the model act: call tools, and expose them over MCP.", "ship": "One real tool (look up an error code) through function calling, optionally as a minimal MCP server.", "phase": 2, "deck": "slides/module-07-tool-calling-mcp-and-agentic-systems.html"}, {"num": "08", "title": "Evaluation-Driven AI Development", "start": "2027-01-12", "end": "2027-01-18", "topics": ["Evaluation strategy & success criteria", "Test/golden datasets & dataset versioning", "Automated evaluation", "Deterministic metrics", "LLM-as-a-Judge", "Pairwise comparison", "Human evaluation", "RAG/agent evaluation", "Failure analysis", "Regression testing", "Offline vs. online evaluation", "A/B testing", "User feedback loops", "Evaluation gates in CI/CD"], "outcome": "Measure quality with data instead of feelings.", "ship": "15-20 golden questions and a script that scores the pipeline.", "phase": 2, "deck": "slides/module-08-evaluation-driven-ai-development.html"}, {"num": "09", "title": "Coding Agents & AI-Assisted Software Engineering", "start": "2027-01-19", "end": "2027-01-25", "topics": ["AI coding assistants vs. agents", "Agentic coding workflows", "Repository context & codebase understanding", "Project instructions (AGENTS.md/CLAUDE.md)", "Context engineering for code", "Requirement consolidation", "Agent planning & task decomposition", "Tool use (shell, Git, tests, browser, database)", "Test-driven & verification-driven development", "Code review", "Refactoring", "Long-running task management", "Context rot", "AI code slop", "Technical debt considerations", "Human oversight"], "outcome": "Use AI coding agents deliberately and safely on a real repository.", "ship": "An AGENTS.md / CLAUDE.md, plus one real feature built with an agent and reviewed like a pull request.", "phase": 3, "deck": "slides/module-09-coding-agents-and-ai-assisted-software-engineering.html"}, {"num": "10", "title": "Shaping the Build & AI System Design", "start": "2027-01-26", "end": "2027-02-01", "topics": ["Problem framing & business analysis", "AI use case discovery", "Requirement engineering", "Functional/non-functional requirements & constraints", "Success/acceptance criteria", "Probabilistic vs. deterministic systems", "When NOT to use AI", "Decision frameworks (traditional vs. LLM vs. RAG vs. tool calling vs. agent vs. workflow vs. fine-tuning)", "Build vs. buy analysis", "Cloud vs. local AI", "Model selection", "Architecture trade-offs (cost/latency/quality)", "Prototype vs. production", "Failure mode analysis", "Human approval points", "Architecture decision records", "Progressive rollout"], "outcome": "Frame a problem and justify design decisions.", "ship": "One architecture decision record: why RAG, why pgvector, and one thing deliberately not built.", "phase": 3, "deck": "slides/module-10-shaping-the-build-and-ai-system-design.html"}, {"num": "11", "title": "AI Security, Guardrails & Governance", "start": "2027-02-02", "end": "2027-02-08", "topics": ["Security fundamentals", "Prompt injection (direct & indirect)", "Data leakage", "Tool abuse", "Excessive agency", "Authentication/authorization", "Least privilege", "Tool permissions", "Sandboxing", "Guardrails (input/output validation)", "Human approval", "Privacy & PII handling", "Data retention", "Audit logging", "Responsible AI", "AI governance", "Human oversight", "Risk classification", "AI policies", "OWASP LLM security concepts"], "outcome": "Spot and block prompt injection, data leakage and tool abuse.", "ship": "An allow-list guardrail for tool calls and an audit log of questions, sources and tool calls.", "phase": 3, "deck": "slides/module-11-ai-security-guardrails-and-governance.html"}, {"num": "12", "title": "LLMOps & Operating AI Systems in Production", "start": "2027-02-09", "end": "2027-02-22", "topics": ["Production architecture", "Application logging", "Distributed tracing", "LLM/tool/agent tracing", "Token, latency & cost monitoring", "User feedback", "Prompt/dataset/model versioning", "Reliability engineering (timeouts, retry, circuit breaker, provider fallback, model routing)", "Caching", "Queueing", "Rate limiting", "Token/cost budgets", "SLI/SLO concepts", "Incident investigation & production debugging", "Feedback-to-improvement loops"], "outcome": "Operate an AI system in production: tracing, cost, latency and feedback.", "ship": "A dashboard with question count, success rate, response time, AI cost and failed queries.", "phase": 3, "deck": "slides/module-12-llmops-and-operating-ai-systems-in-production.html"}, {"num": "13", "title": "Production Deployment, AI Infrastructure & Model Serving", "start": "2027-02-23", "end": "2027-03-26", "topics": ["Docker containerization", "Docker Compose", "Production configuration", "Environment/secret management", "HTTPS & reverse proxy", "CI/CD", "Health checks", "Monitoring", "Open-weight models & Hugging Face", "Local AI & GPU fundamentals", "VRAM", "Quantization (FP16/BF16/INT8/INT4)", "KV cache", "Throughput vs. latency", "Model serving (OpenAI-compatible APIs, Ollama, llama.cpp, vLLM)", "Cloud vs. local vs. hybrid architectures", "Fine-tuning fundamentals", "Cost/performance trade-offs"], "outcome": "Package and deploy the whole system.", "ship": "One command (docker compose up) for React, ASP.NET Core, Python AI and PostgreSQL, plus a CI workflow.", "phase": 3, "deck": "slides/module-13-production-deployment-ai-infrastructure-and-model-serving.html"}];
+const PHASES = [
+  {name:"Build the backend", color:0x7FE0C2, css:"var(--p0)", blurb:"Python and FastAPI: a tested service that calls an LLM."},
+  {name:"Understand the model", color:0xC9BCEF, css:"var(--p1)", blurb:"Tokens, embeddings, LLM apps and prompting, so you know what the API is doing."},
+  {name:"Make it smart and measurable", color:0xFFC15E, css:"var(--p2)", blurb:"RAG, tools and agents, then evaluation so quality is measured."},
+  {name:"Make it production-ready", color:0xFF6B4A, css:"var(--p3)", blurb:"AI-assisted engineering, design decisions, security, operations and deployment."}
+];
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = id => document.getElementById(id);
+const stage = $("stage"), panel = $("panel");
+const fmt = (a,b) => {
+  const f = (s,o) => new Date(s+"T00:00:00").toLocaleDateString("en-GB",o);
+  return f(a,{day:"numeric",month:"short"})+" - "+f(b,{day:"numeric",month:"short",year:"numeric"});
+};
+const el = (tag, attrs={}, kids=[]) => {
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs)) {
+    if (k==="text") e.textContent=v; else if (k==="style") e.style.cssText=v; else e.setAttribute(k,v);
+  }
+  kids.forEach(c => e.append(c));
+  return e;
+};
+
+let sel = -1;
+
+function renderPanel() {
+  panel.replaceChildren();
+  if (sel < 0) {
+    panel.append(el("span",{class:"tag",text:"OVERVIEW"}));
+    panel.append(el("h2",{text:"What you will learn in 6 months"}));
+    panel.append(el("p",{text:"You start as a developer from any background and finish with one portfolio-ready project: an AI knowledge assistant that answers questions from a private knowledge base and cites its sources. Pick a stage, or press Next."}));
+    PHASES.forEach((p,pi) => {
+      const ms = MODULES.filter(m => m.phase===pi);
+      const b = el("button",{class:"pcard",style:"--c:"+p.css},[
+        el("b",{text:p.name}),
+        el("small",{text:"M"+ms[0].num+(ms.length>1?"-M"+ms[ms.length-1].num:"")+" · "+fmt(ms[0].start,ms[ms.length-1].end)}),
+        el("div",{text:p.blurb})
+      ]);
+      b.addEventListener("click",()=>select(MODULES.indexOf(ms[0])));
+      panel.append(b);
+    });
+    panel.append(el("p",{style:"color:var(--muted);font-size:.85rem",text:"The path ends with a 2-day on-site workshop in March 2027 to integrate the capstone."}));
+    return;
+  }
+  const m = MODULES[sel], p = PHASES[m.phase];
+  panel.append(el("div",{},[el("span",{class:"tag",style:"--c:"+p.css,text:"MODULE "+m.num}), el("span",{class:"when",text:fmt(m.start,m.end)})]));
+  panel.append(el("h2",{text:m.title}));
+  panel.append(el("small",{style:"color:var(--muted)",text:p.name}));
+  panel.append(el("h4",{text:"YOU WILL BE ABLE TO"}));
+  panel.append(el("p",{text:m.outcome}));
+  panel.append(el("h4",{text:"YOU SHIP"}));
+  panel.append(el("p",{text:m.ship}));
+  panel.append(el("h4",{text:"TOPICS ("+m.topics.length+")"}));
+  panel.append(el("div",{class:"chips"},m.topics.map(t=>el("span",{text:t}))));
+  panel.append(el("a",{class:"deck",href:m.deck,text:"Open the module slides"}));
+  panel.scrollTop = 0;
+}
+
+function updateUI() {
+  $("count").textContent = sel<0 ? "Map" : sel+1+" / "+MODULES.length;
+  $("hudfill").style.width = sel<0 ? "0%" : ((sel+1)/MODULES.length*100)+"%";
+  $("prev").disabled = false;
+  $("next").disabled = sel>=MODULES.length-1;
+  $("next").style.opacity = $("next").disabled ? .5 : 1;
+  renderPanel();
+  try { history.replaceState(null,"", sel<0 ? location.pathname+location.search : "#m"+MODULES[sel].num); } catch(e){}
+}
+
+let three = null;
+function select(i) {
+  sel = Math.max(-1, Math.min(MODULES.length-1, i));
+  updateUI();
+  if (three) three.onSelect();
+}
+$("prev").addEventListener("click",()=>select(sel-1));
+$("next").addEventListener("click",()=>select(sel+1));
+$("ov").addEventListener("click",()=>select(-1));
+addEventListener("keydown",e=>{
+  if (e.target.closest && e.target.closest("a")) return;
+  if (e.key==="ArrowRight"||e.key==="ArrowDown") { if(e.key==="ArrowDown" && document.activeElement!==document.body) return; select(sel+1); }
+  else if (e.key==="ArrowLeft"||e.key==="ArrowUp") { if(e.key==="ArrowUp" && document.activeElement!==document.body) return; select(sel-1); }
+  else if (e.key==="m"||e.key==="M") select(-1);
+});
+
+try {
+  const canvas = $("gl");
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setClearColor(0x000000,0);
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x7A5A8C, 0.010);
+  const camera = new THREE.PerspectiveCamera(50,1,0.1,400);
+  scene.add(new THREE.AmbientLight(0xf6e6ff,0.8));
+  const sun = new THREE.DirectionalLight(0xffe2c4,1.05); sun.position.set(12,24,16); scene.add(sun);
+
+  const mat = (c,e=0.0) => new THREE.MeshStandardMaterial({color:c,emissive:c,emissiveIntensity:e,flatShading:true,roughness:0.85});
+  const add = (m,x,y,z,parent) => { m.position.set(x,y,z); parent.add(m); return m; };
+  const box = (w,h,d,c,x,y,z,p,e=0) => add(new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(c,e)),x,y,z,p);
+  const cyl = (rt,rb,h,c,x,y,z,p,seg=10,e=0) => add(new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg),mat(c,e)),x,y,z,p);
+  const sph = (r,c,x,y,z,p,e=0) => add(new THREE.Mesh(new THREE.SphereGeometry(r,10,8),mat(c,e)),x,y,z,p);
+  const tor = (r,t,c,x,y,z,p,arc=Math.PI*2,e=0) => add(new THREE.Mesh(new THREE.TorusGeometry(r,t,6,14,arc),mat(c,e)),x,y,z,p);
+  const link = (a,b,c,p) => { const d=new THREE.Vector3().subVectors(b,a), m=box(0.12,d.length(),0.12,c,0,0,0,p); m.position.copy(a).addScaledVector(d,.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize()); };
+
+  const spinners = [];
+  const PROPS = [
+    g => { [[1.0,0x3776AB],[0.8,0xFFD43B],[0.6,0x3776AB]].forEach(([r,c],i)=>tor(r,0.28,c,0,0.3+i*0.5,0,g).rotation.x=Math.PI/2); sph(0.38,0xFFD43B,0.55,1.7,0,g); },
+    g => { box(0.45,1.3,0.35,0xFFC15E,0.3,1.7,0,g,.3).rotation.z=0.45; box(1.0,0.35,0.35,0xFFC15E,0,1.05,0,g,.3); box(0.45,1.3,0.35,0xFFC15E,-0.3,0.55,0,g,.3).rotation.z=0.45; },
+    g => { [0,1,2].forEach(i=>{ cyl(1.0,1.0,0.5,0xC9BCEF,0,0.3+i*0.7,0,g,14); cyl(1.02,1.02,0.08,0x7FE0C2,0,0.58+i*0.7,0,g,14,.4); }); },
+    g => { box(2.3,1.4,0.5,0xFFF4E6,0,1.6,0,g); box(0.5,0.5,0.5,0xFFF4E6,-0.7,0.75,0,g).rotation.z=0.8; [-0.55,0,0.55].forEach(x=>sph(0.15,0x2A1F45,x,1.6,0.3,g)); },
+    g => { box(1.7,2.3,0.2,0xFFF4E6,0,1.3,0,g).rotation.z=0.05; [0,1,2,3].forEach(i=>box(1.1,0.1,0.05,0x3A2C5E,-0.1,1.95-i*0.45,0.13,g)); const p=cyl(0.08,0.08,1.6,0xFFC15E,1.1,1.1,0.2,g,6); p.rotation.z=-0.5; },
+    g => { [[0xFF6B4A,0],[0x7FE0C2,0.2],[0xFFC15E,-0.15]].forEach(([c,r],i)=>box(1.9,0.35,1.3,c,0,0.2+i*0.38,0,g).rotation.y=r); tor(0.5,0.1,0xFFF4E6,0.4,2.0,0,g); box(0.12,0.9,0.12,0xFFF4E6,1.0,1.35,0,g).rotation.z=0.7; },
+    g => { const gear=new THREE.Group(); cyl(0.9,0.9,0.45,0x9AA0AB,0,0,0,gear,12).rotation.x=Math.PI/2; for(let i=0;i<8;i++){ const a=i/8*Math.PI*2; box(0.35,0.35,0.45,0x9AA0AB,Math.cos(a)*1.05,Math.sin(a)*1.05,0,gear); } cyl(0.35,0.35,0.5,0x2A1F45,0,0,0,gear,8).rotation.x=Math.PI/2; gear.position.y=1.6; g.add(gear); spinners.push({o:gear,axis:"z",s:0.5}); },
+    g => { [0.9,1.5,2.1,1.7].forEach((h,i)=>box(0.45,h,0.45,0x7FE0C2,-0.9+i*0.6,h/2,0,g,.2)); },
+    g => { box(2.5,1.7,0.2,0xC9BCEF,0,1.5,-0.05,g); box(2.3,1.5,0.25,0x120c20,0,1.5,0.05,g); [0,1,2].forEach(i=>box(1.0-i*0.2,0.1,0.05,0x7FE0C2,-0.5+i*0.1,1.95-i*0.3,0.2,g,.5)); box(0.18,0.1,0.05,0xFFC15E,-0.3,1.05,0.2,g,.8); box(0.6,0.5,0.3,0xC9BCEF,0,0.35,0,g); },
+    g => { const a=new THREE.Vector3(0,0.5,0),b=new THREE.Vector3(-0.9,1.7,0),c=new THREE.Vector3(0.9,1.7,0),d=new THREE.Vector3(0,2.6,0); link(a,b,0xC9BCEF,g);link(a,c,0xC9BCEF,g);link(b,d,0xC9BCEF,g);link(c,d,0xC9BCEF,g); [[a,0xFF6B4A],[b,0xFFC15E],[c,0x7FE0C2],[d,0xFF9EC4]].forEach(([v,col])=>sph(0.36,col,v.x,v.y,v.z,g,.25)); },
+    g => { box(1.5,1.2,0.8,0xFFC15E,0,0.7,0,g,.15); tor(0.5,0.13,0xC9BCEF,0,1.3,0,g,Math.PI); box(0.18,0.4,0.1,0x2A1F45,0,0.7,0.42,g); },
+    g => { cyl(1.1,1.1,0.3,0x2A1F45,0,1.4,0,g,16).rotation.x=Math.PI/2; tor(1.1,0.1,0x7FE0C2,0,1.4,0,g,Math.PI*2,.3); const n=box(0.1,0.9,0.1,0xFF6B4A,0,1.7,0.2,g,.4); n.geometry.translate(0,0.45,0); n.position.y=1.4; n.userData.needle=true; spinners.push({o:n,axis:"z",osc:0.9,base:-0.6}); box(1.6,0.2,0.2,0x7FE0C2,0,0.3,0.2,g,.2); },
+    g => { box(2.5,1.2,1.2,0xFF6B4A,0,0.7,0,g); [-0.8,-0.27,0.27,0.8].forEach(x=>box(0.1,1.05,1.25,0x7A2A1A,x,0.7,0,g)); cyl(0.05,0.05,2.0,0xFFF4E6,1.0,2.0,0.0,g,6); box(0.8,0.5,0.06,0x7FE0C2,1.4,2.7,0,g,.3); }
+  ];
+
+  const pos = MODULES.map((_,i)=>new THREE.Vector3(Math.sin(i*0.85)*5.5, i*1.3, -i*9));
+  const stones = [];
+  { const cv=new THREE.CatmullRomCurve3(pos.map(p=>p.clone())); const sgm=new THREE.BoxGeometry(0.28,0.16,0.28), sm=mat(0x7FE0C2,0.3);
+    for (let i=0;i<MODULES.length-1;i++) for (let j=1;j<=4;j++){ const m=new THREE.Mesh(sgm,sm); m.position.copy(cv.getPoint((i+j/5)/(MODULES.length-1))).add(new THREE.Vector3(0,-0.2,0)); m.rotation.y=(i+j)*0.7; m.userData.ph=i+j; scene.add(m); stones.push(m); } }
+
+  const islands = [], labels = [];
+  MODULES.forEach((m,i)=>{
+    const c=PHASES[m.phase].color;
+    const g=new THREE.Group(); g.position.copy(pos[i]); g.userData.index=i;
+    const top=cyl(3.0,2.8,0.8,c,0,-0.4,0,g,10,0.12);
+    const rock=new THREE.Mesh(new THREE.ConeGeometry(2.8,3.2,10),mat(0x6E4F9A,0.35)); rock.rotation.x=Math.PI; rock.position.y=-2.4; g.add(rock);
+    const prop=new THREE.Group(); prop.position.set(-0.8,0,-0.6); g.add(prop); PROPS[i](prop);
+    scene.add(g); islands.push({g,top,prop});
+    const l=el("button",{class:"lbl",type:"button","aria-label":"Module "+m.num+": "+m.title},[el("b",{text:m.num}),el("span",{text:m.title})]);
+    l.addEventListener("click",()=>select(i)); stage.append(l); labels.push(l);
+  });
+
+  const dog = new THREE.Group(), GOLD=0xE8A94A, LIGHT=0xF2C879, DARK=0xB9772A;
+  { const b=new THREE.Group(); dog.add(b);
+    box(1.25,0.75,0.75,GOLD,0,0.62,0,b); box(0.7,0.65,0.65,GOLD,0.78,1.1,0,b); box(0.38,0.28,0.42,LIGHT,1.2,0.98,0,b); box(0.12,0.1,0.14,0x120c20,1.4,1.06,0,b);
+    box(0.06,0.12,0.1,0x120c20,1.08,1.2,0.17,b); box(0.06,0.12,0.1,0x120c20,1.08,1.2,-0.17,b);
+    box(0.2,0.42,0.16,DARK,0.7,1.15,0.4,b); box(0.2,0.42,0.16,DARK,0.7,1.15,-0.4,b);
+    box(0.14,0.1,0.14,0xFF9EC4,1.25,0.82,0,b);
+    box(0.2,0.2,0.78,0xFF6B4A,0.42,0.78,0,b);
+    [[0.45,0.28],[0.45,-0.28],[-0.45,0.28],[-0.45,-0.28]].forEach(([x,z])=>box(0.22,0.42,0.22,x>0?GOLD:DARK,x,0.22,z,b));
+    var tail=new THREE.Group(); tail.position.set(-0.62,0.85,0); box(0.55,0.16,0.16,LIGHT,-0.26,0.1,0,tail).rotation.z=0.5; b.add(tail);
+    b.scale.setScalar(1.1); }
+  const costume = [new THREE.Group(),new THREE.Group(),new THREE.Group(),new THREE.Group()];
+  box(0.6,0.12,0.7,0x7FE0C2,0.78,1.46,0,costume[0]); box(0.45,0.2,0.62,0x7FE0C2,0.7,1.58,0,costume[0]); box(0.3,0.06,0.62,0x7FE0C2,1.0,1.44,0,costume[0]);
+  tor(0.13,0.03,0xC9BCEF,1.1,1.25,0.17,costume[1]); tor(0.13,0.03,0xC9BCEF,1.1,1.25,-0.17,costume[1]); box(0.04,0.04,0.2,0xC9BCEF,1.1,1.27,0,costume[1]);
+  box(0.5,0.05,0.4,0xFFF4E6,1.35,0.72,0,costume[2]).rotation.z=-0.2; box(0.3,0.03,0.02,0x3A2C5E,1.35,0.76,0.0,costume[2]);
+  box(0.75,0.6,0.1,0xFF6B4A,-0.05,0.82,0,costume[3]).rotation.x=0; box(1.1,0.06,0.9,0xFF6B4A,0.0,1.0,0,costume[3]);
+  costume.forEach(c=>{ c.scale.setScalar(1.1); dog.add(c); });
+  scene.add(dog);
+
+  const N=700, sp=new Float32Array(N*3);
+  for (let i=0;i<N;i++){ sp[i*3]=(Math.random()-.5)*160; sp[i*3+1]=Math.random()*70-8; sp[i*3+2]=-Math.random()*150+30; }
+  const sg=new THREE.BufferGeometry(); sg.setAttribute("position",new THREE.BufferAttribute(sp,3));
+  scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xFFE2B8,size:0.32,sizeAttenuation:true,fog:false,transparent:true,opacity:0.9})));
+
+  let vOff = 0;
+  const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+  const tPos = new THREE.Vector3(), tLook = new THREE.Vector3();
+  const DOG_OFF = new THREE.Vector3(2.0,0,1.5);
+  const fetch = {idx:0, from:new THREE.Vector3(), to:new THREE.Vector3(), t:1, face:0};
+  const spot = i => pos[i].clone().add(DOG_OFF);
+  fetch.from.copy(spot(0)); fetch.to.copy(spot(0));
+  function target() {
+    if (sel<0) { const k=camera.aspect<1?1.9:1; tPos.set(100*k,38*k,-4*k); tLook.set(4,9,-54); }
+    else { const p=pos[sel]; tPos.set(p.x+5,p.y+4.2,p.z+12); tLook.set(p.x,p.y+0.8,p.z-3); }
+  }
+  function resize(){
+    const w=stage.clientWidth,h=stage.clientHeight;
+    renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); target();
+  }
+  addEventListener("resize",()=>{resize(); if(reduce){camPos.copy(tPos);camLook.copy(tLook);}});
+  function goDog(){
+    const i=Math.max(sel,0);
+    if (i===fetch.idx) return;
+    fetch.from.copy(dog.position); fetch.to.copy(spot(i)); fetch.idx=i; fetch.t=reduce?1:0;
+  }
+  three = { onSelect(){ target(); goDog(); if(reduce){camPos.copy(tPos);camLook.copy(tLook);} },
+    snap(){ target(); camPos.copy(tPos); camLook.copy(tLook); const i=Math.max(sel,0); fetch.idx=i; fetch.t=1; fetch.from.copy(spot(i)); fetch.to.copy(spot(i)); dog.position.copy(spot(i)); } };
+  resize(); camPos.copy(tPos); camLook.copy(tLook); dog.position.copy(spot(0));
+
+  const ray=new THREE.Raycaster(), ndc=new THREE.Vector2(); let down=null;
+  const pick=e=>{ const r=canvas.getBoundingClientRect(); ndc.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1); ray.setFromCamera(ndc,camera);
+    const h=ray.intersectObjects(islands.map(n=>n.g),true)[0]; if(!h) return -1; let o=h.object; while(o&&o.userData.index===undefined) o=o.parent; return o?o.userData.index:-1; };
+  canvas.addEventListener("pointerdown",e=>{down=[e.clientX,e.clientY];});
+  canvas.addEventListener("pointerup",e=>{ if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>6){down=null;return;} down=null; const i=pick(e); if(i>=0) select(i); });
+  canvas.addEventListener("pointermove",e=>{ canvas.style.cursor = pick(e)>=0 ? "pointer":"default"; });
+
+  const clock=new THREE.Clock(), v=new THREE.Vector3(), up=new THREE.Vector3(0,3.9,0);
+  let last=0;
+  function frame(){
+    const t=clock.getElapsedTime(), dt=Math.min(0.05,t-last); last=t;
+    const k=reduce?1:0.06;
+    target(); camPos.lerp(tPos,k); camLook.lerp(tLook,k);
+    camera.position.copy(camPos); camera.lookAt(camLook);
+    const W=stage.clientWidth,H=stage.clientHeight, wantOff=W>760?(sel<0?W*0.06:Math.min(210,W*0.15)):0;
+    vOff+=(wantOff-vOff)*(reduce?1:0.08);
+    if (W>760) camera.setViewOffset(W,H,vOff,0,W,H); else camera.clearViewOffset();
+    scene.fog.density += ((sel<0?0.002:0.012)-scene.fog.density)*(reduce?1:0.08);
+
+    islands.forEach((n,i)=>{
+      const on=i===sel;
+      n.g.position.y = pos[i].y + (reduce?0:Math.sin(t*0.8+i)*0.22);
+      n.prop.rotation.y = reduce?0:(on? t*0.8 : Math.sin(t*0.5+i)*0.2);
+      const s=on?1.12:1; n.prop.scale.setScalar(n.prop.scale.x+(s-n.prop.scale.x)*0.12);
+      n.top.material.emissiveIntensity = on?0.4:0.12;
+    });
+    spinners.forEach(sp=>{ if(reduce) return; if(sp.osc) sp.o.rotation[sp.axis]=sp.base+Math.sin(t*1.6)*sp.osc; else sp.o.rotation[sp.axis]+=dt*sp.s; });
+    stones.forEach(m=>{ m.position.y += 0; m.rotation.y += reduce?0:dt*0.3; });
+
+    // Fetch
+    if (fetch.t<1) fetch.t=Math.min(1,fetch.t+dt/0.95);
+    const e=fetch.t<.5?2*fetch.t*fetch.t:1-Math.pow(-2*fetch.t+2,2)/2;
+    v.lerpVectors(fetch.from,fetch.to,e);
+    const hop = reduce?0:Math.sin(Math.PI*fetch.t)*3.2*(fetch.t<1?1:0);
+    const idle = reduce?0:(fetch.t>=1?Math.abs(Math.sin(t*3))*0.12:0);
+    v.y += islands[fetch.idx].g.position.y - pos[fetch.idx].y;
+    dog.position.set(v.x, v.y+hop+idle, v.z);
+    let want;
+    if (fetch.t<1) want=Math.atan2(-(fetch.to.z-fetch.from.z), fetch.to.x-fetch.from.x);
+    else want=Math.atan2(-(camera.position.z-dog.position.z), camera.position.x-dog.position.x);
+    let dA=((want-fetch.face+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+    fetch.face += reduce? dA : dA*0.15; dog.rotation.y=fetch.face;
+    tail.rotation.y = reduce?0:Math.sin(t*(fetch.t<1?16:9))*0.6;
+    const ph = sel<0 ? 2 : MODULES[sel].phase;
+    costume.forEach((c,ci)=>c.visible = ci===ph);
+
+    labels.forEach((l,i)=>{
+      v.copy(pos[i]).add(up).project(camera);
+      const d=camera.position.distanceTo(pos[i]);
+      const vis=v.z<1&&Math.abs(v.x)<1.05&&Math.abs(v.y)<1.05;
+      const op=!vis?0:sel<0?1:Math.max(0,Math.min(1,1-(d-22)/26));
+      l.style.opacity=op; l.style.pointerEvents=op<0.2?"none":"auto";
+      l.classList.toggle("compact",sel<0); l.classList.toggle("on",i===sel);
+      l.style.transform="translate("+((v.x*0.5+0.5)*W)+"px,"+((-v.y*0.5+0.5)*H)+"px) translate(-50%,-100%)";
+    });
+    renderer.render(scene,camera);
+    requestAnimationFrame(frame);
+  }
+  frame();
+} catch(err) {
+  console.warn("3D view unavailable, using the plain layout.", err);
+  stage.classList.add("no3d");
+}
+
+const h = location.hash.match(/^#m(\d\d)$/);
+select(h ? MODULES.findIndex(m=>m.num===h[1]) : -1);
+if (three) three.snap();
+</script>
+</body>
+</html>

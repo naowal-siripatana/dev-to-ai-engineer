@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 1 &middot; Python Fundamentals &amp; Type Hints</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --accent: #6ee7b7; --accent2: #7dd3fc;
+    --text: #e8eaed; --muted: #9aa0ab; --border: #262a33; --code-bg: #1c2028;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  #deck { position: relative; height: 100vh; overflow: hidden; }
+  .slide {
+    position: absolute; inset: 0; display: none; flex-direction: column; justify-content: center;
+    padding: 6vh 8vw; opacity: 0; transition: opacity .25s ease;
+  }
+  .slide.active { display: flex; opacity: 1; }
+  .kicker { color: var(--accent2); font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.6rem; font-weight: 600; }
+  h1 { font-size: clamp(1.6rem, 4vw, 2.6rem); margin: 0 0 0.4rem; line-height: 1.15; }
+  h2 { font-size: clamp(1.2rem, 2.6vw, 1.7rem); margin: 0 0 1rem; color: var(--accent); }
+  .sub { color: var(--muted); font-size: clamp(0.95rem, 1.6vw, 1.15rem); margin-bottom: 1.2rem; }
+  ul { margin: 0; padding-left: 1.2em; }
+  li { margin-bottom: 0.55rem; line-height: 1.5; font-size: clamp(0.95rem, 1.5vw, 1.15rem); }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem 2rem; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; }
+  .card h3 { margin: 0 0 0.35rem; font-size: 1rem; color: var(--accent2); }
+  .card p { margin: 0; color: var(--text); font-size: 0.95rem; line-height: 1.5; }
+  .box { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 1.1rem 1.4rem; font-size: clamp(0.95rem, 1.5vw, 1.1rem); line-height: 1.6; }
+  .box.warn { border-left-color: #f59e0b; }
+  .box.cap { border-left-color: var(--accent2); }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 0.1em 0.4em; font-size: 0.9em; }
+  .badge { display: inline-block; background: var(--code-bg); border: 1px solid var(--border); border-radius: 999px; padding: 0.3rem 0.9rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }
+  .bar { position: fixed; top: 0; left: 0; height: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s ease; z-index: 10; }
+  .nav { position: fixed; bottom: 18px; right: 24px; display: flex; gap: 0.5rem; align-items: center; color: var(--muted); font-size: 0.85rem; z-index: 10; }
+  .nav button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem; }
+  .nav button:hover { border-color: var(--accent); }
+  .clickzone { position: absolute; top: 0; bottom: 0; width: 15%; z-index: 5; cursor: pointer; }
+  .clickzone.left { left: 0; } .clickzone.right { right: 0; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.2rem; font-size: clamp(0.8rem, 1.3vw, 1rem); overflow-x: auto; margin: 0 0 1rem; }
+  .footer-title { position: fixed; bottom: 18px; left: 24px; color: var(--muted); font-size: 0.8rem; z-index: 10; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar" style="width:0%"></div>
+<div id="deck">
+
+<div class="slide active">
+  <div class="kicker">Module 01 &middot; Day 1</div>
+  <h1>Python Fundamentals &amp; Type Hints</h1>
+  <div class="sub">What a hint promises, and what it does not</div>
+  <div class="box">Goal today: write typed functions and see what Python does when the types are wrong.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Core Idea</div>
+  <h2>Hints are for readers and tools, not for Python</h2>
+  <ul>
+    <li>Python is dynamically typed: a variable can hold anything.</li>
+    <li>Hints are ignored at runtime.</li>
+    <li>A type checker (mypy, your editor) flags mismatches before you run the code.</li>
+    <li>Runtime enforcement needs validation, which is what Pydantic does later.</li>
+  </ul>
+</div>
+
+<div class="slide">
+  <div class="kicker">Syntax</div>
+  <h2>Typed function</h2>
+<pre><code>def summarize(text: str, max_words: int = 50) -> str:
+    words = text.split()
+    return " ".join(words[:max_words])
+
+summarize("hello world", 1)       # fine
+summarize("hello world", "one")   # checker flags it; Python still runs it</code></pre>
+</div>
+
+<div class="slide">
+  <div class="kicker">Syntax</div>
+  <h2>Hint shapes you will use constantly</h2>
+  <div class="grid">
+    <div class="card"><h3>list[str]</h3><p>A list of strings.</p></div>
+    <div class="card"><h3>dict[str, int]</h3><p>String keys, int values.</p></div>
+    <div class="card"><h3>str | None</h3><p>A string or nothing (also <code>Optional[str]</code>).</p></div>
+    <div class="card"><h3>-> int</h3><p>Return type of a function.</p></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="kicker">From Another Language</div>
+  <h2>Bridge</h2>
+  <div class="box bridge"><code>list[str]</code> is <code>List&lt;string&gt;</code> and <code>str | None</code> is <code>string?</code>, but the compiler guarantee is gone. The type checker behaves like an analyzer warning, not a build error. Hints are a promise to the reader and the tooling, not a runtime contract.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Hands-On</div>
+  <h2>practice_types.py (~25 min)</h2>
+<pre><code>def word_count(text: str) -> int: ...
+def top_n_words(text: str, n: int = 5) -> list[str]: ...
+def find_user(users: dict[str, str], user_id: str) -> str | None: ...</code></pre>
+  <ul>
+    <li>Implement all three and print a few results.</li>
+    <li>Call one with a wrong-typed argument and watch what happens.</li>
+    <li>Run <code>uv run mypy src</code> and see the same mistakes caught before running.</li>
+  </ul>
+</div>
+
+<div class="slide">
+  <div class="kicker">Watch Out</div>
+  <h2>Pitfalls</h2>
+  <div class="box warn"><ul>
+    <li>A wrong type may not crash where you expect: <code>find_user(users, 1)</code> just returns <code>None</code>.</li>
+    <li>If it does crash, the error comes from inside the function, not from the hint.</li>
+    <li>Do not go into generics or protocols yet.</li>
+  </ul></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Capstone Tie-In</div>
+  <h2>Where this goes</h2>
+  <div class="box cap">Every function in the Python AI Service behind <code>ai-knowledge-assistant</code> will use this typed style, so Module 2's FastAPI and Pydantic work feels like "the same thing, now enforced".</div>
+  <div class="badge" style="margin-top:1.2rem;">Next: async/await &amp; Pydantic</div>
+</div>
+
+</div>
+
+<div class="clickzone left" onclick="go(-1)"></div>
+<div class="clickzone right" onclick="go(1)"></div>
+<div class="footer-title">Day 1 &middot; Python Fundamentals &amp; Type Hints</div>
+<div class="nav">
+  <button onclick="go(-1)">&larr;</button>
+  <span id="counter">1 / N</span>
+  <button onclick="go(1)">&rarr;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let i = 0;
+  function render() {
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    document.getElementById('counter').textContent = (i+1) + ' / ' + slides.length;
+    document.getElementById('bar').style.width = ((i+1)/slides.length*100) + '%';
+  }
+  function go(delta) {
+    i = Math.max(0, Math.min(slides.length - 1, i + delta));
+    render();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) go(1);
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) go(-1);
+  });
+  render();
+</script>
+</body>
+</html>

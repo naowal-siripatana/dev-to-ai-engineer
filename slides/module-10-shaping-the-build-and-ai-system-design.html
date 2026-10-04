@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Module 10 &middot; Shaping the Build & AI System Design</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --accent: #6ee7b7; --accent2: #7dd3fc;
+    --text: #e8eaed; --muted: #9aa0ab; --border: #262a33; --code-bg: #1c2028;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  #deck { position: relative; height: 100vh; overflow: hidden; }
+  .slide {
+    position: absolute; inset: 0; display: none; flex-direction: column; justify-content: center;
+    padding: 6vh 8vw; opacity: 0; transition: opacity .25s ease;
+  }
+  .slide.active { display: flex; opacity: 1; }
+  .kicker { color: var(--accent2); font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.6rem; font-weight: 600; }
+  h1 { font-size: clamp(1.6rem, 4vw, 2.6rem); margin: 0 0 0.4rem; line-height: 1.15; }
+  h2 { font-size: clamp(1.2rem, 2.6vw, 1.7rem); margin: 0 0 1rem; color: var(--accent); }
+  .sub { color: var(--muted); font-size: clamp(0.95rem, 1.6vw, 1.15rem); margin-bottom: 1.2rem; }
+  ul { margin: 0; padding-left: 1.2em; }
+  li { margin-bottom: 0.55rem; line-height: 1.5; font-size: clamp(0.95rem, 1.5vw, 1.15rem); }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem 2rem; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; }
+  .card h3 { margin: 0 0 0.35rem; font-size: 1rem; color: var(--accent2); }
+  .card p { margin: 0; color: var(--text); font-size: 0.95rem; line-height: 1.5; }
+  .box { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 1.1rem 1.4rem; font-size: clamp(0.95rem, 1.5vw, 1.1rem); line-height: 1.6; }
+  .box.warn { border-left-color: #f59e0b; }
+  .box.cap { border-left-color: var(--accent2); }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 0.1em 0.4em; font-size: 0.9em; }
+  .badge { display: inline-block; background: var(--code-bg); border: 1px solid var(--border); border-radius: 999px; padding: 0.3rem 0.9rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }
+  .bar { position: fixed; top: 0; left: 0; height: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s ease; z-index: 10; }
+  .nav { position: fixed; bottom: 18px; right: 24px; display: flex; gap: 0.5rem; align-items: center; color: var(--muted); font-size: 0.85rem; z-index: 10; }
+  .nav button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem; }
+  .nav button:hover { border-color: var(--accent); }
+  .clickzone { position: absolute; top: 0; bottom: 0; width: 15%; z-index: 5; cursor: pointer; }
+  .clickzone.left { left: 0; } .clickzone.right { right: 0; }
+  .footer-title { position: fixed; bottom: 18px; left: 24px; color: var(--muted); font-size: 0.8rem; z-index: 10; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar" style="width:0%"></div>
+<div id="deck">
+
+<div class="slide active">
+  <div class="kicker">Modern AI Engineering Bootcamp &middot; Module 10 / 13</div>
+  <h1>Shaping the Build & AI System Design</h1>
+  <div class="sub">Session 19 &middot; 2027-01-26</div>
+  <div class="box">Your goal-plan alignment: <strong>January 2027 &mdash; a checkpoint before the infra push</strong></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Where This Fits</div>
+  <h2>Roadmap position</h2>
+  <ul>
+    <li><strong>Bootcamp schedule:</strong> Session 19 &middot; 2027-01-26</li>
+    <li><strong>Your 6-month plan:</strong> January 2027 &mdash; a checkpoint before the infra push</li>
+    <li>Capstone project: <code>ai-knowledge-assistant</code> &mdash; every module adds one piece to it, see the Capstone Tie-In slide.</li>
+  </ul>
+</div>
+
+<div class="slide">
+  <div class="kicker">What You'll Learn</div>
+  <h2>Topics covered in this module</h2>
+  <div class="grid">
+    <ul><li>Problem framing & business analysis</li><li>AI use case discovery</li><li>Requirement engineering</li><li>Functional/non-functional requirements & constraints</li><li>Success/acceptance criteria</li><li>Probabilistic vs. deterministic systems</li><li>When NOT to use AI</li><li>Decision frameworks (traditional vs. LLM vs. RAG vs. tool calling vs. agent vs. workflow vs. fine-tuning)</li><li>Build vs. buy analysis</li></ul>
+    <ul><li>Cloud vs. local AI</li><li>Model selection</li><li>Architecture trade-offs (cost/latency/quality)</li><li>Prototype vs. production</li><li>Failure mode analysis</li><li>Human approval points</li><li>Architecture decision records</li><li>Progressive rollout</li></ul>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Core Concepts</div>
+  <h2>The ideas worth actually understanding</h2>
+  <div class="grid"><div class="card"><h3>When NOT to use AI</h3><p>Some of the 'AI Document API' features you'll be asked about in interviews should honestly be a regex or a SQL query &mdash; knowing when *not* to reach for an LLM is a senior-level signal.</p></div><div class="card"><h3>Decision framework</h3><p>A structured way to choose between plain code, RAG, tool calling, an agent, or fine-tuning for a given problem &mdash; instead of defaulting to 'add an LLM' for everything.</p></div><div class="card"><h3>Architecture Decision Record (ADR)</h3><p>A short written note: what you chose, what you considered, why &mdash; the artifact that turns 'I built something' into 'I can explain my reasoning' in an interview.</p></div><div class="card"><h3>Prototype vs. production</h3><p>The gap between 'it worked in the demo' and 'it holds up under real, messy input' &mdash; explicitly naming that gap is how you avoid overselling your own project.</p></div></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">From .NET To This</div>
+  <h2>Bridging from what you already know</h2>
+  <div class="box">You already do requirement analysis and trade-off thinking for backend features at a software company &mdash; this module is that same discipline, applied to a domain (AI) where 'just add an LLM' is a tempting but often wrong default answer.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Hands-On Checkpoint</div>
+  <h2>What "done" looks like for this module</h2>
+  <div class="box">Write one ADR for <code>ai-knowledge-assistant</code>: why RAG instead of fine-tuning, why pgvector instead of a separate vector DB, and one thing you deliberately chose not to build (e.g. multi-agent orchestration) and why.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Capstone Tie-In</div>
+  <h2>How this plugs into <code>ai-knowledge-assistant</code></h2>
+  <div class="box cap">This ADR becomes one of the README sections you'll polish in March &mdash; interviewers respond well to candidates who can explain what they didn't build and why, not just what they did.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Watch Out</div>
+  <h2>Pitfalls &amp; anti-patterns</h2>
+  <div class="box warn"><ul><li>Don't retroactively justify choices you made for convenience &mdash; an honest ADR is more valuable than a flattering one.</li><li>Don't use this module to second-guess and rebuild everything from Modules 1-9 &mdash; it's a reflection checkpoint, not a restart.</li></ul></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Key Takeaways</div>
+  <h2>Before you move on</h2>
+  <ul><li>Knowing when not to use AI is as valuable a signal as knowing how to use it.</li><li>An ADR turns implicit decisions into an interview-ready artifact.</li><li>This is a reflection module &mdash; use it to document, not to rebuild.</li></ul>
+  <div class="badge" style="margin-top:1.2rem;">Next: Module 11: AI Security, Guardrails & Governance</div>
+</div>
+
+</div>
+
+<div class="clickzone left" onclick="go(-1)"></div>
+<div class="clickzone right" onclick="go(1)"></div>
+<div class="footer-title">Module 10 &middot; Shaping the Build & AI System Design</div>
+<div class="nav">
+  <button onclick="go(-1)">&larr;</button>
+  <span id="counter">1 / N</span>
+  <button onclick="go(1)">&rarr;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let i = 0;
+  function render() {
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    document.getElementById('counter').textContent = (i+1) + ' / ' + slides.length;
+    document.getElementById('bar').style.width = ((i+1)/slides.length*100) + '%';
+  }
+  function go(delta) {
+    i = Math.max(0, Math.min(slides.length - 1, i + delta));
+    render();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) go(1);
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) go(-1);
+  });
+  render();
+</script>
+</body>
+</html>

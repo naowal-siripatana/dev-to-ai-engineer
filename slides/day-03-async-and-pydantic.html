@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 3 &middot; async/await &amp; Pydantic</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --accent: #6ee7b7; --accent2: #7dd3fc;
+    --text: #e8eaed; --muted: #9aa0ab; --border: #262a33; --code-bg: #1c2028;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  #deck { position: relative; height: 100vh; overflow: hidden; }
+  .slide {
+    position: absolute; inset: 0; display: none; flex-direction: column; justify-content: center;
+    padding: 6vh 8vw; opacity: 0; transition: opacity .25s ease;
+  }
+  .slide.active { display: flex; opacity: 1; }
+  .kicker { color: var(--accent2); font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.6rem; font-weight: 600; }
+  h1 { font-size: clamp(1.6rem, 4vw, 2.6rem); margin: 0 0 0.4rem; line-height: 1.15; }
+  h2 { font-size: clamp(1.2rem, 2.6vw, 1.7rem); margin: 0 0 1rem; color: var(--accent); }
+  .sub { color: var(--muted); font-size: clamp(0.95rem, 1.6vw, 1.15rem); margin-bottom: 1.2rem; }
+  ul { margin: 0; padding-left: 1.2em; }
+  li { margin-bottom: 0.55rem; line-height: 1.5; font-size: clamp(0.95rem, 1.5vw, 1.15rem); }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem 2rem; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; }
+  .card h3 { margin: 0 0 0.35rem; font-size: 1rem; color: var(--accent2); }
+  .card p { margin: 0; color: var(--text); font-size: 0.95rem; line-height: 1.5; }
+  .box { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 1.1rem 1.4rem; font-size: clamp(0.95rem, 1.5vw, 1.1rem); line-height: 1.6; }
+  .box.warn { border-left-color: #f59e0b; }
+  .box.cap { border-left-color: var(--accent2); }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 0.1em 0.4em; font-size: 0.9em; }
+  .badge { display: inline-block; background: var(--code-bg); border: 1px solid var(--border); border-radius: 999px; padding: 0.3rem 0.9rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }
+  .bar { position: fixed; top: 0; left: 0; height: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s ease; z-index: 10; }
+  .nav { position: fixed; bottom: 18px; right: 24px; display: flex; gap: 0.5rem; align-items: center; color: var(--muted); font-size: 0.85rem; z-index: 10; }
+  .nav button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem; }
+  .nav button:hover { border-color: var(--accent); }
+  .clickzone { position: absolute; top: 0; bottom: 0; width: 15%; z-index: 5; cursor: pointer; }
+  .clickzone.left { left: 0; } .clickzone.right { right: 0; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.2rem; font-size: clamp(0.8rem, 1.3vw, 1rem); overflow-x: auto; margin: 0 0 1rem; }
+  .footer-title { position: fixed; bottom: 18px; left: 24px; color: var(--muted); font-size: 0.8rem; z-index: 10; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar" style="width:0%"></div>
+<div id="deck">
+
+<div class="slide active">
+  <div class="kicker">Module 01 &middot; Day 3</div>
+  <h1>async/await &amp; Pydantic Models</h1>
+  <div class="sub">Waiting efficiently, and validating at runtime</div>
+  <div class="box">Goal today: run 3 fake LLM calls concurrently, and validate a <code>ChatRequest</code> with Pydantic.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">async</div>
+  <h2>Why async? Because LLM calls mostly wait</h2>
+  <ul>
+    <li><code>async def</code> defines a coroutine that can pause at <code>await</code>.</li>
+    <li>While one call waits on the network, the event loop runs other work on the same thread.</li>
+    <li><code>asyncio.run(main())</code> starts the event loop.</li>
+  </ul>
+</div>
+
+<div class="slide">
+  <div class="kicker">async</div>
+  <h2>gather: 3 calls in ~1s, not 3s</h2>
+<pre><code>async def fake_llm_call(prompt: str) -> str:
+    await asyncio.sleep(1)
+    return f"answer to: {prompt}"
+
+results = await asyncio.gather(
+    fake_llm_call("a"), fake_llm_call("b"), fake_llm_call("c")
+)</code></pre>
+</div>
+
+<div class="slide">
+  <div class="kicker">Watch Out</div>
+  <h2>async pitfalls</h2>
+  <div class="box warn"><ul>
+    <li>No <code>await</code> gives a coroutine object, not a result ("never awaited").</li>
+    <li><code>time.sleep</code> or a sync HTTP client inside <code>async def</code> blocks the whole loop.</li>
+    <li>async helps with waiting (I/O), not CPU-heavy work.</li>
+  </ul></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">From Another Language</div>
+  <h2>Bridge</h2>
+  <div class="grid">
+    <div class="card"><h3>async / await</h3><p>Same idea as C# <code>async Task</code> or JavaScript <code>async</code> functions. <code>asyncio.gather</code> is <code>Task.WhenAll</code> or <code>Promise.all</code>.</p></div>
+    <div class="card"><h3>Event loop</h3><p>Usually one thread, no thread pool. A blocking call stalls everything.</p></div>
+    <div class="card"><h3>Pydantic</h3><p>Like DTOs with DataAnnotations, but validated whenever you construct the object.</p></div>
+    <div class="card"><h3>ValidationError</h3><p>Think ModelState errors, raised as an exception.</p></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Pydantic</div>
+  <h2>Hints that are actually enforced</h2>
+<pre><code>class ChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=3, ge=1, le=10)
+
+ChatRequest(question="What is E101?", top_k="5")  # coerced to 5
+ChatRequest(question="", top_k=99)                # ValidationError</code></pre>
+  <div class="sub">Also: <code>model_validate(dict)</code> and <code>model_dump()</code>.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Hands-On</div>
+  <h2>~25 minutes in the repo</h2>
+  <ul>
+    <li><code>uv add pydantic</code></li>
+    <li><code>async_demo.py</code>: time gather vs sequential awaits</li>
+    <li><code>schemas.py</code>: ChatRequest with valid, coerced and invalid input</li>
+    <li><code>uv run mypy src</code>, then commit</li>
+  </ul>
+</div>
+
+<div class="slide">
+  <div class="kicker">Capstone Tie-In</div>
+  <h2>Where this goes</h2>
+  <div class="box cap"><code>ChatRequest</code> becomes the body of <code>POST /api/chat</code> in Module 2, and the async pattern lets that endpoint call the LLM without blocking other requests.</div>
+  <div class="badge" style="margin-top:1.2rem;">Next: error handling &amp; logging, testing, Git workflows</div>
+</div>
+
+</div>
+
+<div class="clickzone left" onclick="go(-1)"></div>
+<div class="clickzone right" onclick="go(1)"></div>
+<div class="footer-title">Day 3 &middot; async/await &amp; Pydantic</div>
+<div class="nav">
+  <button onclick="go(-1)">&larr;</button>
+  <span id="counter">1 / N</span>
+  <button onclick="go(1)">&rarr;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let i = 0;
+  function render() {
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    document.getElementById('counter').textContent = (i+1) + ' / ' + slides.length;
+    document.getElementById('bar').style.width = ((i+1)/slides.length*100) + '%';
+  }
+  function go(delta) {
+    i = Math.max(0, Math.min(slides.length - 1, i + delta));
+    render();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) go(1);
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) go(-1);
+  });
+  render();
+</script>
+</body>
+</html>

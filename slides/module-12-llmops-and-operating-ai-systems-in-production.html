@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Module 12 &middot; LLMOps & Operating AI Systems in Production</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --accent: #6ee7b7; --accent2: #7dd3fc;
+    --text: #e8eaed; --muted: #9aa0ab; --border: #262a33; --code-bg: #1c2028;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  #deck { position: relative; height: 100vh; overflow: hidden; }
+  .slide {
+    position: absolute; inset: 0; display: none; flex-direction: column; justify-content: center;
+    padding: 6vh 8vw; opacity: 0; transition: opacity .25s ease;
+  }
+  .slide.active { display: flex; opacity: 1; }
+  .kicker { color: var(--accent2); font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.6rem; font-weight: 600; }
+  h1 { font-size: clamp(1.6rem, 4vw, 2.6rem); margin: 0 0 0.4rem; line-height: 1.15; }
+  h2 { font-size: clamp(1.2rem, 2.6vw, 1.7rem); margin: 0 0 1rem; color: var(--accent); }
+  .sub { color: var(--muted); font-size: clamp(0.95rem, 1.6vw, 1.15rem); margin-bottom: 1.2rem; }
+  ul { margin: 0; padding-left: 1.2em; }
+  li { margin-bottom: 0.55rem; line-height: 1.5; font-size: clamp(0.95rem, 1.5vw, 1.15rem); }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem 2rem; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; }
+  .card h3 { margin: 0 0 0.35rem; font-size: 1rem; color: var(--accent2); }
+  .card p { margin: 0; color: var(--text); font-size: 0.95rem; line-height: 1.5; }
+  .box { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 1.1rem 1.4rem; font-size: clamp(0.95rem, 1.5vw, 1.1rem); line-height: 1.6; }
+  .box.warn { border-left-color: #f59e0b; }
+  .box.cap { border-left-color: var(--accent2); }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 0.1em 0.4em; font-size: 0.9em; }
+  .badge { display: inline-block; background: var(--code-bg); border: 1px solid var(--border); border-radius: 999px; padding: 0.3rem 0.9rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }
+  .bar { position: fixed; top: 0; left: 0; height: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s ease; z-index: 10; }
+  .nav { position: fixed; bottom: 18px; right: 24px; display: flex; gap: 0.5rem; align-items: center; color: var(--muted); font-size: 0.85rem; z-index: 10; }
+  .nav button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem; }
+  .nav button:hover { border-color: var(--accent); }
+  .clickzone { position: absolute; top: 0; bottom: 0; width: 15%; z-index: 5; cursor: pointer; }
+  .clickzone.left { left: 0; } .clickzone.right { right: 0; }
+  .footer-title { position: fixed; bottom: 18px; left: 24px; color: var(--muted); font-size: 0.8rem; z-index: 10; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar" style="width:0%"></div>
+<div id="deck">
+
+<div class="slide active">
+  <div class="kicker">Modern AI Engineering Bootcamp &middot; Module 12 / 13</div>
+  <h1>LLMOps & Operating AI Systems in Production</h1>
+  <div class="sub">Sessions 21-22 &middot; 2027-02-09, 2027-02-16</div>
+  <div class="box">Your goal-plan alignment: <strong>February 2027 &mdash; matches your own "Production Mindset" target</strong></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Where This Fits</div>
+  <h2>Roadmap position</h2>
+  <ul>
+    <li><strong>Bootcamp schedule:</strong> Sessions 21-22 &middot; 2027-02-09, 2027-02-16</li>
+    <li><strong>Your 6-month plan:</strong> February 2027 &mdash; matches your own "Production Mindset" target</li>
+    <li>Capstone project: <code>ai-knowledge-assistant</code> &mdash; every module adds one piece to it, see the Capstone Tie-In slide.</li>
+  </ul>
+</div>
+
+<div class="slide">
+  <div class="kicker">What You'll Learn</div>
+  <h2>Topics covered in this module</h2>
+  <div class="grid">
+    <ul><li>Production architecture</li><li>Application logging</li><li>Distributed tracing</li><li>LLM/tool/agent tracing</li><li>Token, latency & cost monitoring</li><li>User feedback</li><li>Prompt/dataset/model versioning</li><li>Reliability engineering (timeouts, retry, circuit breaker, provider fallback, model routing)</li></ul>
+    <ul><li>Caching</li><li>Queueing</li><li>Rate limiting</li><li>Token/cost budgets</li><li>SLI/SLO concepts</li><li>Incident investigation & production debugging</li><li>Feedback-to-improvement loops</li></ul>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Core Concepts</div>
+  <h2>The ideas worth actually understanding</h2>
+  <div class="grid"><div class="card"><h3>Tracing</h3><p>Following one request through retrieval &rarr; prompt construction &rarr; LLM call &rarr; tool call, end to end &mdash; the AI-system equivalent of distributed tracing you'd want for any multi-service .NET system.</p></div><div class="card"><h3>Token/cost monitoring</h3><p>Tracking spend per request/user, because an LLM-backed feature has a variable, usage-driven cost that a typical CRUD endpoint doesn't.</p></div><div class="card"><h3>Prompt/dataset versioning</h3><p>Treating your system prompt and golden dataset like code &mdash; version them, diff them, know exactly which version produced which eval score.</p></div><div class="card"><h3>Circuit breaker / provider fallback</h3><p>The same resilience pattern you already know from any multi-dependency backend, now applied to 'what if the LLM provider is down or slow'.</p></div></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">From .NET To This</div>
+  <h2>Bridging from what you already know</h2>
+  <div class="box">This is the module where your backend-reliability instincts (timeouts, retries, circuit breakers, structured logging) pay off almost unchanged &mdash; the new dimension is treating tokens/cost as a first-class metric alongside latency and errors.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Hands-On Checkpoint</div>
+  <h2>What "done" looks like for this module</h2>
+  <div class="box">Build the dashboard your own plan called for: track question count, success rate, average response time, total AI cost, and failed-query count for <code>ai-knowledge-assistant</code>, backed by the logs/traces you add this module.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Capstone Tie-In</div>
+  <h2>How this plugs into <code>ai-knowledge-assistant</code></h2>
+  <div class="box cap">This is exactly the 'AI Assistant Dashboard' your original plan described &mdash; it's what turns the project from a 'ChatGPT clone' into, in your own words, an AI Application Engineering project.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Watch Out</div>
+  <h2>Pitfalls &amp; anti-patterns</h2>
+  <div class="box warn"><ul><li>Don't monitor latency and errors while ignoring cost &mdash; cost is the metric that's genuinely new to this domain.</li><li>Don't version your prompts informally in your head &mdash; commit them like code, tag them like releases.</li></ul></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Key Takeaways</div>
+  <h2>Before you move on</h2>
+  <ul><li>Token/cost is a first-class production metric here, not an afterthought.</li><li>Your existing resilience patterns (retry, circuit breaker, fallback) transfer directly.</li><li>This module's dashboard is a named deliverable from your original plan &mdash; build it as specified.</li></ul>
+  <div class="badge" style="margin-top:1.2rem;">Next: Module 13: Production Deployment, AI Infrastructure & Model Serving</div>
+</div>
+
+</div>
+
+<div class="clickzone left" onclick="go(-1)"></div>
+<div class="clickzone right" onclick="go(1)"></div>
+<div class="footer-title">Module 12 &middot; LLMOps & Operating AI Systems in Production</div>
+<div class="nav">
+  <button onclick="go(-1)">&larr;</button>
+  <span id="counter">1 / N</span>
+  <button onclick="go(1)">&rarr;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let i = 0;
+  function render() {
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    document.getElementById('counter').textContent = (i+1) + ' / ' + slides.length;
+    document.getElementById('bar').style.width = ((i+1)/slides.length*100) + '%';
+  }
+  function go(delta) {
+    i = Math.max(0, Math.min(slides.length - 1, i + delta));
+    render();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) go(1);
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) go(-1);
+  });
+  render();
+</script>
+</body>
+</html>
