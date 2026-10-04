@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My Learning - From Dev to AI Engineer</title>
+<meta name="description" content="Learn along: sign in, follow a day-by-day plan, tick your checklist and unlock the next day.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--night:#2A1F45;--cream:#FFF1E2;--card:#FFF9F2;--peach:#FFE9D2;--ink:#3A2450;--muted:#7A6590;--line:#E3C3A5;--outline:#1C1430;
+    --coral:#FF6B4A;--coral-d:#D9472A;--honey:#FFC15E;--honey-d:#B86E00;--mint:#7FE0C2;--mint-d:#17806A;--lav:#C9BCEF;
+    --px:'Pixelify Sans',monospace;--body:'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif}
+  *{box-sizing:border-box;margin:0}
+  html,body{min-height:100%}
+  body{font-family:var(--body);color:var(--ink);line-height:1.55;background:linear-gradient(180deg,#2A1F45 0%,#4B3873 30%,#B77C9E 75%,#FFC4A3 100%) fixed}
+  a{color:var(--mint-d)}
+  .top{display:flex;align-items:center;gap:12px;padding:14px max(16px,4vw);flex-wrap:wrap}
+  .btn{font-family:var(--px);font-size:.95rem;font-weight:600;color:var(--ink);background:var(--mint);border:3px solid var(--outline);border-radius:12px;padding:0 18px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 0 var(--outline);cursor:pointer;text-decoration:none;transition:transform .12s,box-shadow .12s}
+  .btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 0 var(--outline)}
+  .btn:active:not(:disabled){transform:translateY(3px);box-shadow:0 1px 0 var(--outline)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.alt{background:var(--honey)}.btn.sec{background:var(--cream)}
+  .btn:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--cream);outline-offset:3px}
+  .spacer{flex:1}
+  .who{font-family:var(--px);color:var(--cream);font-size:.9rem}
+  main{max-width:820px;margin:0 auto;padding:8px max(16px,4vw) 64px}
+  .hero{color:var(--cream);margin:10px 0 18px}
+  .kicker{font-family:var(--px);color:var(--mint);letter-spacing:.2em;font-size:.8rem;font-weight:700}
+  h1{font-family:var(--px);font-size:clamp(1.6rem,5vw,2.5rem);line-height:1.1;margin:.3rem 0 .5rem;text-shadow:4px 4px 0 #1C1430aa}
+  h1 em{font-style:normal;color:var(--honey)}
+  .hero p{color:var(--lav);font-weight:700}
+  .card{background:#FFF9F2f7;border:3px solid var(--outline);border-radius:16px;box-shadow:6px 6px 0 var(--outline);padding:clamp(16px,3vw,26px);margin-bottom:18px}
+  .card h2{font-family:var(--px);font-size:1.3rem;color:var(--coral-d);margin-bottom:8px}
+  .card p{margin-bottom:10px}
+  .notice{background:#FFE9D2;border:2px solid var(--line);border-left:8px solid var(--honey);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:.92rem}
+  .steps{list-style:none;padding:0;display:grid;gap:12px;margin:14px 0}
+  .steps li{display:flex;gap:12px;align-items:flex-start;background:var(--cream);border:2px solid var(--line);border-radius:12px;padding:12px 14px}
+  .num{font-family:var(--px);background:var(--honey);border:2px solid var(--outline);border-radius:8px;min-width:32px;height:32px;display:grid;place-items:center;font-weight:700}
+  label.check{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+  input[type=checkbox]{width:22px;height:22px;accent-color:var(--mint-d);flex:none;margin-top:2px}
+  .small{font-size:.85rem;color:var(--muted)}
+  .bar{height:16px;background:var(--peach);border:3px solid var(--outline);border-radius:99px;overflow:hidden;margin:8px 0}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--mint),var(--coral));transition:width .4s}
+  .days{display:grid;gap:12px}
+  details.day{background:#FFF9F2f7;border:3px solid var(--outline);border-radius:14px;box-shadow:4px 4px 0 var(--outline);overflow:hidden}
+  details.day>summary{list-style:none;cursor:pointer;display:flex;gap:12px;align-items:center;padding:14px 16px;flex-wrap:wrap}
+  details.day>summary::-webkit-details-marker{display:none}
+  .dn{font-family:var(--px);font-weight:700;background:var(--mint);border:2px solid var(--outline);border-radius:8px;padding:2px 10px}
+  .dt{font-family:var(--px);font-weight:600;flex:1;min-width:140px}
+  .dd{font-size:.82rem;color:var(--muted)}
+  .badge{font-family:var(--px);font-size:.72rem;border:2px solid var(--outline);border-radius:99px;padding:2px 10px;background:var(--peach)}
+  .badge.done{background:var(--mint)}.badge.open{background:var(--honey)}.badge.locked{background:#e6dcef;color:var(--muted)}.badge.late{background:#ffd0c4}
+  details.day.locked>summary{cursor:not-allowed;opacity:.8}
+  .body{padding:4px 18px 18px;border-top:2px dashed var(--line)}
+  .body p{margin:12px 0}
+  .items{list-style:none;padding:0;display:grid;gap:8px;margin:12px 0}
+  .items li{background:var(--cream);border:2px solid var(--line);border-radius:10px;padding:10px 12px}
+  .items li.done{background:#E3F8EF;border-color:var(--mint-d)}
+  .items li.done span.t{text-decoration:line-through;color:var(--muted)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .banner{color:var(--cream);background:#1C1430cc;border:2px solid var(--honey);border-radius:10px;padding:8px 14px;margin:0 max(16px,4vw) 8px;font-size:.88rem}
+  footer{max-width:820px;margin:0 auto;padding:0 max(16px,4vw) 40px;color:var(--cream);font-size:.85rem}
+  footer a{color:var(--mint)}
+  [hidden]{display:none!important}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="btn sec" href="index.html">&#9664; Map</a>
+  <span class="spacer"></span>
+  <span class="who" id="who"></span>
+  <button class="btn sec" id="signout" hidden>Sign out</button>
+</div>
+<div class="banner" id="demo" hidden>Demo mode: sign-in is not connected yet, so progress is saved only in this browser.</div>
+<main id="app" aria-live="polite"></main>
+<footer><a href="privacy.html">Privacy</a> &middot; <a href="index.html">Back to the map</a></footer>
+
+<script>
+const CURRICULUM = {
+  "days": [
+    {
+      "id": 1,
+      "title": "Python type hints",
+      "summary": "Type hints describe what a function takes and returns. Python does not check them while the program runs: your editor and tools like mypy read them. Checking at runtime needs validation (Pydantic, Day 3).",
+      "slides": "slides/day-01-python-fundamentals-and-type-hints.html",
+      "items": [
+        {"id": "read", "text": "Read the Day 1 slides"},
+        {"id": "code", "text": "Write word_count, top_n_words and find_user with type hints in practice_types.py and run the file"},
+        {"id": "wrong", "text": "Call one function with a wrong-typed argument and note what happens"},
+        {"id": "mypy", "text": "Run mypy on the file and read one error message"},
+        {"id": "sentence", "text": "Write one sentence in your own words: what does a type hint guarantee in Python?"}
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Project setup with uv",
+      "summary": "uv creates the project, the virtual environment and the dependency lock file in one tool. A src-layout keeps your package importable only when installed, which catches path bugs early. pyproject.toml is the single file that describes your project.",
+      "slides": null,
+      "items": [
+        {"id": "selfcheck", "text": "Answer from memory: what does a type hint do at runtime, and why will Pydantic matter?"},
+        {"id": "install", "text": "Install uv and run uv --version"},
+        {"id": "init", "text": "Create a project with uv init --package <name> --lib and look at the src-layout"},
+        {"id": "module", "text": "Add a typed module (for example a Document dataclass with two typed functions)"},
+        {"id": "run", "text": "Run it with uv run python -c ... to confirm the package imports"},
+        {"id": "git", "text": "Run git init and make your first commit, then add a short Status note to the README"}
+      ]
+    },
+    {
+      "id": 3,
+      "title": "async/await and Pydantic",
+      "summary": "An AI call spends most of its time waiting. async lets Python do other work while it waits, so three one-second calls can finish in about one second with asyncio.gather. Pydantic turns type hints into real runtime checks and raises a ValidationError on bad data.",
+      "slides": "slides/day-03-async-and-pydantic.html",
+      "items": [
+        {"id": "read", "text": "Read the Day 3 slides"},
+        {"id": "install", "text": "Install Pydantic with uv add pydantic"},
+        {"id": "gather", "text": "Build async_demo.py with asyncio.gather and time it (about 1 second)"},
+        {"id": "sequential", "text": "Change it to three sequential awaits and time it again (about 3 seconds)"},
+        {"id": "model", "text": "Build a ChatRequest model with a question (1-2000 characters) and top_k (1-10, default 3)"},
+        {"id": "inputs", "text": "Try valid input, top_k given as the text \"5\" (coerced) and invalid input (read the ValidationError)"},
+        {"id": "commit", "text": "Run mypy, fix what it reports in your new files, and commit"}
+      ]
+    }
+  ]
+}
+;
+const CFG = window.APP_CONFIG || {};
+const $ = id => document.getElementById(id);
+const app = $("app");
+const el = (tag, attrs={}, kids=[]) => {
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs)) {
+    if (k==="text") e.textContent=v; else if (k==="class") e.className=v; else if (k==="html") throw new Error("no html");
+    else e.setAttribute(k,v);
+  }
+  (Array.isArray(kids)?kids:[kids]).forEach(c => { if (c!=null) e.append(c); });
+  return e;
+};
+
+/* ---------- data layer: Supabase, or a local demo when not configured ---------- */
+const configured = !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase);
+let api;
+if (configured) {
+  const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+  api = {
+    async session(){ const {data} = await sb.auth.getSession(); return data.session; },
+    async signIn(){ await sb.auth.signInWithOAuth({provider:"google", options:{redirectTo: location.origin+location.pathname}}); },
+    async signOut(){ await sb.auth.signOut(); },
+    async profile(uid){ const {data,error} = await sb.from("profiles").select("*").eq("id",uid).maybeSingle(); if(error) throw error; return data; },
+    async updateProfile(uid, f){ const {error} = await sb.from("profiles").update(f).eq("id",uid); if(error) throw error; },
+    async progress(uid){ const {data,error} = await sb.from("progress").select("day,item,done").eq("user_id",uid); if(error) throw error; return data||[]; },
+    async setItem(uid, day, item, done){ const {error} = await sb.from("progress").upsert({user_id:uid, day, item, done, updated_at:new Date().toISOString()},{onConflict:"user_id,day,item"}); if(error) throw error; }
+  };
+} else {
+  const K = "dtae_demo";
+  const load = () => { try { return JSON.parse(localStorage.getItem(K)) || {}; } catch(e){ return {}; } };
+  const save = d => { try { localStorage.setItem(K, JSON.stringify(d)); } catch(e){} };
+  api = {
+    async session(){ const d=load(); return d.user ? {user:d.user} : null; },
+    async signIn(){ const d=load(); d.user={id:"demo",email:"demo@example.com",user_metadata:{full_name:"Demo learner"}};
+      d.profile=d.profile||{id:"demo",started_at:new Date().toISOString(),tz:null,subscribed_ack:false,email_opt_in:false}; d.progress=d.progress||{}; save(d); location.reload(); },
+    async signOut(){ const d=load(); delete d.user; save(d); },
+    async profile(){ return load().profile||null; },
+    async updateProfile(uid,f){ const d=load(); Object.assign(d.profile,f); save(d); },
+    async progress(){ const p=load().progress||{}; return Object.entries(p).map(([k,v])=>{const [day,item]=k.split("|"); return {day:+day,item,done:v};}); },
+    async setItem(uid,day,item,done){ const d=load(); d.progress=d.progress||{}; d.progress[day+"|"+item]=done; save(d); }
+  };
+  $("demo").hidden = false;
+}
+
+/* ---------- state ---------- */
+let user=null, profile=null, done=new Set(); // "day|item"
+let optimisticError="";
+const key=(d,i)=>d+"|"+i;
+const isDayDone = day => day.items.every(i=>done.has(key(day.id,i.id)));
+const isUnlocked = idx => idx===0 || isDayDone(CURRICULUM.days[idx-1]);
+
+/* ---------- dates: planned from the member's first login, in their own time zone ---------- */
+const tz = () => (profile && profile.tz) || Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Bangkok";
+const ymd = (date, zone) => new Intl.DateTimeFormat("en-CA",{timeZone:zone,year:"numeric",month:"2-digit",day:"2-digit"}).format(date);
+const startYmd = () => ymd(new Date(profile.started_at), tz());
+const addDays = (iso, n) => { const [y,m,d]=iso.split("-").map(Number); return new Date(Date.UTC(y,m-1,d+n)); };
+const plannedDate = n => addDays(startYmd(), n-1);
+const plannedYmd = n => plannedDate(n).toISOString().slice(0,10);
+const todayYmd = () => ymd(new Date(), tz());
+const fmtDate = d => d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short",year:"numeric",timeZone:"UTC"});
+
+/* ---------- views ---------- */
+function setHero(kicker, h1Parts, sub){
+  const h = el("div",{class:"hero"},[
+    el("div",{class:"kicker",text:kicker}),
+    el("h1",{},h1Parts),
+    sub?el("p",{text:sub}):null
+  ]);
+  return h;
+}
+function viewLogin(){
+  app.replaceChildren(
+    setHero("LEARN ALONG",[document.createTextNode("From "),el("em",{text:"Dev"}),document.createTextNode(" to AI Engineer")],"A day-by-day plan with a checklist that remembers you."),
+    el("div",{class:"card"},[
+      el("h2",{text:"Start your quest"}),
+      el("p",{text:"Sign in to get your own plan. Your Day 1 starts the day you sign in, each day has a checklist, and finishing a day's checklist unlocks the next day."}),
+      el("ul",{class:"steps"},[
+        step(1,"Sign in with Google"),
+        step(2,"Follow the YouTube channel"),
+        step(3,"Tick off Day 1 to unlock Day 2, and keep going")
+      ]),
+      el("button",{class:"btn",id:"go",text: configured?"Sign in with Google":"Continue in demo mode"}),
+      el("p",{class:"small",text:"We save your name, email and checklist so you can come back and continue. See the Privacy page."})
+    ])
+  );
+  $("go").addEventListener("click",()=>api.signIn());
+}
+function step(n,t){ return el("li",{},[el("span",{class:"num",text:String(n)}),el("span",{text:t})]); }
+
+function viewGate(){
+  const sub = el("a",{class:"btn alt",href:CFG.CHANNEL_SUBSCRIBE_URL||"https://www.youtube.com/@naowal?sub_confirmation=1",target:"_blank",rel:"noopener",text:"Open the channel and subscribe"});
+  const ack = el("input",{type:"checkbox",id:"ack",disabled:""});
+  const opt = el("input",{type:"checkbox",id:"opt"});
+  const cont = el("button",{class:"btn",id:"cont",text:"Continue",disabled:""});
+  app.replaceChildren(
+    setHero("ONE MORE STEP",[document.createTextNode("Follow the "),el("em",{text:"channel"})],"Subscribe first, then your plan opens."),
+    el("div",{class:"card"},[
+      el("h2",{text:"Subscribe to unlock your plan"}),
+      el("ol",{class:"steps"},[
+        el("li",{},[el("span",{class:"num",text:"1"}),el("div",{},[el("p",{text:"Open the channel and press Subscribe."}),sub])]),
+        el("li",{},[el("span",{class:"num",text:"2"}),el("label",{class:"check",for:"ack"},[ack,el("span",{text:"I have subscribed to the channel."})])]),
+        el("li",{},[el("span",{class:"num",text:"3"}),el("div",{},[el("label",{class:"check",for:"opt"},[opt,el("span",{text:"Optional: send me learning news by email. I can turn this off at any time."})]),el("p",{class:"small",text:"Email is only used for this course. Nothing is sent without this tick."})])])
+      ]),
+      el("div",{class:"notice",text:"Honor system: we cannot see your YouTube subscriptions, so this step relies on you. It really helps the channel."}),
+      cont
+    ])
+  );
+  sub.addEventListener("click",()=>{ ack.disabled=false; });
+  ack.addEventListener("change",()=>{ cont.disabled = !ack.checked; });
+  cont.addEventListener("click", async ()=>{
+    cont.disabled=true;
+    try {
+      const f={subscribed_ack:true,email_opt_in:opt.checked};
+      if (opt.checked) f.email_opt_in_at=new Date().toISOString();
+      if (!profile.tz) f.tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+      await api.updateProfile(user.id,f); Object.assign(profile,f); viewDashboard();
+    } catch(e){ cont.disabled=false; alert("Could not save. Please try again."); }
+  });
+}
+
+function viewDashboard(){
+  const total = CURRICULUM.days.reduce((a,d)=>a+d.items.length,0);
+  const doneCount = CURRICULUM.days.reduce((a,d)=>a+d.items.filter(i=>done.has(key(d.id,i.id))).length,0);
+  const pct = total? Math.round(doneCount/total*100):0;
+  const today = todayYmd();
+  const first = CURRICULUM.days.findIndex((d,i)=>isUnlocked(i)&&!isDayDone(d));
+  const dayEls = CURRICULUM.days.map((d,idx)=>{
+    const unlocked=isUnlocked(idx), finished=isDayDone(d), planned=plannedYmd(d.id);
+    const late = !finished && unlocked && planned<today;
+    const status = finished?["done","Done"]:!unlocked?["locked","Locked"]:late?["late","Behind plan"]:planned===today?["open","Today"]:["open","Open"];
+    const det = el("details",{class:"day"+(unlocked?"":" locked")});
+    if (idx===first) det.open=true;
+    const sum = el("summary",{},[
+      el("span",{class:"dn",text:"Day "+d.id}),
+      el("span",{class:"dt",text:d.title}),
+      el("span",{class:"dd",text:fmtDate(plannedDate(d.id))}),
+      el("span",{class:"badge "+status[0],text:status[1]})
+    ]);
+    det.append(sum);
+    if (!unlocked) {
+      sum.addEventListener("click",e=>{ e.preventDefault(); });
+      det.append(el("div",{class:"body"},[el("p",{class:"small",text:"Finish the Day "+(d.id-1)+" checklist to unlock this day."})]));
+      return det;
+    }
+    const list = el("ul",{class:"items"});
+    d.items.forEach(it=>{
+      const id="c-"+d.id+"-"+it.id, on=done.has(key(d.id,it.id));
+      const cb=el("input",{type:"checkbox",id}); cb.checked=on;
+      const li=el("li",{class:on?"done":""},[el("label",{class:"check",for:id},[cb,el("span",{class:"t",text:it.text})])]);
+      cb.addEventListener("change", async ()=>{
+        const val=cb.checked, k=key(d.id,it.id);
+        val?done.add(k):done.delete(k);
+        try { await api.setItem(user.id,d.id,it.id,val); } catch(e){ val?done.delete(k):done.add(k); cb.checked=!val; alert("Could not save. Check your connection and try again."); return; }
+        const y=window.scrollY; viewDashboard();
+        const dEl=document.querySelectorAll("details.day")[idx]; if(dEl) dEl.open=true;
+        window.scrollTo(0,y);
+      });
+      list.append(li);
+    });
+    const count=d.items.filter(i=>done.has(key(d.id,i.id))).length;
+    det.append(el("div",{class:"body"},[
+      el("p",{text:d.summary}),
+      d.slides?el("div",{class:"row"},[el("a",{class:"btn alt",href:d.slides,text:"Open the slides"})]):null,
+      el("p",{class:"small",text:count+" of "+d.items.length+" done"}),
+      list,
+      finished?el("div",{class:"notice",text: idx<CURRICULUM.days.length-1?"Day "+d.id+" complete. Day "+(d.id+1)+" is unlocked.":"Day "+d.id+" complete."}):null
+    ]));
+    return det;
+  });
+  const optBox=el("input",{type:"checkbox",id:"optset"}); optBox.checked=!!profile.email_opt_in;
+  optBox.addEventListener("change", async ()=>{
+    const f={email_opt_in:optBox.checked,email_opt_in_at:optBox.checked?new Date().toISOString():null};
+    try { await api.updateProfile(user.id,f); Object.assign(profile,f); } catch(e){ optBox.checked=!optBox.checked; alert("Could not save."); }
+  });
+  const name=(user.user_metadata&&user.user_metadata.full_name)||user.email||"learner";
+  app.replaceChildren(
+    setHero("YOUR PLAN",[document.createTextNode("Welcome, "),el("em",{text:name.split(" ")[0]})],"Day 1 started on "+fmtDate(addDays(startYmd(),0))+". One new day opens in your plan each day, and the next day unlocks when you finish the checklist."),
+    el("div",{class:"card"},[
+      el("h2",{text:"Progress: "+pct+"%"}),
+      el("div",{class:"bar",role:"progressbar","aria-valuenow":String(pct),"aria-valuemin":"0","aria-valuemax":"100"},[el("i")]),
+      el("p",{class:"small",text:doneCount+" of "+total+" checklist items done"})
+    ]),
+    el("div",{class:"days"},[...dayEls,
+      el("div",{class:"card"},[el("h2",{text:"More days are on the way"}),el("p",{text:"New days are added as the series is published. Come back and your progress will be here."})])
+    ]),
+    el("div",{class:"card",style:"margin-top:18px"},[
+      el("h2",{text:"Email news"}),
+      el("label",{class:"check",for:"optset"},[optBox,el("span",{text:"Send me learning news by email (you can turn this off any time)."})])
+    ])
+  );
+  app.querySelector(".bar i").style.width=pct+"%";
+}
+
+function viewError(msg){
+  app.replaceChildren(el("div",{class:"card"},[el("h2",{text:"Something went wrong"}),el("p",{text:msg}),el("button",{class:"btn",text:"Reload",id:"rl"})]));
+  $("rl").addEventListener("click",()=>location.reload());
+}
+
+/* ---------- boot ---------- */
+(async function(){
+  try {
+    const s = await api.session();
+    if (!s) { $("signout").hidden=true; return viewLogin(); }
+    user = s.user;
+    profile = await api.profile(user.id);
+    if (!profile) return viewError("Your profile was not created. Please sign out and sign in again.");
+    const rows = await api.progress(user.id);
+    done = new Set(rows.filter(r=>r.done).map(r=>key(r.day,r.item)));
+    $("who").textContent = (user.user_metadata&&user.user_metadata.full_name)||user.email||"";
+    $("signout").hidden=false;
+    $("signout").addEventListener("click", async ()=>{ await api.signOut(); location.href="learn.html"; });
+    if (!profile.tz) { try { const z=Intl.DateTimeFormat().resolvedOptions().timeZone; await api.updateProfile(user.id,{tz:z}); profile.tz=z; } catch(e){} }
+    profile.subscribed_ack ? viewDashboard() : viewGate();
+  } catch(e){ console.error(e); viewError("We could not load your data. Please check your connection and reload."); }
+})();
+</script>
+</body>
+</html>

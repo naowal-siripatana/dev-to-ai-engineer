@@ -23,6 +23,8 @@
   .hero h1{font-family:var(--px);font-size:clamp(1.5rem,4vw,2.7rem);line-height:1.08;margin:.3rem 0 .4rem;color:var(--cream);text-shadow:4px 4px 0 #1C1430aa}
   .hero h1 em{font-style:normal;color:var(--honey)}
   .hero p{color:var(--lav);font-weight:700;font-size:clamp(.85rem,1.6vw,1.05rem)}
+  .join{pointer-events:auto;display:inline-block;margin-top:12px;font-family:var(--px);font-weight:600;color:var(--ink);background:var(--honey);border:3px solid #1C1430;border-radius:12px;padding:8px 16px;box-shadow:0 4px 0 #1C1430;text-decoration:none}
+  .join:hover{transform:translateY(-2px)}
   .hud{position:absolute;right:24px;top:22px;font-family:var(--px);font-size:.9rem;display:flex;gap:10px;align-items:center;pointer-events:none;color:var(--cream)}
   .hud .bar{width:clamp(80px,14vw,200px);height:14px;background:#3A2C5E;border:3px solid #1C1430;position:relative}
   .hud .bar i{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,var(--mint),var(--coral));transition:width .5s}
@@ -112,6 +114,7 @@
     <div class="kicker">A 6-MONTH QUEST</div>
     <h1>From <em>Dev</em><br>to AI Engineer</h1>
     <p>13 modules &middot; 1 real project &middot; built in public</p>
+    <a class="join" href="learn.html">Learn along &rarr;</a>
   </div>
   <div class="hud" aria-hidden="true"><span>LV 1 DEV</span><div class="bar"><i id="hudfill"></i></div><span>LV 2 AI ENGINEER</span></div>
   <aside id="panel" aria-live="polite" tabindex="-1"></aside>
