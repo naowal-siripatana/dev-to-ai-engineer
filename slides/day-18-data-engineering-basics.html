@@ -4,47 +4,53 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Day 18 &middot; Data Engineering Basics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0f1115; --panel: #171a21; --accent: #6ee7b7; --accent2: #7dd3fc;
-    --text: #e8eaed; --muted: #9aa0ab; --border: #262a33; --code-bg: #1c2028;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  #deck { position: relative; height: 100vh; overflow: hidden; }
-  .slide {
-    position: absolute; inset: 0; display: none; flex-direction: column; justify-content: center;
-    padding: 6vh 8vw; opacity: 0; transition: opacity .25s ease;
-  }
-  .slide.active { display: flex; opacity: 1; }
-  .kicker { color: var(--accent2); font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.6rem; font-weight: 600; }
-  h1 { font-size: clamp(1.6rem, 4vw, 2.6rem); margin: 0 0 0.4rem; line-height: 1.15; }
-  h2 { font-size: clamp(1.2rem, 2.6vw, 1.7rem); margin: 0 0 1rem; color: var(--accent); }
-  .sub { color: var(--muted); font-size: clamp(0.95rem, 1.6vw, 1.15rem); margin-bottom: 1.2rem; }
-  ul { margin: 0; padding-left: 1.2em; }
-  li { margin-bottom: 0.55rem; line-height: 1.5; font-size: clamp(0.95rem, 1.5vw, 1.15rem); }
-  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem 2rem; }
-  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; }
-  .card h3 { margin: 0 0 0.35rem; font-size: 1rem; color: var(--accent2); }
-  .card p { margin: 0; color: var(--text); font-size: 0.95rem; line-height: 1.5; }
-  .box { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 1.1rem 1.4rem; font-size: clamp(0.95rem, 1.5vw, 1.1rem); line-height: 1.6; }
-  .box.warn { border-left-color: #f59e0b; }
-  .box.cap { border-left-color: var(--accent2); }
-  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 0.1em 0.4em; font-size: 0.9em; }
-  .badge { display: inline-block; background: var(--code-bg); border: 1px solid var(--border); border-radius: 999px; padding: 0.3rem 0.9rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; }
-  .bar { position: fixed; top: 0; left: 0; height: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s ease; z-index: 10; }
-  .nav { position: fixed; bottom: 18px; right: 24px; display: flex; gap: 0.5rem; align-items: center; color: var(--muted); font-size: 0.85rem; z-index: 10; }
-  .nav button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem; }
-  .nav button:hover { border-color: var(--accent); }
-  .clickzone { position: absolute; top: 0; bottom: 0; width: 15%; z-index: 5; cursor: pointer; }
-  .clickzone.left { left: 0; } .clickzone.right { right: 0; }
-  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.2rem; font-size: clamp(0.8rem, 1.3vw, 1rem); overflow-x: auto; margin: 0 0 1rem; }
-  .footer-title { position: fixed; bottom: 18px; left: 24px; color: var(--muted); font-size: 0.8rem; z-index: 10; }
+  :root{--night:#2A1F45;--night2:#3A2C5E;--cream:#FFF1E2;--card:#FFF9F2;--peach:#FFE9D2;--ink:#3A2450;--muted:#7A6590;--line:#E3C3A5;--outline:#1C1430;
+    --coral:#FF6B4A;--coral-d:#D9472A;--honey:#FFC15E;--honey-d:#B86E00;--mint:#7FE0C2;--mint-d:#17806A;--lav:#C9BCEF;
+    --px:'Pixelify Sans',monospace;--body:'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;color:var(--ink);font-family:var(--body);background:#2A1F45;background:linear-gradient(180deg,#2A1F45 0%,#4B3873 38%,#B77C9E 78%,#FFC4A3 100%) fixed}
+  #deck{position:relative;height:100vh;height:100svh;overflow:hidden}
+  .slide{position:absolute;inset:60px 5vw 70px;display:none;flex-direction:column;justify-content:center;padding:4vh 5vw;opacity:0;transition:opacity .25s ease;background:#FFF9F2f7;border:3px solid var(--outline);border-radius:16px;box-shadow:8px 8px 0 var(--outline);overflow:auto}
+  .slide.active{display:flex;opacity:1}
+  .kicker{color:var(--mint-d);font-family:var(--px);font-size:.85rem;letter-spacing:.16em;text-transform:uppercase;margin-bottom:.6rem;font-weight:700}
+  h1{font-family:var(--px);font-size:clamp(1.6rem,4vw,2.6rem);margin:0 0 .4rem;line-height:1.12;color:var(--ink)}
+  h2{font-family:var(--px);font-size:clamp(1.2rem,2.6vw,1.7rem);margin:0 0 1rem;color:var(--coral-d)}
+  .sub{color:var(--muted);font-size:clamp(.95rem,1.6vw,1.15rem);margin-bottom:1.2rem}
+  ul{margin:0;padding-left:1.2em}
+  li{margin-bottom:.55rem;line-height:1.5;font-size:clamp(.95rem,1.5vw,1.15rem)}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem 1.4rem}
+  @media (max-width:700px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--peach);border:2px solid var(--line);border-radius:12px;padding:1rem 1.2rem}
+  .card h3{margin:0 0 .35rem;font-family:var(--px);font-size:1rem;color:var(--coral-d)}
+  .card p{margin:0;font-size:.95rem;line-height:1.5}
+  .box{background:var(--cream);border:2px solid var(--line);border-left:8px solid var(--mint);border-radius:12px;padding:1.1rem 1.4rem;font-size:clamp(.95rem,1.5vw,1.1rem);line-height:1.6}
+  .box.warn{border-left-color:var(--honey)}
+  .box.cap{border-left-color:var(--coral)}
+  .box.bridge{border-left-color:var(--lav)}
+  .box.plan{border-left-color:var(--lav)}
+  code{background:var(--peach);border:1px solid var(--line);border-radius:5px;padding:.1em .4em;font-size:.9em;color:var(--ink)}
+  pre{background:#2A1F45;color:#FFF1E2;border:3px solid var(--outline);border-radius:10px;padding:1rem 1.2rem;font-size:clamp(.8rem,1.3vw,1rem);overflow-x:auto;margin:0 0 1rem}
+  pre code{background:none;border:0;padding:0;color:inherit}
+  .badge{display:inline-block;font-family:var(--px);background:var(--peach);border:2px solid var(--line);border-radius:999px;padding:.3rem .9rem;font-size:.85rem;color:var(--muted);margin-bottom:1rem}
+  .bar{position:fixed;top:0;left:0;height:6px;background:linear-gradient(90deg,var(--mint),var(--coral));transition:width .2s ease;z-index:10}
+  .home{position:fixed;top:14px;left:5vw;z-index:12;font-family:var(--px);font-size:.95rem;color:var(--ink);background:var(--mint);border:3px solid var(--outline);box-shadow:3px 3px 0 var(--outline);padding:6px 14px;text-decoration:none;min-height:36px;display:inline-flex;align-items:center}
+  .home:hover{background:var(--honey)}
+  .nav{position:fixed;bottom:16px;right:5vw;display:flex;gap:.5rem;align-items:center;color:var(--cream);font-family:var(--px);font-size:.9rem;z-index:10}
+  .nav button{background:var(--honey);border:3px solid var(--outline);color:var(--ink);box-shadow:3px 3px 0 var(--outline);width:44px;height:44px;cursor:pointer;font-size:1rem}
+  .nav button:hover{background:var(--mint)}
+  .nav span{background:var(--night);border:3px solid var(--outline);padding:8px 10px;min-width:64px;text-align:center}
+  .clickzone{position:absolute;top:0;bottom:0;width:6%;z-index:5;cursor:pointer}
+  .clickzone.left{left:0}.clickzone.right{right:0}
+  .footer-title{position:fixed;bottom:22px;left:5vw;color:var(--cream);background:var(--night);border:3px solid var(--outline);padding:6px 12px;font-family:var(--px);font-size:.8rem;z-index:10;max-width:50vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .home:focus-visible,.nav button:focus-visible{outline:3px solid var(--coral);outline-offset:3px}
+  @media (max-width:700px){.slide{inset:56px 3vw 74px;padding:3vh 5vw}.footer-title{display:none}.nav{right:3vw}.home{left:3vw}}
 </style>
 </head>
 <body>
+<a class="home" href="../index.html" aria-label="Back to the home page">&#9664; Home</a>
 <div class="bar" id="bar" style="width:0%"></div>
 <div id="deck">
 
@@ -116,6 +122,7 @@
     render();
   }
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'h' || e.key === 'H') { location.href = '../index.html'; return; }
     if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) go(1);
     if (['ArrowLeft', 'PageUp'].includes(e.key)) go(-1);
   });
