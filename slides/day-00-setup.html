@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Module 09 &middot; Coding Agents & AI-Assisted Software Engineering</title>
+<title>Day 0 &middot; Setup: get your tools ready</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -47,6 +47,9 @@
   .footer-title{position:fixed;bottom:22px;left:5vw;color:var(--cream);background:var(--night);border:3px solid var(--outline);padding:6px 12px;font-family:var(--px);font-size:.8rem;z-index:10;max-width:50vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .home:focus-visible,.nav button:focus-visible{outline:3px solid var(--coral);outline-offset:3px}
   @media (max-width:700px){.slide{inset:56px 3vw 74px;padding:3vh 5vw}.footer-title{display:none}.nav{right:3vw}.home{left:3vw}}
+  a{color:var(--mint-d);font-weight:700}
+  .tl li strong{color:var(--coral-d);font-family:var(--px);margin-right:6px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.chips span{background:var(--peach);border:2px solid var(--line);border-radius:99px;padding:3px 12px;font-size:.9rem}
 </style>
 </head>
 <body>
@@ -55,73 +58,96 @@
 <div id="deck">
 
 <div class="slide active">
-  <div class="kicker">Modern AI Engineering Bootcamp &middot; Module 09 / 13</div>
-  <h1>Coding Agents & AI-Assisted Software Engineering</h1>
-  <div class="sub">Session 18 &middot; 2027-01-19</div>
-  <div class="box">Stage: <strong>Make it production-ready</strong> &middot; 19 Jan - 25 Jan 2027</div>
+  <div class="kicker">Day 0 &middot; Setup</div>
+  <h1>Get your tools ready</h1>
+  <div class="sub">About 30 minutes. Everything is free.</div>
+  <div class="box">Do this once, before Day 1. If you already have a tool, skip it and tick it on the site.</div>
 </div>
 
 <div class="slide">
-  <div class="kicker">Where This Fits</div>
-  <h2>Roadmap position</h2>
+  <div class="kicker">The goal</div>
+  <h2>By the end you will have</h2>
   <ul>
-    <li><strong>Bootcamp schedule:</strong> Session 18 &middot; 2027-01-19</li>
-    <li><strong>Where it fits:</strong> Make it production-ready &middot; 19 Jan - 25 Jan 2027</li>
-    <li>Capstone project: <code>ai-knowledge-assistant</code> &mdash; every module adds one piece to it, see the Capstone Tie-In slide.</li>
+    <li>A <strong>GitHub</strong> account, where your code lives</li>
+    <li><strong>Git</strong>, which saves the history of your work</li>
+    <li><strong>Visual Studio Code</strong> (or an editor you like), where you write code</li>
+    <li><strong>uv</strong>, which installs and manages Python for you</li>
+    <li>A <strong>work folder</strong> open in your editor, with a terminal inside it</li>
   </ul>
 </div>
 
 <div class="slide">
-  <div class="kicker">What You'll Learn</div>
-  <h2>Topics covered in this module</h2>
+  <div class="kicker">Step 1-2</div>
+  <h2>GitHub account and Git</h2>
+  <ul>
+    <li>Create a free account: <a href="https://github.com/signup" target="_blank" rel="noopener">github.com/signup</a></li>
+    <li>Install Git: <a href="https://git-scm.com/downloads" target="_blank" rel="noopener">git-scm.com/downloads</a>. On a Mac, running <code>git --version</code> in the Terminal may offer to install it for you.</li>
+    <li>Open a terminal and run:</li>
+  </ul>
+<pre><code>git --version</code></pre>
+  <div class="box">It should print a version number, like <code>git version 2.x</code>.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Step 3</div>
+  <h2>Editor and terminal</h2>
+  <ul>
+    <li>Install Visual Studio Code: <a href="https://code.visualstudio.com/" target="_blank" rel="noopener">code.visualstudio.com</a></li>
+    <li>The <strong>terminal</strong> is a text window where you type commands. Mac: the Terminal app. Windows: PowerShell. In VS Code: menu Terminal, then New Terminal.</li>
+    <li>Make a folder for your work and open it in VS Code (File, Open Folder).</li>
+  </ul>
+  <div class="box">Keep the terminal inside your work folder. Most commands in this series are run there.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Step 4</div>
+  <h2>uv and Python</h2>
+  <ul><li>Follow the official guide: <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener">docs.astral.sh/uv</a> (it can change, so copy from there). Typical commands:</li></ul>
+<pre><code># Mac / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"</code></pre>
+  <div class="box warn">Close and reopen the terminal after installing, so it finds <code>uv</code>.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Check it works</div>
+  <h2>Four commands, four answers</h2>
+<pre><code>git --version
+uv --version
+uv python install 3.12
+uv run --python 3.12 python --version</code></pre>
+  <div class="box">Each command should print a version (the last one should show Python 3.12). If one fails, go to the next slide.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">If something fails</div>
+  <h2>Common problems</h2>
   <div class="grid">
-    <ul><li>AI coding assistants vs. agents</li><li>Agentic coding workflows</li><li>Repository context & codebase understanding</li><li>Project instructions (AGENTS.md/CLAUDE.md)</li><li>Context engineering for code</li><li>Requirement consolidation</li><li>Agent planning & task decomposition</li><li>Tool use (shell, Git, tests, browser, database)</li></ul>
-    <ul><li>Test-driven & verification-driven development</li><li>Code review</li><li>Refactoring</li><li>Long-running task management</li><li>Context rot</li><li>AI code slop</li><li>Technical debt considerations</li><li>Human oversight</li></ul>
+    <div class="card"><h3>command not found</h3><p>Close and reopen the terminal. Then try again. If it still fails, the tool is not installed yet.</p></div>
+    <div class="card"><h3>Windows: scripts blocked</h3><p>Use PowerShell, and use the Windows command from the guide.</p></div>
+    <div class="card"><h3>Wrong folder</h3><p>Run <code>pwd</code> (Mac) or <code>cd</code> (Windows) to see where you are, and open the right folder.</p></div>
+    <div class="card"><h3>Still stuck</h3><p>Comment on the video with the exact message you see.</p></div>
   </div>
 </div>
 
 <div class="slide">
-  <div class="kicker">Core Concepts</div>
-  <h2>The ideas worth actually understanding</h2>
-  <div class="grid"><div class="card"><h3>AGENTS.md / CLAUDE.md</h3><p>A file that tells a coding agent your project's conventions, commands, and constraints &mdash; the same role an onboarding doc plays for a new hire, but read by the AI on every session.</p></div><div class="card"><h3>Verification-driven development</h3><p>Give the agent a way to check its own work (tests, a build, a lint pass) instead of trusting its claim that something works.</p></div><div class="card"><h3>AI code slop</h3><p>Plausible-looking but low-quality or subtly wrong code an agent produces when under-supervised &mdash; the antidote is the same code review discipline you'd apply to a junior engineer's PR.</p></div><div class="card"><h3>Context rot (for code)</h3><p>A long agent session accumulates irrelevant history that degrades its output quality &mdash; sometimes the fix is a fresh session, not a longer prompt.</p></div></div>
-</div>
-
-<div class="slide">
-  <div class="kicker">From Backend Experience</div>
-  <h2>Bridging from what you already know</h2>
-  <div class="box">You are probably already using a tool from this category to write code. This module makes that deliberate: used well on <code>ai-knowledge-assistant</code>, a coding agent is how a limited weekly time budget still produces a portfolio-grade result instead of a half-finished one.</div>
-</div>
-
-<div class="slide">
-  <div class="kicker">Hands-On Checkpoint</div>
-  <h2>What "done" looks like for this module</h2>
-  <div class="box">Add an AGENTS.md/CLAUDE.md to the <code>ai-knowledge-assistant</code> repo describing its stack, conventions, and test commands. Use a coding agent for one real feature end-to-end, reviewing its diff like a PR before merging.</div>
-</div>
-
-<div class="slide">
-  <div class="kicker">Capstone Tie-In</div>
-  <h2>How this plugs into <code>ai-knowledge-assistant</code></h2>
-  <div class="box cap">This module is about *how* you build the rest of the capstone, not a new architecture piece &mdash; treat it as infrastructure for your own productivity for the remaining months.</div>
-</div>
-
-<div class="slide">
-  <div class="kicker">Watch Out</div>
-  <h2>Pitfalls &amp; anti-patterns</h2>
-  <div class="box warn"><ul><li>Don't merge agent-written code you haven't actually read &mdash; that's how code slop gets into a portfolio project.</li><li>Don't let an agent session run unbounded; check in and course-correct rather than hoping it self-corrects.</li></ul></div>
-</div>
-
-<div class="slide">
-  <div class="kicker">Key Takeaways</div>
-  <h2>Before you move on</h2>
-  <ul><li>An AGENTS.md/CLAUDE.md file is cheap and pays off across every future session.</li><li>Verification (tests, builds) is what makes agent output trustworthy, not the agent's own confidence.</li><li>This is a time-budget multiplier for the rest of the project &mdash; use it deliberately.</li></ul>
-  <div class="badge" style="margin-top:1.2rem;">Next: Module 10: Shaping the Build & AI System Design</div>
+  <div class="kicker">Done</div>
+  <h2>Tick Day 0, then start Day 1</h2>
+  <ul>
+    <li>Go to <code>dev-to-ai-engineer.vercel.app</code>, sign in, and tick each step of Day 0.</li>
+    <li>Day 0 never locks anything. Day 1 is ready when you are.</li>
+    <li>Finish the Day 1 checklist to unlock Day 2.</li>
+  </ul>
+  <div class="box cap" style="margin-top:1rem">One small win at a time.</div>
 </div>
 
 </div>
 
 <div class="clickzone left" onclick="go(-1)"></div>
 <div class="clickzone right" onclick="go(1)"></div>
-<div class="footer-title">Module 09 &middot; Coding Agents & AI-Assisted Software Engineering</div>
+<div class="footer-title">Day 0 &middot; Setup</div>
 <div class="nav">
   <button onclick="go(-1)">&larr;</button>
   <span id="counter">1 / N</span>

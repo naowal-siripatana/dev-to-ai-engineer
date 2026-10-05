@@ -46,7 +46,7 @@
   .notice{background:#FFE9D2;border:2px solid var(--line);border-left:8px solid var(--honey);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:.92rem}
   .steps{list-style:none;padding:0;display:grid;gap:12px;margin:14px 0}
   .steps li{display:flex;gap:12px;align-items:flex-start;background:var(--cream);border:2px solid var(--line);border-radius:12px;padding:12px 14px}
-  .num{font-family:var(--px);background:var(--honey);border:2px solid var(--outline);border-radius:8px;min-width:32px;height:32px;display:grid;place-items:center;font-weight:700}
+  .num{font-family:var(--body);font-weight:800;background:var(--honey);border:2px solid var(--outline);border-radius:8px;min-width:32px;height:32px;display:grid;place-items:center;font-weight:700}
   label.check{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
   input[type=checkbox]{width:22px;height:22px;accent-color:var(--mint-d);flex:none;margin-top:2px}
   .small{font-size:.85rem;color:var(--muted)}
@@ -56,7 +56,7 @@
   details.day{background:#FFF9F2f7;border:3px solid var(--outline);border-radius:14px;box-shadow:4px 4px 0 var(--outline);overflow:hidden}
   details.day>summary{list-style:none;cursor:pointer;display:flex;gap:12px;align-items:center;padding:14px 16px;flex-wrap:wrap}
   details.day>summary::-webkit-details-marker{display:none}
-  .dn{font-family:var(--px);font-weight:700;background:var(--mint);border:2px solid var(--outline);border-radius:8px;padding:2px 10px}
+  .dn{font-family:var(--body);font-weight:800;background:var(--mint);border:2px solid var(--outline);border-radius:8px;padding:2px 10px}
   .dt{font-family:var(--px);font-weight:600;flex:1;min-width:140px}
   .dd{font-size:.82rem;color:var(--muted)}
   .badge{font-family:var(--px);font-size:.72rem;border:2px solid var(--outline);border-radius:99px;padding:2px 10px;background:var(--peach)}
@@ -96,7 +96,7 @@ const CURRICULUM = {
       "gate": false,
       "title": "Setup: get your tools ready",
       "summary": "Do this once, before Day 1. Everything here is free and takes about 30 minutes. Sign in first (you already have), so your checklist is saved while you tick each step. This day does not lock anything: if you already have the tools, tick them and move on.",
-      "slides": null,
+      "slides": "slides/day-00-setup.html",
       "items": [
         {
           "id": "signin",
@@ -152,25 +152,35 @@ const CURRICULUM = {
       "items": [
         {
           "id": "read",
-          "text": "Read the Day 1 slides"
+          "text": "Read the Day 1 lesson (hook, three pieces, worked example)"
         },
         {
           "id": "code",
-          "text": "Write word_count, top_n_words and find_user with type hints in practice_types.py and run the file"
+          "text": "Step 1: copy practice_types.py, run it, and match the expected output"
+        },
+        {
+          "id": "change",
+          "text": "Step 2: change n to 3 and predict the result before you run it"
         },
         {
           "id": "wrong",
-          "text": "Call one function with a wrong-typed argument and note what happens"
+          "text": "Step 3: run broken.py (a wrong-typed call) and note what happens"
         },
         {
           "id": "mypy",
-          "text": "Run mypy on the file and read one error message"
+          "text": "Step 3: run mypy and read one error message"
+        },
+        {
+          "id": "yours",
+          "text": "Step 4: write shout(text, times) with type hints and test it"
         },
         {
           "id": "sentence",
           "text": "Write one sentence in your own words: what does a type hint guarantee in Python?"
         }
-      ]
+      ],
+      "lesson": "lessons/day-01.html",
+      "goal": "Write a typed Python function, and explain what a type hint does and does not do."
     },
     {
       "id": 2,
@@ -406,7 +416,7 @@ function viewDashboard(){
     const count=d.items.filter(i=>done.has(key(d.id,i.id))).length;
     det.append(el("div",{class:"body"},[
       el("p",{text:d.summary}),
-      d.slides?el("div",{class:"row"},[el("a",{class:"btn alt",href:d.slides,text:"Open the slides"})]):null,
+      (d.lesson||d.slides)?el("div",{class:"row"},[d.lesson?el("a",{class:"btn",href:d.lesson,text:"Open the lesson"}):null, d.slides?el("a",{class:"btn alt",href:d.slides,text:"Open the slides"}):null]):null,
       el("p",{class:"small",text:count+" of "+d.items.length+" done"}),
       list,
       finished?el("div",{class:"notice",text: d.gate===false?"Setup complete. You are ready for Day 1.":(idx<CURRICULUM.days.length-1?"Day "+d.id+" complete. Day "+(d.id+1)+" is unlocked.":"Day "+d.id+" complete.")}):null

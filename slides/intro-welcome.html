@@ -41,7 +41,7 @@
   .nav{position:fixed;bottom:16px;right:5vw;display:flex;gap:.5rem;align-items:center;color:var(--cream);font-family:var(--px);font-size:.9rem;z-index:10}
   .nav button{background:var(--honey);border:3px solid var(--outline);color:var(--ink);box-shadow:3px 3px 0 var(--outline);width:44px;height:44px;cursor:pointer;font-size:1rem}
   .nav button:hover{background:var(--mint)}
-  .nav span{background:var(--night);border:3px solid var(--outline);padding:8px 10px;min-width:64px;text-align:center}
+  .nav span{font-family:var(--body);font-weight:800;background:var(--night);border:3px solid var(--outline);padding:8px 10px;min-width:64px;text-align:center}
   .clickzone{position:absolute;top:0;bottom:0;width:6%;z-index:5;cursor:pointer}
   .clickzone.left{left:0}.clickzone.right{right:0}
   .footer-title{position:fixed;bottom:22px;left:5vw;color:var(--cream);background:var(--night);border:3px solid var(--outline);padding:6px 12px;font-family:var(--px);font-size:.8rem;z-index:10;max-width:50vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -70,34 +70,45 @@
     <img src="img/naowal.jpg" alt="Naowal Siripatana" style="width:clamp(150px,22vw,250px);height:clamp(150px,22vw,250px);border-radius:50%;object-fit:cover;object-position:center 15%;border:8px solid var(--honey);box-shadow:0 0 0 5px var(--outline),10px 10px 0 5px #3A2C5E;flex:none">
     <div style="flex:1;min-width:240px">
       <h1>Naowal Siripatana</h1>
-      <div class="sub" style="font-family:var(--px);font-size:clamp(1.1rem,2.6vw,1.8rem);color:var(--coral-d)">Builder. Teacher. Beginner again.</div>
-      <div class="box" style="margin-top:.4rem">I teach developers, and now I'm going back to being a beginner, in public. Come learn AI with me.</div>
+      <div class="sub" style="font-family:var(--px);font-size:clamp(1.1rem,2.6vw,1.8rem);color:var(--coral-d)">Builder. Learning designer. Beginner again.</div>
+      <div class="box" style="margin-top:.4rem">I design lessons that help people finish, and now I'm learning AI engineering in public. Come learn with me.</div>
     </div>
   </div>
 </div>
 
 <div class="slide">
   <div class="kicker">Who am I</div>
-  <h2>Builder. Teacher. Beginner again.</h2>
+  <h2>Builder. Learning designer. Beginner again.</h2>
   <div class="grid">
     <div class="card"><h3>I build</h3><p>More than 7 years of software: Python and Django, Java, Go, and today enterprise financial systems with SQL and .NET.</p></div>
-    <div class="card"><h3>I teach</h3><p>I taught programming online, designed data and React courses, and run ThaiDjango, a community that teaches developers in Thai.</p></div>
-    <div class="card" style="grid-column:1/-1"><h3>Now: I'm a beginner again</h3><p>I'm Naowal. I teach developers, and now I'm going back to being a beginner, in public. Come learn AI with me.</p></div>
+    <div class="card"><h3>I design learning</h3><p>Almost two years as a learning designer and freelance teaching assistant in tech: turning hard topics into lessons people can understand and finish. I also make free courses on YouTube, in Thai.</p></div>
+    <div class="card" style="grid-column:1/-1"><h3>Now: I'm a beginner again</h3><p>I'm Naowal. I design lessons that help people finish, and now I'm learning AI engineering in public. Come learn with me.</p></div>
   </div>
 </div>
 
 <div class="slide">
   <div class="kicker">Who am I &middot; my path</div>
-  <h2>A path made of learning and teaching</h2>
+  <h2>A path of building and learning design</h2>
   <ul class="tl">
     <li><strong>2010-14</strong>B.Sc. Computer Science</li>
-    <li><strong>2017-19</strong>Taught programming fundamentals online; built with Go and Python</li>
+    <li><strong>2017-19</strong>Freelance teaching assistant and course creator (online pre-code camp); built with Go and Python</li>
     <li><strong>2019-22</strong>Django and Java developer in remote teams (logistics, e-commerce, HR)</li>
-    <li><strong>2023-24</strong>Learning designer: Data Engineering, Big Data, React, TypeScript</li>
+    <li><strong>2023-24</strong>Learning designer: course design for Data Engineering, Big Data, React, TypeScript</li>
     <li><strong>2024-now</strong>Enterprise financial software: SQL, .NET, production problems where accuracy matters</li>
     <li><strong>Next</strong>Dev to AI Engineer, in public</li>
   </ul>
   <div class="chips"><span>Python</span><span>Django</span><span>SQL</span><span>.NET</span><span>Java</span><span>Go</span><span>React / TypeScript</span><span>Google Cloud (certified)</span></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">How this bootcamp is designed</div>
+  <h2>Hard lessons, made easy to reach</h2>
+  <div class="grid">
+    <div class="card"><h3>Do more than read</h3><p>Less theory, more trying. Every day has things you actually do: type it, run it, break it, fix it.</p></div>
+    <div class="card"><h3>Hard made simple</h3><p>Difficult ideas explained with pictures, small examples and a pixel dog.</p></div>
+    <div class="card"><h3>Small wins, every day</h3><p>A short checklist per day. Finish it, and the next day unlocks. So you can reach the end.</p></div>
+    <div class="card"><h3>Learn together, happily</h3><p>I learn at the same time as you. We cheer each other on.</p></div>
+  </div>
 </div>
 
 <div class="slide">
@@ -165,7 +176,7 @@ uv run --python 3.12 python --version</code></pre>
     <li>Send the link to one friend who wants to learn AI.</li>
     <li>Comment "I'm in" and tell me what you're learning right now.</li>
   </ul>
-  <div class="box" style="margin-top:1rem">I'm Naowal. I teach developers, and now I'm going back to being a beginner, in public. Come learn AI with me.</div>
+  <div class="box" style="margin-top:1rem">I'm Naowal. I design lessons that help people finish, and now I'm learning AI engineering in public. Come learn with me.</div>
 </div>
 
 </div>
