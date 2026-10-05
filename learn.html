@@ -189,30 +189,36 @@ const CURRICULUM = {
       "slides": null,
       "items": [
         {
-          "id": "selfcheck",
-          "text": "Answer from memory: what does a type hint do at runtime, and why will Pydantic matter?"
+          "id": "read",
+          "text": "Read the Day 2 lesson (hook, three pieces, worked example)"
         },
         {
-          "id": "install",
-          "text": "Install uv and run uv --version"
+          "id": "warm",
+          "text": "Answer the two warm-up questions from memory"
         },
         {
           "id": "init",
-          "text": "Create a project with uv init --package <name> --lib and look at the src-layout"
+          "text": "Step 1: create the project with uv init --package --lib, then run the import check (imported ok)"
         },
         {
           "id": "module",
-          "text": "Add a typed module (for example a Document dataclass with two typed functions)"
+          "text": "Step 2: add documents.py, predict preview(d, 3), then run it"
         },
         {
-          "id": "run",
-          "text": "Run it with uv run python -c ... to confirm the package imports"
+          "id": "break",
+          "text": "Step 3: cause a ModuleNotFoundError on purpose and read the message"
+        },
+        {
+          "id": "yours",
+          "text": "Step 4: write reading_minutes and test it (400 words gives 2.0)"
         },
         {
           "id": "git",
-          "text": "Run git init and make your first commit, then add a short Status note to the README"
+          "text": "Make your first Git commit and add a Status line to the README"
         }
-      ]
+      ],
+      "lesson": "lessons/day-02.html",
+      "goal": "Create a Python project with uv, add a typed module, run it, and make your first Git commit."
     },
     {
       "id": 3,
@@ -222,33 +228,35 @@ const CURRICULUM = {
       "items": [
         {
           "id": "read",
-          "text": "Read the Day 3 slides"
-        },
-        {
-          "id": "install",
-          "text": "Install Pydantic with uv add pydantic"
+          "text": "Read the Day 3 lesson (hook, three pieces, worked example)"
         },
         {
           "id": "gather",
-          "text": "Build async_demo.py with asyncio.gather and time it (about 1 second)"
+          "text": "Step 1: run async_demo.py with asyncio.gather (about 1 second)"
         },
         {
           "id": "sequential",
-          "text": "Change it to three sequential awaits and time it again (about 3 seconds)"
+          "text": "Step 2: change it to three sequential awaits, predict the time, then run it (about 3 seconds)"
         },
         {
           "id": "model",
-          "text": "Build a ChatRequest model with a question (1-2000 characters) and top_k (1-10, default 3)"
+          "text": "Step 3: uv add pydantic, run schemas.py, and read the ValidationError"
         },
         {
-          "id": "inputs",
-          "text": "Try valid input, top_k given as the text \"5\" (coerced) and invalid input (read the ValidationError)"
+          "id": "break",
+          "text": "Step 4: forget the await on purpose and read the warning"
+        },
+        {
+          "id": "yours",
+          "text": "Step 5: add a temperature field (0 to 1) to ChatRequest and test 1.5"
         },
         {
           "id": "commit",
-          "text": "Run mypy, fix what it reports in your new files, and commit"
+          "text": "Commit your work with Git"
         }
-      ]
+      ],
+      "lesson": "lessons/day-03.html",
+      "goal": "Make three slow calls finish in about one second with asyncio.gather, and validate data with a Pydantic model."
     }
   ]
 };
