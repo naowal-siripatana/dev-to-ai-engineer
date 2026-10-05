@@ -283,18 +283,26 @@ try {
     g => { const a=new THREE.Vector3(0,0.5,0),b=new THREE.Vector3(-0.9,1.7,0),c=new THREE.Vector3(0.9,1.7,0),d=new THREE.Vector3(0,2.6,0); link(a,b,0xC9BCEF,g);link(a,c,0xC9BCEF,g);link(b,d,0xC9BCEF,g);link(c,d,0xC9BCEF,g); [[a,0xFF6B4A],[b,0xFFC15E],[c,0x7FE0C2],[d,0xFF9EC4]].forEach(([v,col])=>sph(0.36,col,v.x,v.y,v.z,g,.25)); },
     g => { box(1.5,1.2,0.8,0xFFC15E,0,0.7,0,g,.15); tor(0.5,0.13,0xC9BCEF,0,1.3,0,g,Math.PI); box(0.18,0.4,0.1,0x2A1F45,0,0.7,0.42,g); },
     g => { cyl(1.1,1.1,0.3,0x2A1F45,0,1.4,0,g,16).rotation.x=Math.PI/2; tor(1.1,0.1,0x7FE0C2,0,1.4,0,g,Math.PI*2,.3); const n=box(0.1,0.9,0.1,0xFF6B4A,0,1.7,0.2,g,.4); n.geometry.translate(0,0.45,0); n.position.y=1.4; n.userData.needle=true; spinners.push({o:n,axis:"z",osc:0.9,base:-0.6}); box(1.6,0.2,0.2,0x7FE0C2,0,0.3,0.2,g,.2); },
-    g => { box(2.5,1.2,1.2,0xFF6B4A,0,0.7,0,g); [-0.8,-0.27,0.27,0.8].forEach(x=>box(0.1,1.05,1.25,0x7A2A1A,x,0.7,0,g)); cyl(0.05,0.05,2.0,0xFFF4E6,1.0,2.0,0.0,g,6); box(0.8,0.5,0.06,0x7FE0C2,1.4,2.7,0,g,.3);
-      /* the final boss, a Legacy Bug (ladybug style), knocked out */
-      const bug=new THREE.Group(); bug.position.set(2.8,0,0.7); bug.rotation.y=-1.1; bug.scale.setScalar(1.35); g.add(bug);
-      const body=sph(0.8,0xE23B3B,0,0.5,0,bug); body.scale.set(1.15,0.75,1);
-      [[0.1,0.95,0.35],[0.1,0.95,-0.35],[-0.5,0.8,0.0],[0.5,0.85,0.0]].forEach(([x,y,z])=>sph(0.14,0x1C1430,x,y,z,bug));
-      sph(0.46,0x1C1430,1.0,0.42,0,bug);
-      [-1,1].forEach(z=>{ [0.8,-0.8].forEach(r=>{ const e=box(0.3,0.06,0.06,0xFFF4E6,1.4,0.55,z*0.2,bug,.3); e.rotation.x=Math.PI/2; e.rotation.z=r; }); });
-      [-1,1].forEach(z=>{ box(0.06,0.55,0.06,0x1C1430,1.15,1.0,z*0.18,bug).rotation.x=z*0.4; sph(0.09,0xFFC15E,1.15,1.28,z*0.3,bug,.4);
-        [-0.5,0.1,0.7].forEach(x=>{ const l=box(0.06,0.5,0.06,0x1C1430,x,0.2,z*0.85,bug); l.rotation.x=z*0.9; }); });
-      const stars=new THREE.Group(); stars.position.set(1.0,1.2,0); bug.add(stars);
-      [0,1,2].forEach(i=>{ const a=i/3*Math.PI*2; box(0.2,0.2,0.2,0xFFC15E,Math.cos(a)*0.55,0,Math.sin(a)*0.55,stars,.8); });
-      spinners.push({o:stars,axis:"y",s:1.6}); }
+    g => { /* the final boss: a giant demon built from the last chapter (servers, GPUs, cables, errors) */
+      const D=new THREE.Group(); D.position.set(-0.3,0,-0.4); D.rotation.y=0.55; D.scale.setScalar(1.2); g.add(D);
+      const DARKM=0x4A1236, RED=0xD22B35, GLOW=0xFF5A3C, METAL=0x5B3A78;
+      // legs: two server racks with blinking LEDs
+      [-0.55,0.55].forEach(z=>{ box(0.8,1.5,0.8,METAL,0,0.75,z,D); [0.3,0.7,1.1].forEach(y=>box(0.06,0.08,0.5,0x7FE0C2,0.42,y,z,D,.9)); box(1.0,0.2,1.0,DARKM,0.1,0.1,z,D); });
+      // torso: a huge GPU block with a glowing red core
+      box(1.5,1.8,2.1,DARKM,0,2.4,0,D); box(0.1,1.2,1.3,GLOW,0.8,2.4,0,D,.9); [-0.55,0.55].forEach(z=>{ const f=cyl(0.38,0.38,0.12,METAL,0.82,1.95,z,D,10); f.rotation.z=Math.PI/2; });
+      box(1.7,0.25,2.3,RED,0,3.4,0,D);
+      // spiky shoulders and back spikes
+      [-1.35,1.35].forEach(z=>{ box(0.9,0.5,0.9,RED,0,3.55,z,D); const sp=cyl(0,0.35,1.1,RED,0,4.2,z,D,5); });
+      [0,1,2].forEach(i=>{ const sp=cyl(0,0.22,0.8,RED,-0.9,3.0-i*0.5,0,D,5); sp.rotation.z=-1.2; });
+      // arms: thick cable bundles ending in plug claws
+      [-1,1].forEach(z=>{ const arm=cyl(0.28,0.28,2.2,DARKM,0.3,2.9,z*1.45,D,8); arm.rotation.z=1.0; [-0.35,0,0.35].forEach(o=>{ const cl=cyl(0,0.14,0.8,0xFFF4E6,1.35,1.7,z*1.45+o,D,4); cl.rotation.z=Math.PI; }); });
+      // head: angular, glowing eyes, jagged teeth, two big horns made of antennas
+      box(1.1,1.0,1.4,DARKM,0.2,4.15,0,D); [-0.4,0.4].forEach(z=>{ box(0.12,0.22,0.3,GLOW,0.78,4.3,z,D,1); const h=cyl(0,0.2,1.5,RED,0.1,5.1,z*1.3,D,5); h.rotation.x=-z*0.3; });
+      box(0.1,0.28,1.0,0x120c20,0.78,3.85,0,D); for(let i=-2;i<=2;i++){ const tooth=cyl(0,0.07,0.28,0xFFF4E6,0.82,3.95,i*0.2,D,4); tooth.rotation.z=Math.PI; }
+      // orbiting error cubes (502, 404, OOM...)
+      const errs=new THREE.Group(); errs.position.set(0,4.6,0); D.add(errs);
+      [0,1,2,3].forEach(i=>{ const a=i/4*Math.PI*2; box(0.3,0.3,0.3,GLOW,Math.cos(a)*1.9,0.3*Math.sin(a*2),Math.sin(a)*1.9,errs,.9); });
+      spinners.push({o:errs,axis:"y",s:1.2}); }
   ];
 
   const pos = MODULES.map((_,i)=>new THREE.Vector3(Math.sin(i*0.85)*5.5, i*1.3, -i*9));
@@ -314,22 +322,40 @@ try {
     l.addEventListener("click",()=>select(i)); stage.append(l); labels.push(l);
   });
 
-  const dog = new THREE.Group(), GOLD=0xE8A94A, LIGHT=0xF2C879, DARK=0xB9772A;
+  const dog = new THREE.Group(), GOLD=0xF2B65A, LIGHT=0xFBE3B0, DARK=0xC98530, INK=0x1C1430, PINK=0xFF9EC4;
+  const ell = (r,sx,sy,sz,c,x,y,z,p,e=0) => { const m=sph(r,c,x,y,z,p,e); m.scale.set(sx,sy,sz); return m; };
   { const b=new THREE.Group(); dog.add(b);
-    box(1.25,0.75,0.75,GOLD,0,0.62,0,b); box(0.7,0.65,0.65,GOLD,0.78,1.1,0,b); box(0.38,0.28,0.42,LIGHT,1.2,0.98,0,b); box(0.12,0.1,0.14,0x120c20,1.4,1.06,0,b);
-    box(0.06,0.12,0.1,0x120c20,1.08,1.2,0.17,b); box(0.06,0.12,0.1,0x120c20,1.08,1.2,-0.17,b);
-    box(0.2,0.42,0.16,DARK,0.7,1.15,0.4,b); box(0.2,0.42,0.16,DARK,0.7,1.15,-0.4,b);
-    box(0.14,0.1,0.14,0xFF9EC4,1.25,0.82,0,b);
-    box(0.2,0.2,0.78,0xFF6B4A,0.42,0.78,0,b);
-    [[0.45,0.28],[0.45,-0.28],[-0.45,0.28],[-0.45,-0.28]].forEach(([x,z])=>box(0.22,0.42,0.22,x>0?GOLD:DARK,x,0.22,z,b));
-    var tail=new THREE.Group(); tail.position.set(-0.62,0.85,0); box(0.55,0.16,0.16,LIGHT,-0.26,0.1,0,tail).rotation.z=0.5; b.add(tail);
+    // body (small and round), chest, belly
+    ell(0.7,1.05,0.8,0.85,GOLD,-0.2,0.62,0,b); ell(0.45,0.9,0.8,0.85,LIGHT,0.1,0.5,0,b);
+    // big round head
+    ell(0.66,1,0.95,1.02,GOLD,0.72,1.1,0,b);
+    // floppy ears
+    [-1,1].forEach(z=>{ const e=ell(0.3,0.55,1.25,0.8,DARK,0.5,1.0,z*0.68,b); e.rotation.x=z*0.35; });
+    // light muzzle, nose, mouth, tongue
+    ell(0.34,1,0.75,0.95,LIGHT,1.22,0.88,0,b); ell(0.1,1,0.8,1.1,INK,1.5,0.97,0,b); ell(0.09,0.8,1.2,0.9,PINK,1.43,0.66,0,b);
+    // big shiny eyes with highlights
+    [-1,1].forEach(z=>{ ell(0.15,0.8,1.1,1,INK,1.25,1.2,z*0.3,b); sph(0.05,0xFFFFFF,1.33,1.27,z*0.26,b,.6); sph(0.025,0xFFFFFF,1.31,1.13,z*0.33,b,.6);
+      ell(0.12,0.35,0.8,1.1,PINK,1.2,0.92,z*0.5,b,.15); // rosy cheeks
+      ell(0.07,1,0.55,1.3,DARK,1.33,1.4,z*0.3,b); }); // tiny eyebrows
+    // collar and tag
+    tor(0.4,0.07,0xFF6B4A,0.4,0.78,0,b).rotation.y=Math.PI/2; sph(0.1,0xFFC15E,0.72,0.58,0,b,.3);
+    // stubby legs with light paws
+    [[0.35,0.3],[0.35,-0.3],[-0.7,0.3],[-0.7,-0.3]].forEach(([x,z])=>{ ell(0.2,1,1.5,1,GOLD,x,0.26,z,b); ell(0.16,1.15,0.6,1.05,LIGHT,x+0.03,0.07,z,b); });
+    // fluffy tail with a light tip
+    var tail=new THREE.Group(); tail.position.set(-0.85,0.95,0); ell(0.26,1.4,0.8,0.8,GOLD,-0.2,0.15,0,tail).rotation.z=0.5; sph(0.14,LIGHT,-0.42,0.27,0,tail); b.add(tail);
     b.scale.setScalar(1.1); }
   const costume = [new THREE.Group(),new THREE.Group(),new THREE.Group(),new THREE.Group()];
-  box(0.6,0.12,0.7,0x7FE0C2,0.78,1.46,0,costume[0]); box(0.45,0.2,0.62,0x7FE0C2,0.7,1.58,0,costume[0]); box(0.3,0.06,0.62,0x7FE0C2,1.0,1.44,0,costume[0]);
-  tor(0.13,0.03,0xC9BCEF,1.1,1.25,0.17,costume[1]); tor(0.13,0.03,0xC9BCEF,1.1,1.25,-0.17,costume[1]); box(0.04,0.04,0.2,0xC9BCEF,1.1,1.27,0,costume[1]);
-  { const page=new THREE.Group(); page.position.set(1.55,0.66,0); page.rotation.z=-0.3; costume[2].add(page);
+  // phase 0: little mint hard hat
+  { const hat=new THREE.Mesh(new THREE.SphereGeometry(0.62,14,8,0,Math.PI*2,0,Math.PI/2),mat(0x7FE0C2,0.15)); hat.position.set(0.7,1.5,0); hat.rotation.z=-0.1; costume[0].add(hat);
+    box(0.5,0.07,0.9,0x7FE0C2,1.1,1.5,0,costume[0],.15); box(0.08,0.12,0.5,0xFFC15E,0.78,2.1,0,costume[0]); }
+  // phase 1: round glasses
+  [-1,1].forEach(z=>{ const r=tor(0.2,0.04,0xC9BCEF,1.3,1.2,z*0.3,costume[1],Math.PI*2,.2); r.rotation.y=Math.PI/2; box(0.06,0.06,0.5,0xC9BCEF,0.95,1.2,z*0.52,costume[1]).rotation.y=0; });
+  box(0.05,0.05,0.2,0xC9BCEF,1.3,1.22,0,costume[1],.2);
+  // phase 2: a white page with writing lines in the mouth
+  { const page=new THREE.Group(); page.position.set(1.7,0.6,0); page.rotation.z=-0.3; costume[2].add(page);
     box(0.85,0.07,0.95,0xFFFFFF,0,0,0,page,.35); [-0.27,-0.09,0.09,0.27].forEach(x=>box(0.07,0.085,0.7,0x3A2C5E,x,0,0,page)); box(0.2,0.09,0.2,0xFF6B4A,0.3,0,0.3,page,.2); }
-  box(0.75,0.6,0.1,0xFF6B4A,-0.05,0.82,0,costume[3]).rotation.x=0; box(1.1,0.06,0.9,0xFF6B4A,0.0,1.0,0,costume[3]);
+  // phase 3: coral hero cape
+  box(0.8,0.08,1.0,0xFF6B4A,-0.1,1.02,0,costume[3]); box(0.08,0.8,1.0,0xFF6B4A,-0.62,0.62,0,costume[3]); sph(0.1,0xFFC15E,0.3,0.98,0,costume[3],.3);
   costume.forEach(c=>{ c.scale.setScalar(1.1); dog.add(c); });
   scene.add(dog);
 
@@ -347,7 +373,7 @@ try {
   fetch.from.copy(spot(0)); fetch.to.copy(spot(0));
   function target() {
     if (sel<0) { if (camera.aspect<1) { tPos.set(0,170,56); tLook.set(0,6,-54); } else { tPos.set(100,38,-4); tLook.set(4,9,-54); } }
-    else { const p=pos[sel]; tPos.set(p.x+5,p.y+4.2,p.z+12); tLook.set(p.x,p.y+0.8,p.z-3); }
+    else { const p=pos[sel]; const boss=sel===MODULES.length-1; if (boss) { tPos.set(p.x+7,p.y+6,p.z+18); tLook.set(p.x,p.y+2.8,p.z-3); } else { tPos.set(p.x+5,p.y+4.2,p.z+12); tLook.set(p.x,p.y+0.8,p.z-3); } }
   }
   function resize(){
     const w=stage.clientWidth,h=stage.clientHeight;
