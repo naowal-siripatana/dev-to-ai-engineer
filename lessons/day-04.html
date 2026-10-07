@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 4 - Errors and logging</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--cream:#FFF1E2;--card:#FFF9F2;--peach:#FFE9D2;--ink:#3A2450;--muted:#7A6590;--line:#E3C3A5;--outline:#1C1430;--coral-d:#D9472A;--honey:#FFC15E;--mint:#7FE0C2;--mint-d:#17806A;--px:'Pixelify Sans',monospace;--body:'Nunito',system-ui,sans-serif}
+*{box-sizing:border-box;margin:0}
+body{font-family:var(--body);color:var(--ink);line-height:1.6;background:linear-gradient(180deg,#2A1F45 0%,#4B3873 25%,#B77C9E 70%,#FFC4A3 100%) fixed}
+a{color:var(--mint-d);font-weight:700}
+.top{display:flex;gap:10px;flex-wrap:wrap;padding:14px max(16px,4vw)}
+.btn{font-family:var(--px);font-weight:600;color:var(--ink);background:var(--mint);border:3px solid var(--outline);border-radius:12px;padding:0 16px;min-height:44px;display:inline-flex;align-items:center;box-shadow:0 4px 0 var(--outline);text-decoration:none}
+.btn.sec{background:var(--cream)}
+main{max-width:820px;margin:0 auto;padding:6px max(16px,4vw) 60px}
+.hero{color:var(--cream);margin:8px 0 18px}
+.kicker{font-family:var(--px);color:var(--mint);letter-spacing:.2em;font-size:.8rem;font-weight:700}
+h1{font-family:var(--px);font-size:clamp(1.7rem,5vw,2.6rem);line-height:1.1;margin:.3rem 0 .5rem;text-shadow:4px 4px 0 #1C1430aa}
+.meta{display:flex;gap:8px;flex-wrap:wrap}
+.meta span{font-family:var(--px);font-size:.78rem;background:#1C1430aa;border:2px solid #ffffff44;border-radius:99px;padding:2px 12px;color:var(--cream)}
+.goal{background:var(--card);border:3px solid var(--outline);border-left:10px solid var(--honey);border-radius:14px;box-shadow:5px 5px 0 var(--outline);padding:14px 18px;margin-bottom:18px;font-weight:700}
+section{background:#FFF9F2f7;border:3px solid var(--outline);border-radius:16px;box-shadow:6px 6px 0 var(--outline);padding:clamp(16px,3vw,24px);margin-bottom:16px}
+h2{font-family:var(--px);font-size:1.25rem;color:var(--coral-d);margin-bottom:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+h2 .n{font-family:var(--body);font-weight:800}
+h2 .t{font-size:.72rem;background:var(--peach);border:2px solid var(--line);border-radius:99px;padding:1px 10px;color:var(--muted)}
+h3{font-family:var(--px);font-size:1rem;margin:14px 0 4px}
+p{margin:0 0 10px}ul,ol{margin:0 0 10px;padding-left:1.3em}li{margin-bottom:6px}
+pre{background:#2A1F45;color:#FFF1E2;border:3px solid var(--outline);border-radius:10px;padding:12px 14px;overflow-x:auto;font-size:.88rem;margin:8px 0 12px}
+code{font-family:"SF Mono",Menlo,Consolas,monospace}
+p code,li code,td code{background:var(--peach);border:1px solid var(--line);border-radius:5px;padding:.05em .35em;font-size:.9em}
+.out{background:#E3F8EF;border:2px solid var(--mint-d);border-radius:10px;padding:8px 12px;margin:6px 0 12px;font-size:.9rem}
+.out b{font-family:var(--px);color:var(--mint-d)}
+.box{background:var(--peach);border:2px solid var(--line);border-left:8px solid var(--mint);border-radius:10px;padding:10px 14px;margin:8px 0 12px}
+.box.bridge{border-left-color:#C9BCEF}.box.cap{border-left-color:#FF6B4A}
+table{width:100%;border-collapse:collapse;margin:8px 0 12px;font-size:.92rem}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}th{font-family:var(--px);color:var(--muted);font-size:.8rem}
+details{background:var(--cream);border:2px solid var(--line);border-radius:10px;padding:8px 12px;margin:8px 0}summary{cursor:pointer;font-weight:800}
+.step{font-family:var(--px);background:var(--honey);border:2px solid var(--outline);border-radius:8px;padding:0 10px}
+footer{max-width:820px;margin:0 auto;padding:0 max(16px,4vw) 40px;color:var(--cream);display:flex;gap:16px;flex-wrap:wrap}footer a{color:var(--mint)}
+</style></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 4 &middot; LEVEL 1: PYTHON</div><h1>Errors and logging</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to make a failed lookup leave a clear log line instead of silence.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>asyncio.gather</code> do with three one-second calls?</li><li>What does Pydantic do when the data is bad?</li></ol><details><summary>Answers</summary><ol><li>It starts them together, so they finish in about one second.</li><li>It raises a <code>ValidationError</code> that lists the problems.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your AI call fails at 2 a.m. In the morning, what do you want to find: nothing, or a message that tells you what, where and why?</strong></p><details><summary>Guess first, then open</summary><p>Nothing is the worst answer. A silent failure means you do not even know something broke. Today you will make your code fail <em>loudly and clearly</em>.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: raise a clear error, catch a specific one</h3>
+<p>When something is wrong, <code>raise</code> an error with a message. Make your own error type with one line (<code>class DocumentNotFoundError(Exception)</code>), so the name says what happened. Then catch <em>that</em> error, not everything. Think of a label on a box: &ldquo;fragile&rdquo; tells you more than &ldquo;thing&rdquo;. An <strong>exception</strong> is Python&rsquo;s word for an error you can catch.</p>
+<h3>Piece 2: logs are for you, <code>print</code> is for the user</h3>
+<p>The <code>logging</code> module writes messages with a <strong>level</strong>, so you can turn the detail up or down without changing the code. Think of levels as volume knobs for your program&rsquo;s diary.</p>
+<table><tr><th>Level</th><th>Use it for</th></tr>
+<tr><td><code>DEBUG</code></td><td>Detail for you while building</td></tr>
+<tr><td><code>INFO</code></td><td>Normal events (&ldquo;found document 1&rdquo;)</td></tr>
+<tr><td><code>WARNING</code></td><td>Something odd, but we recovered</td></tr>
+<tr><td><code>ERROR</code></td><td>Something failed</td></tr></table>
+<p>Python shows <code>WARNING</code> and above unless you turn it down. <code>logging.basicConfig(level=...)</code> sets that once, at the start of the program.</p>
+<h3>Piece 3: handle it or let it travel, never swallow it</h3>
+<p>In an <code>except</code> block you have two good choices: <strong>handle it</strong> (return a safe answer and log what happened) or <strong>let it travel up</strong> to someone who can. The choice to avoid is <code>except Exception: pass</code>. It is like taking the battery out of a smoke alarm: the problem does not go away, it shows up somewhere else, later, with a confusing message.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>raise</code> is <code>throw</code>, and <code>try / except</code> is <code>try / catch</code>. The levels are the same as <code>ILogger</code> (<code>LogDebug</code>, <code>LogInformation</code>, <code>LogWarning</code>, <code>LogError</code>). One difference: Python has no checked exceptions, so nothing forces you to catch. You have to choose to. (Java is different: it has checked exceptions.)</div>
+<div class="box cap"><strong>Capstone:</strong> model calls will time out and hit rate limits. The service has to fail clearly, say what went wrong, and leave a log line for every call. This is that habit.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">3 min</span></h2><p>Read it first. A lookup that can fail, a clear error, and a log line for each outcome.</p><pre><code>import logging
+
+logging.basicConfig(level=logging.INFO, format=&quot;%(levelname)s %(name)s: %(message)s&quot;)
+logger = logging.getLogger(&quot;docs&quot;)
+
+
+class DocumentNotFoundError(Exception):
+    &quot;&quot;&quot;Raised when a document id is not in the store.&quot;&quot;&quot;
+
+
+STORE = {&quot;1&quot;: &quot;Error E101 means the sensor timed out.&quot;}
+
+
+def get_document(doc_id: str) -&gt; str:
+    if doc_id not in STORE:
+        raise DocumentNotFoundError(f&quot;no document with id {doc_id!r}&quot;)
+    return STORE[doc_id]
+
+
+def answer(doc_id: str) -&gt; str:
+    try:
+        text = get_document(doc_id)
+    except DocumentNotFoundError as err:
+        logger.warning(&quot;lookup failed: %s&quot;, err)
+        return &quot;Sorry, I could not find that document.&quot;
+    logger.info(&quot;found document %s (%d words)&quot;, doc_id, len(text.split()))
+    return text
+
+
+print(answer(&quot;1&quot;))
+print(answer(&quot;99&quot;))</code></pre><div class="out"><b>You should see</b><br>INFO docs: found document 1 (7 words)<br>WARNING docs: lookup failed: no document with id '99'<br>Error E101 means the sensor timed out.<br>Sorry, I could not find that document.</div><p><small>The log lines go to a different place than <code>print</code>, so in your terminal the order of the lines can differ a little. That is normal.</small></p><p><small><code>logging.getLogger(&quot;docs&quot;)</code> makes a logger named &ldquo;docs&rdquo;, and the name shows up in every line. <code>format=...</code> chooses what each log line looks like.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in the project folder from Day 2. This lesson uses only Python&rsquo;s built-in tools, so you do not need to install anything.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Save the worked example as <code>src/my_ai_project/errors_demo.py</code> and run <code>uv run python src/my_ai_project/errors_demo.py</code>. Match the output.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Change <code>level=logging.INFO</code> to <code>level=logging.DEBUG</code>, and add this as the first line inside <code>answer</code> (before <code>try:</code>):</p><pre><code>    logger.debug(&quot;looking up %s&quot;, doc_id)</code></pre><p><strong>Predict:</strong> which new lines will appear, and where?</p><details><summary>Check your prediction</summary><div class="out"><b>You should see</b><br>DEBUG docs: looking up 1<br>INFO docs: found document 1 (7 words)<br>DEBUG docs: looking up 99<br>WARNING docs: lookup failed: no document with id '99'<br>...</div><p>One <code>DEBUG</code> line per call. Set it back to <code>INFO</code> and they go quiet, without touching any other line.</p></details>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Swallow the error. Replace the whole <code>except DocumentNotFoundError ...</code> block with:</p><pre><code>    try:
+        text = get_document(doc_id)
+    except Exception:
+        pass</code></pre><p>Run it and read the last line of the error.</p><div class="out"><b>You should see</b><br>UnboundLocalError: cannot access local variable 'text' where it is not associated with a value</div>
+<p>The real problem (document 99 does not exist) is gone. You get a confusing error in a different line. That is what swallowing costs. Now put the good block back, and change <code>logger.warning(...)</code> to <code>logger.exception("lookup failed")</code>. Run it and see the full traceback (the list of lines that led to the error, with the file and line number of each) in the log: this is how you find a bug at 2 a.m.</p>
+
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>In a new file <code>src/my_ai_project/params.py</code>, write <code>safe_top_k(raw: str) -&gt; int</code>. It turns text like <code>"5"</code> into the number 5. If the text is not a number, or the number is outside 1 to 10, it logs a <strong>warning</strong> and returns the default, 3. Test it with <code>"5"</code>, <code>"abc"</code> and <code>"99"</code>: you should get 5, 3 and 3, plus two warning lines.</p><details><summary>Hint 1</summary><p><code>int(raw)</code> raises <code>ValueError</code> when the text is not a number. Catch that one only.</p></details><details><summary>Hint 2</summary><p>Check the range with <code>if not 1 &lt;= value &lt;= 10:</code> after the <code>try</code> block.</p></details><details><summary>Solution</summary><pre><code>import logging
+
+logging.basicConfig(level=logging.INFO, format=&quot;%(levelname)s %(name)s: %(message)s&quot;)
+logger = logging.getLogger(&quot;params&quot;)
+
+DEFAULT_TOP_K = 3
+
+
+def safe_top_k(raw: str) -&gt; int:
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(&quot;top_k %r is not a number, using %d&quot;, raw, DEFAULT_TOP_K)
+        return DEFAULT_TOP_K
+    if not 1 &lt;= value &lt;= 10:
+        logger.warning(&quot;top_k %d is outside 1-10, using %d&quot;, value, DEFAULT_TOP_K)
+        return DEFAULT_TOP_K
+    return value
+
+
+for raw in [&quot;5&quot;, &quot;abc&quot;, &quot;99&quot;]:
+    print(raw, &quot;-&gt;&quot;, safe_top_k(raw))</code></pre><div class="out"><b>You should see</b><br>WARNING params: top_k 'abc' is not a number, using 3<br>WARNING params: top_k 99 is outside 1-10, using 3<br>5 -&gt; 5<br>abc -&gt; 3<br>99 -&gt; 3</div></details>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Add error handling and logging examples"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>I see no log lines</strong>: you forgot <code>logging.basicConfig(...)</code>, or the level is higher than the message. The default level hides <code>INFO</code> and <code>DEBUG</code>.</li><li><strong>The lines come in a different order</strong>: normal. Logs and <code>print</code> travel by different channels.</li><li><strong>The log line appears twice</strong>: you called <code>basicConfig</code> in two files. Call it once, at the start of the program.</li><li><strong>&ldquo;nothing to commit&rdquo;</strong>: you did not save the files, or you are in the wrong folder.</li></ul></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is <code>except Exception: pass</code> a bad idea?</li><li>When would you use <code>print</code>, and when <code>logging</code>?</li><li>A document is not found (expected) versus the database is down (unexpected). Which log level fits each?</li></ol><details><summary>Answers</summary><ol><li>It hides the real problem, so you see a confusing error later, or no error at all.</li><li><code>print</code> is for the person using the program. <code>logging</code> is for you, with levels you can turn up and down.</li><li>Not found: <code>WARNING</code> (or <code>INFO</code>), and handle it. Database down: <code>ERROR</code>, with the traceback.</li></ol></details></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> code that fails clearly, and a log that tells the story. Every AI service you build later will need both. You will use this again when FastAPI has to send back a clear error to the person calling your API.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 4 checklist.</li><li>Share one line in the comments: what did the <code>UnboundLocalError</code> look like on your machine?</li><li><strong>Next:</strong> tests, so you can change code and know it still works.</li></ul></section>
+</main>
+<footer><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

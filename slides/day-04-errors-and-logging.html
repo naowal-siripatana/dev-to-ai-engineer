@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 4 &middot; Errors and logging</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--night:#2A1F45;--night2:#3A2C5E;--cream:#FFF1E2;--card:#FFF9F2;--peach:#FFE9D2;--ink:#3A2450;--muted:#7A6590;--line:#E3C3A5;--outline:#1C1430;
+    --coral:#FF6B4A;--coral-d:#D9472A;--honey:#FFC15E;--honey-d:#B86E00;--mint:#7FE0C2;--mint-d:#17806A;--lav:#C9BCEF;
+    --px:'Pixelify Sans',monospace;--body:'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;color:var(--ink);font-family:var(--body);background:#2A1F45;background:linear-gradient(180deg,#2A1F45 0%,#4B3873 38%,#B77C9E 78%,#FFC4A3 100%) fixed}
+  #deck{position:relative;height:100vh;height:100svh;overflow:hidden}
+  .slide{position:absolute;inset:60px 5vw 70px;display:none;flex-direction:column;justify-content:center;padding:4vh 5vw;opacity:0;transition:opacity .25s ease;background:#FFF9F2f7;border:3px solid var(--outline);border-radius:16px;box-shadow:8px 8px 0 var(--outline);overflow:auto}
+  .slide.active{display:flex;opacity:1}
+  .kicker{color:var(--mint-d);font-family:var(--px);font-size:.85rem;letter-spacing:.16em;text-transform:uppercase;margin-bottom:.6rem;font-weight:700}
+  h1{font-family:var(--px);font-size:clamp(1.6rem,4vw,2.6rem);margin:0 0 .4rem;line-height:1.12;color:var(--ink)}
+  h2{font-family:var(--px);font-size:clamp(1.2rem,2.6vw,1.7rem);margin:0 0 1rem;color:var(--coral-d)}
+  .sub{color:var(--muted);font-size:clamp(.95rem,1.6vw,1.15rem);margin-bottom:1.2rem}
+  ul{margin:0;padding-left:1.2em}
+  li{margin-bottom:.55rem;line-height:1.5;font-size:clamp(.95rem,1.5vw,1.15rem)}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem 1.4rem}
+  @media (max-width:700px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--peach);border:2px solid var(--line);border-radius:12px;padding:1rem 1.2rem}
+  .card h3{margin:0 0 .35rem;font-family:var(--px);font-size:1rem;color:var(--coral-d)}
+  .card p{margin:0;font-size:.95rem;line-height:1.5}
+  .box{background:var(--cream);border:2px solid var(--line);border-left:8px solid var(--mint);border-radius:12px;padding:1.1rem 1.4rem;font-size:clamp(.95rem,1.5vw,1.1rem);line-height:1.6}
+  .box.warn{border-left-color:var(--honey)}
+  .box.cap{border-left-color:var(--coral)}
+  .box.bridge{border-left-color:var(--lav)}
+  .box.plan{border-left-color:var(--lav)}
+  code{background:var(--peach);border:1px solid var(--line);border-radius:5px;padding:.1em .4em;font-size:.9em;color:var(--ink)}
+  pre{background:#2A1F45;color:#FFF1E2;border:3px solid var(--outline);border-radius:10px;padding:1rem 1.2rem;font-size:clamp(.8rem,1.3vw,1rem);overflow-x:auto;margin:0 0 1rem}
+  pre code{background:none;border:0;padding:0;color:inherit}
+  .badge{display:inline-block;font-family:var(--px);background:var(--peach);border:2px solid var(--line);border-radius:999px;padding:.3rem .9rem;font-size:.85rem;color:var(--muted);margin-bottom:1rem}
+  .bar{position:fixed;top:0;left:0;height:6px;background:linear-gradient(90deg,var(--mint),var(--coral));transition:width .2s ease;z-index:10}
+  .home{position:fixed;top:14px;left:5vw;z-index:12;font-family:var(--px);font-size:.95rem;color:var(--ink);background:var(--mint);border:3px solid var(--outline);box-shadow:3px 3px 0 var(--outline);padding:6px 14px;text-decoration:none;min-height:36px;display:inline-flex;align-items:center}
+  .home:hover{background:var(--honey)}
+  .nav{position:fixed;bottom:16px;right:5vw;display:flex;gap:.5rem;align-items:center;color:var(--cream);font-family:var(--px);font-size:.9rem;z-index:10}
+  .nav button{background:var(--honey);border:3px solid var(--outline);color:var(--ink);box-shadow:3px 3px 0 var(--outline);width:44px;height:44px;cursor:pointer;font-size:1rem}
+  .nav button:hover{background:var(--mint)}
+  .nav span{font-family:var(--body);font-weight:800;background:var(--night);border:3px solid var(--outline);padding:8px 10px;min-width:64px;text-align:center}
+  .clickzone{position:absolute;top:0;bottom:0;width:6%;z-index:5;cursor:pointer}
+  .clickzone.left{left:0}.clickzone.right{right:0}
+  .footer-title{position:fixed;bottom:22px;left:5vw;color:var(--cream);background:var(--night);border:3px solid var(--outline);padding:6px 12px;font-family:var(--px);font-size:.8rem;z-index:10;max-width:50vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .home:focus-visible,.nav button:focus-visible{outline:3px solid var(--coral);outline-offset:3px}
+  @media (max-width:700px){.slide{inset:56px 3vw 74px;padding:3vh 5vw}.footer-title{display:none}.nav{right:3vw}.home{left:3vw}}
+</style>
+</head>
+<body>
+<a class="home" href="../index.html" aria-label="Back to the home page">&#9664; Home</a>
+<div class="bar" id="bar" style="width:0%"></div>
+<div id="deck">
+
+<div class="slide active">
+  <div class="kicker">Module 01 &middot; Day 4</div>
+  <h1>Errors and Logging</h1>
+  <div class="sub">Fail loudly, and leave a trail</div>
+  <div class="box">Goal today: make a failed lookup leave a clear log line instead of silence.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Hook</div>
+  <h2>Your AI call fails at 2 a.m.</h2>
+  <div class="grid">
+    <div class="card"><h3>Silence</h3><p>You find nothing. You do not even know something broke.</p></div>
+    <div class="card"><h3>A clear message</h3><p>You find what failed, where, and why. You fix it in five minutes.</p></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Errors</div>
+  <h2>Raise a clear error, catch a specific one</h2>
+<pre><code>class DocumentNotFoundError(Exception):
+    """Raised when a document id is not in the store."""
+
+def get_document(doc_id: str) -> str:
+    if doc_id not in STORE:
+        raise DocumentNotFoundError(f"no document with id {doc_id!r}")
+    return STORE[doc_id]</code></pre>
+  <div class="sub">The name says what happened. Catch <code>DocumentNotFoundError</code>, not everything.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Logging</div>
+  <h2>Levels are volume knobs for your program's diary</h2>
+  <div class="grid">
+    <div class="card"><h3>DEBUG</h3><p>Detail for you while building.</p></div>
+    <div class="card"><h3>INFO</h3><p>Normal events, like "found document 1".</p></div>
+    <div class="card"><h3>WARNING</h3><p>Something odd, but we recovered.</p></div>
+    <div class="card"><h3>ERROR</h3><p>Something failed.</p></div>
+  </div>
+  <div class="sub" style="margin-top:1rem;"><code>print</code> is for the user. <code>logging</code> is for you. Set the level once with <code>logging.basicConfig(level=...)</code>.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Watch Out</div>
+  <h2>Never swallow an error</h2>
+  <div class="box warn"><ul>
+    <li><code>except Exception: pass</code> is like taking the battery out of a smoke alarm.</li>
+    <li>The real problem disappears and shows up later, in another line, with a confusing message (we will cause an <code>UnboundLocalError</code> on purpose).</li>
+    <li>Handle it (safe answer plus a log line), or let it travel up. Use <code>logger.exception</code> to keep the traceback.</li>
+  </ul></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">From Another Language</div>
+  <h2>Bridge</h2>
+  <div class="grid">
+    <div class="card"><h3>raise / except</h3><p>C# <code>throw</code> and <code>try / catch</code>. Java is similar, but it has checked exceptions.</p></div>
+    <div class="card"><h3>Levels</h3><p>Same ideas as C# <code>ILogger</code>: LogDebug, LogInformation, LogWarning, LogError.</p></div>
+    <div class="card"><h3>No checked exceptions</h3><p>Nothing forces you to catch in Python. You have to choose to.</p></div>
+    <div class="card"><h3>Specific is better</h3><p>Catch the error you expect, like <code>ValueError</code>, not <code>Exception</code>.</p></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Hands-On</div>
+  <h2>~30 minutes in the repo</h2>
+  <ul>
+    <li><code>errors_demo.py</code>: copy, run, and match the output</li>
+    <li>Switch the level to DEBUG and predict the new lines</li>
+    <li>Swallow the error on purpose and read the result</li>
+    <li>Your turn: write <code>safe_top_k</code> and test <code>"5"</code>, <code>"abc"</code>, <code>"99"</code>, then commit</li>
+  </ul>
+</div>
+
+<div class="slide">
+  <div class="kicker">Capstone Tie-In</div>
+  <h2>Where this goes</h2>
+  <div class="box cap">Model calls will time out and hit rate limits. The service has to fail clearly, say what went wrong, and leave a log line for every call. FastAPI will use this habit for error responses.</div>
+  <div class="badge" style="margin-top:1.2rem;">Next: tests</div>
+</div>
+
+</div>
+
+<div class="clickzone left" onclick="go(-1)"></div>
+<div class="clickzone right" onclick="go(1)"></div>
+<div class="footer-title">Day 4 &middot; Errors and logging</div>
+<div class="nav">
+  <button onclick="go(-1)">&larr;</button>
+  <span id="counter">1 / N</span>
+  <button onclick="go(1)">&rarr;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let i = 0;
+  function render() {
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    document.getElementById('counter').textContent = (i+1) + ' / ' + slides.length;
+    document.getElementById('bar').style.width = ((i+1)/slides.length*100) + '%';
+  }
+  function go(delta) {
+    i = Math.max(0, Math.min(slides.length - 1, i + delta));
+    render();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'h' || e.key === 'H') { location.href = '../index.html'; return; }
+    if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) go(1);
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) go(-1);
+  });
+  render();
+</script>
+</body>
+</html>

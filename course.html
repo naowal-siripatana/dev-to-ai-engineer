@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Course Outline - Dev to AI Engineer in 6 months</title>
+<meta name="description" content="A free 6-month learn-along for developers: 176 days, 13 levels and one real project, an AI knowledge assistant, built in public.">
+<meta property="og:title" content="Course Outline - Dev to AI Engineer in 6 months"><meta property="og:image" content="og.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--cream:#FFF1E2;--card:#FFF9F2;--peach:#FFE9D2;--ink:#3A2450;--muted:#6B5680;--line:#E3C3A5;--outline:#1C1430;--coral-d:#D9472A;--honey:#FFC15E;--mint:#7FE0C2;--mint-d:#17806A;--px:'Pixelify Sans',monospace;--body:'Nunito',system-ui,sans-serif}
+*{box-sizing:border-box;margin:0}
+body{font-family:var(--body);color:var(--ink);line-height:1.6;background:linear-gradient(180deg,#2A1F45 0%,#4B3873 25%,#B77C9E 70%,#FFC4A3 100%) fixed}
+a{color:var(--mint-d);font-weight:700}
+.top{display:flex;gap:10px;flex-wrap:wrap;padding:14px max(16px,4vw)}
+.btn{font-family:var(--px);font-weight:600;color:var(--ink);background:var(--mint);border:3px solid var(--outline);border-radius:12px;padding:0 16px;min-height:44px;display:inline-flex;align-items:center;box-shadow:0 4px 0 var(--outline);text-decoration:none}
+.btn.sec{background:var(--cream)}
+main{max-width:980px;margin:0 auto;padding:6px max(16px,4vw) 60px}
+.hero{color:var(--cream);margin:8px 0 20px}
+.kicker{font-family:var(--px);color:var(--mint);letter-spacing:.2em;font-size:.85rem;font-weight:700}
+h1{font-family:var(--px);font-size:clamp(2rem,6vw,3.3rem);line-height:1.08;margin:.3rem 0 .6rem;text-shadow:4px 4px 0 #1C1430aa}
+.lead{font-size:1.15rem;max-width:44em;margin-bottom:14px}
+.meta{display:flex;gap:8px;flex-wrap:wrap}
+.meta span{font-family:var(--px);font-size:.85rem;background:#1C1430aa;border:2px solid #ffffff44;border-radius:99px;padding:3px 14px;color:var(--cream)}
+.goal{background:var(--card);border:3px solid var(--outline);border-left:10px solid var(--honey);border-radius:14px;box-shadow:5px 5px 0 var(--outline);padding:14px 18px;margin-bottom:18px;font-weight:800;font-size:1.05rem}
+section{background:#FFF9F2f7;border:3px solid var(--outline);border-radius:16px;box-shadow:6px 6px 0 var(--outline);padding:clamp(16px,3vw,26px);margin-bottom:18px}
+h2{font-family:var(--px);font-size:1.4rem;color:var(--coral-d);margin-bottom:10px}
+h3{font-family:var(--px);font-size:1.05rem;margin:2px 0 4px}
+p{margin:0 0 10px}ul,ol{margin:0 0 10px;padding-left:1.3em}li{margin-bottom:6px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:var(--peach);border:2px solid var(--line);border-radius:12px;padding:12px 16px}
+.ticks{list-style:none;padding:0}.ticks li{padding-left:1.7em;position:relative}.ticks li:before{content:"\2714";position:absolute;left:0;color:var(--mint-d);font-weight:800}
+.phs{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.ph{background:var(--peach);border:3px solid var(--outline);border-top:12px solid var(--c);border-radius:12px;padding:10px 12px;box-shadow:4px 4px 0 var(--outline)}
+.ph b{font-family:var(--px);font-size:.8rem;color:var(--muted)}.ph p{font-size:.9rem;margin:4px 0}.ph span{font-family:var(--px);font-size:.78rem;color:var(--muted)}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.93rem}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--px);color:var(--muted);font-size:.8rem}
+tr.phrow th{background:var(--c);color:var(--outline);font-size:.95rem;border-radius:6px}
+td.lv{font-family:var(--px);font-size:1.3rem;color:var(--coral-d)}small{color:var(--muted)}
+pre{background:#2A1F45;color:#FFF1E2;border:3px solid var(--outline);border-radius:10px;padding:12px 14px;overflow-x:auto;font-size:.85rem;margin:8px 0 12px}
+code{font-family:"SF Mono",Menlo,Consolas,monospace}
+details{background:var(--cream);border:2px solid var(--line);border-radius:10px;padding:8px 12px;margin:8px 0}summary{cursor:pointer;font-weight:800}
+.cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.steps{counter-reset:s;list-style:none;padding:0}.steps li{counter-increment:s;padding-left:2.4em;position:relative;margin-bottom:10px}
+.steps li:before{content:counter(s);position:absolute;left:0;top:0;width:1.8em;height:1.8em;border-radius:50%;background:var(--honey);border:2px solid var(--outline);font-family:var(--px);display:flex;align-items:center;justify-content:center}
+footer{max-width:980px;margin:0 auto;padding:0 max(16px,4vw) 40px;color:var(--cream);display:flex;gap:16px;flex-wrap:wrap}footer a{color:var(--mint)}
+@media (max-width:760px){.two,.phs{grid-template-columns:1fr}}
+</style></head><body>
+<div class="top"><a class="btn sec" href="index.html">&#9664; Map</a><a class="btn sec" href="learn.html">My Learning</a></div>
+<main>
+<div class="hero"><div class="kicker">COURSE OUTLINE</div><h1>Dev to AI Engineer<br>in 6 months</h1>
+<p class="lead">A free, hands-on learn-along for developers. One real project, 13 levels, one small win a day. Built in public by Naowal, a learning designer who is learning with you.</p>
+<div class="meta"><span>176 days</span><span>13 levels</span><span>1 real project</span><span>about 10 h a week</span><span>2 videos a week</span><span>free</span></div></div>
+<div class="goal">By the end you will have built and deployed an AI knowledge assistant, and you will be able to explain how every part of it works.</div>
+
+<section><h2>Who it is for</h2><div class="two"><div class="card"><h3>This is for you if</h3><ul class="ticks"><li>You can write code in any language (C#, Java, JavaScript, Python...).</li><li>You want to build AI features, not just use chat tools.</li><li>You can give about 10 hours a week, and you like to learn by doing.</li><li>You want a project you can show, not a pile of exercises.</li></ul></div>
+<div class="card"><h3>You do not need</h3><ul><li>A maths or machine learning background.</li><li>Python experience (we start from zero in Python).</li><li>A GPU, or any paid tool to start. Day 0 is free.</li><li>To finish in exactly 6 months. The plan waits for you.</li></ul></div></div></section>
+
+<section><h2>What you will be able to do</h2><ol><li>Write clean, typed, tested Python and set up a project the way a professional does.</li><li>Build a FastAPI service that calls an LLM, with validation and logging.</li><li>Explain tokens, context windows and embeddings in plain words.</li><li>Build RAG on PostgreSQL with pgvector, with answers that cite their sources.</li><li>Give an assistant tools (function calling and MCP) and a simple agent loop.</li><li>Measure quality with a golden question set instead of feelings.</li><li>Spot prompt injection and add guardrails and audit logs.</li><li>Operate and deploy it: tracing, a cost dashboard, Docker Compose and CI.</li></ol></section>
+
+<section><h2>The one project</h2>
+<p>You do not build 13 small demos. You build <strong>one</strong> project, <code>ai-knowledge-assistant</code>: a tool that answers questions about a private knowledge base (manuals, FAQs, error codes) and cites its sources. It grows a little every Saturday.</p>
+<pre><code>User
+  |
+React chat UI
+  |
+ASP.NET Core Web API  (optional business layer)
+  |
+Python FastAPI AI service  ->  RAG pipeline  ->  LLM
+  |                                  |
+PostgreSQL (app data)        PostgreSQL + pgvector</code></pre>
+<p>Added later: guardrails, evaluation, tracing and a cost dashboard, then Docker Compose and CI. One stack for 6 months: Python, FastAPI, PostgreSQL, React, ASP.NET Core, Docker, GitHub Actions.</p></section>
+
+<section><h2>The 13 levels in 4 phases</h2><div class="phs"><div class="ph" style="--c:#7FE0C2"><b>Phase 1</b><h3>Build the backend</h3><p>Python and FastAPI: a tested service that calls an LLM.</p><span>Days 1 to 16 &middot; Levels 1-2</span></div><div class="ph" style="--c:#C9BCEF"><b>Phase 2</b><h3>Understand the model</h3><p>Tokens, embeddings, LLM apps and prompting, so you know what the API is doing.</p><span>Days 17 to 58 &middot; Levels 3-5</span></div><div class="ph" style="--c:#FFC15E"><b>Phase 3</b><h3>Make it smart and measurable</h3><p>RAG, tools and agents, then evaluation so quality is measured.</p><span>Days 59 to 107 &middot; Levels 6-8</span></div><div class="ph" style="--c:#FF6B4A"><b>Phase 4</b><h3>Make it production-ready</h3><p>AI-assisted engineering, design decisions, security, operations and deployment.</p><span>Days 108 to 174 &middot; Levels 9-13</span></div></div>
+<div class="tbl"><table><thead><tr><th>Level</th><th>Topic and days</th><th>You learn to</th><th>You ship</th></tr></thead><tbody><tr class="phrow" style="--c:#7FE0C2"><th colspan="4">Phase 1: Build the backend</th></tr><tr><td class="lv"><b>1</b></td><td><strong>Python &amp; Software Engineering for AI</strong><br><small>Days 1-2</small></td><td>Write clean, typed, tested Python and set up a project the way a professional does.</td><td>A uv-managed Python package with tests, logging and Git history: the skeleton of the AI service.</td></tr><tr><td class="lv"><b>2</b></td><td><strong>AI Backend Development</strong><br><small>Days 3-16</small></td><td>Build and test a FastAPI service that calls an LLM.</td><td>POST /api/chat, /api/summarize and /api/extract: validated, logged, documented, on GitHub.</td></tr><tr class="phrow" style="--c:#C9BCEF"><th colspan="4">Phase 2: Understand the model</th></tr><tr><td class="lv"><b>3</b></td><td><strong>Data, Machine Learning &amp; LLM Foundations</strong><br><small>Days 17-37</small></td><td>Explain tokens, context windows, embeddings and attention in plain language.</td><td>Two short design notes: how tokens limit the assistant, and why embeddings beat keyword search.</td></tr><tr><td class="lv"><b>4</b></td><td><strong>Building Applications with LLMs</strong><br><small>Days 38-51</small></td><td>Make LLM calls reliable: structured output, streaming, retries and rate limits.</td><td>Structured JSON answers (answer, sources, confidence) with streaming, retries and basic rate limiting.</td></tr><tr><td class="lv"><b>5</b></td><td><strong>Prompt, Context &amp; Harness Engineering</strong><br><small>Days 52-58</small></td><td>Design prompts and context so the assistant cites sources and admits when it does not know.</td><td>A rewritten system prompt with few-shot examples and a before/after comparison.</td></tr><tr class="phrow" style="--c:#FFC15E"><th colspan="4">Phase 3: Make it smart and measurable</th></tr><tr><td class="lv"><b>6</b></td><td><strong>Grounding Models with Data &amp; RAG</strong><br><small>Days 59-79</small></td><td>Build retrieval-augmented generation on PostgreSQL with pgvector.</td><td>A pipeline that chunks a mock knowledge base, embeds it, retrieves the top results and answers with citations.</td></tr><tr><td class="lv"><b>7</b></td><td><strong>Tool Calling, MCP &amp; Agentic Systems</strong><br><small>Days 80-100</small></td><td>Let the model act: call tools, and expose them over MCP.</td><td>One real tool (look up an error code) through function calling, optionally as a minimal MCP server.</td></tr><tr><td class="lv"><b>8</b></td><td><strong>Evaluation-Driven AI Development</strong><br><small>Days 101-107</small></td><td>Measure quality with data instead of feelings.</td><td>15-20 golden questions and a script that scores the pipeline.</td></tr><tr class="phrow" style="--c:#FF6B4A"><th colspan="4">Phase 4: Make it production-ready</th></tr><tr><td class="lv"><b>9</b></td><td><strong>Coding Agents &amp; AI-Assisted Software Engineering</strong><br><small>Days 108-114</small></td><td>Use AI coding agents deliberately and safely on a real repository.</td><td>An AGENTS.md / CLAUDE.md, plus one real feature built with an agent and reviewed like a pull request.</td></tr><tr><td class="lv"><b>10</b></td><td><strong>Shaping the Build &amp; AI System Design</strong><br><small>Days 115-121</small></td><td>Frame a problem and justify design decisions.</td><td>One architecture decision record: why RAG, why pgvector, and one thing deliberately not built.</td></tr><tr><td class="lv"><b>11</b></td><td><strong>AI Security, Guardrails &amp; Governance</strong><br><small>Days 122-128</small></td><td>Spot and block prompt injection, data leakage and tool abuse.</td><td>An allow-list guardrail for tool calls and an audit log of questions, sources and tool calls.</td></tr><tr><td class="lv"><b>12</b></td><td><strong>LLMOps &amp; Operating AI Systems in Production</strong><br><small>Days 129-142</small></td><td>Operate an AI system in production: tracing, cost, latency and feedback.</td><td>A dashboard with question count, success rate, response time, AI cost and failed queries.</td></tr><tr><td class="lv"><b>13</b></td><td><strong>Production Deployment, AI Infrastructure &amp; Model Serving</strong><br><small>Days 143-174</small></td><td>Package and deploy the whole system.</td><td>One command (docker compose up) for React, ASP.NET Core, Python AI and PostgreSQL, plus a CI workflow.</td></tr></tbody></table></div>
+<p style="margin-top:10px"><small>Days 175-176 are the final demo weekend: run the whole project, record the demo, and look back at the 6 months. Days count from the day you sign in; the map shows the calendar dates.</small></p></section>
+
+<section><h2>How a week works</h2><div class="two"><div class="tbl"><table><thead><tr><th>Day</th><th>What you do</th><th>Time</th></tr></thead><tbody><tr><td><b>Mon</b></td><td>Lesson 1</td><td>60 min</td></tr><tr><td><b>Tue</b></td><td>Class day or study block</td><td>as you can</td></tr><tr><td><b>Wed</b></td><td>Lesson 2</td><td>60 min</td></tr><tr><td><b>Thu</b></td><td>Mixed practice and the Concept video</td><td>30 min</td></tr><tr><td><b>Fri</b></td><td>Teach-back: explain it in 60 seconds</td><td>30 min</td></tr><tr><td><b>Sat</b></td><td>Project Lab on the one project</td><td>2.5 h</td></tr><tr><td><b>Sun</b></td><td>Review, error log, plan next week</td><td>75 min</td></tr></tbody></table></div>
+<div><h3>How a lesson works</h3><ul><li><strong>Warm-up:</strong> two questions from earlier days, from memory.</li><li><strong>Hook and the idea:</strong> at most 3 small ideas, each with an example.</li><li><strong>Worked example:</strong> a finished example with its real output.</li><li><strong>Try it:</strong> 4 steps, from copy-and-run to your own version. One step breaks the code on purpose.</li><li><strong>Stuck? Check yourself:</strong> hints, then the solution; 3 questions to answer in your own words.</li><li><strong>Tick the checklist:</strong> the next Day unlocks.</li></ul>
+<p><small>Built on retrieval practice, spaced review, worked examples and learning by doing.</small></p></div></div></section>
+
+<section><h2>Videos: 2 a week</h2><div class="two"><div class="card"><h3>Thursday: Concept</h3><p>5 to 8 minutes on the idea of the week, with slides, editor and terminal.</p></div><div class="card"><h3>Monday: Build</h3><p>8 to 12 minutes of the Saturday lab: what I built, what broke, and what I changed.</p></div></div>
+<p style="margin-top:10px">New videos on YouTube at 19:00 (Bangkok time). Watch first, then do the day, or do the day first and watch to compare.</p></section>
+
+<section><h2>The 6 months at a glance</h2><div class="tbl"><table><thead><tr><th>Month</th><th>Focus</th></tr></thead><tbody>
+<tr><td><b>Oct</b></td><td>Python, project setup, a FastAPI service that calls an LLM</td></tr>
+<tr><td><b>Nov</b></td><td>How models work, LLM apps (structured output, streaming, retries), prompts and context</td></tr>
+<tr><td><b>Dec</b></td><td>RAG with pgvector, then tool calling</td></tr>
+<tr><td><b>Jan</b></td><td>MCP and agents, evaluation, coding agents, design decisions</td></tr>
+<tr><td><b>Feb</b></td><td>Security and guardrails, tracing and cost, Docker</td></tr>
+<tr><td><b>Mar</b></td><td>CI, local models, polish, final demo</td></tr></tbody></table></div></section>
+
+<section><h2>What you need</h2><ul><li>A laptop (Mac, Windows or Linux) and about 10 hours a week.</li><li>A free GitHub account, Git, Visual Studio Code (or your favourite editor), and uv. Day 0 walks you through them in 30 minutes.</li><li>Some labs call an LLM API that may cost a little. Each lab says what it needs.</li></ul>
+<p><strong>What this is not:</strong> a certificate programme, a job guarantee, or a replacement for a degree. It is a clear path, a real project, and company while you build it.</p></section>
+
+<section><h2>Questions</h2><details><summary>Can I join late?</summary><p>Yes. Sign in and your plan is counted from the day you sign in. Start with Day 0, then Day 1. You can watch the videos in any order, but the checklists work best in order.</p></details><details><summary>Do I need an AI or maths background?</summary><p>No. You need to be able to write code in any language. We start with Python from the first lesson.</p></details><details><summary>Is it really free?</summary><p>Yes. The lessons, slides, checklists and videos are free. Some labs call an LLM API that may cost a little. Each lab says what it needs.</p></details><details><summary>What if I fall behind?</summary><p>Nothing breaks. The next Day unlocks when you finish the checklist, not when the date arrives. Every Sunday has a catch-up slot, and a missed day never moves the next week.</p></details><details><summary>Do I need to know C# or .NET?</summary><p>No. The project has an ASP.NET Core layer in front of the Python AI service, and that layer is optional. You can follow every level with the Python service alone.</p></details><details><summary>Will I get a certificate or a job?</summary><p>No certificate and no promise of a job. You get one real project you can run, explain and show, and a public record of your work.</p></details><details><summary>Who is teaching?</summary><p>Nobody is a teacher here. Naowal is a learning designer and software developer who is doing the same journey in public, one day ahead of you, mistakes included.</p></details></section>
+
+<section><h2>How to join</h2><ol class="steps"><li>Open the <a href="index.html">map</a> and sign in with Google. Your plan is counted from the day you sign in.</li><li>Do <strong>Day 0</strong>: set up your tools (30 minutes).</li><li>Do Day 1, tick the checklist, and the next Day unlocks.</li><li>Follow the <a href="https://www.youtube.com/@naowal?sub_confirmation=1">YouTube channel</a>, and comment on a video with where you are. I read every comment.</li></ol>
+<div class="cta"><a class="btn" href="index.html">Start on the map</a><a class="btn sec" href="https://www.youtube.com/@naowal?sub_confirmation=1">Subscribe on YouTube</a></div></section>
+</main>
+<footer><a href="index.html">Map</a><a href="learn.html">My Learning</a><a href="privacy.html">Privacy</a></footer>
+</body></html>

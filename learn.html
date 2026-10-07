@@ -90,175 +90,209 @@
 
 <script>
 const CURRICULUM = {
-  "days": [
+ "days": [
+  {
+   "id": 0,
+   "gate": false,
+   "title": "Setup: get your tools ready",
+   "summary": "Do this once, before Day 1. Everything here is free and takes about 30 minutes. Sign in first (you already have), so your checklist is saved while you tick each step. This day does not lock anything: if you already have the tools, tick them and move on.",
+   "slides": "slides/day-00-setup.html",
+   "items": [
     {
-      "id": 0,
-      "gate": false,
-      "title": "Setup: get your tools ready",
-      "summary": "Do this once, before Day 1. Everything here is free and takes about 30 minutes. Sign in first (you already have), so your checklist is saved while you tick each step. This day does not lock anything: if you already have the tools, tick them and move on.",
-      "slides": "slides/day-00-setup.html",
-      "items": [
-        {
-          "id": "signin",
-          "text": "Sign in on this page and bookmark it, so your progress is saved"
-        },
-        {
-          "id": "github",
-          "text": "Create a free GitHub account",
-          "link": {
-            "text": "github.com/signup",
-            "url": "https://github.com/signup"
-          }
-        },
-        {
-          "id": "git",
-          "text": "Install Git, then open a terminal and run git --version",
-          "link": {
-            "text": "git-scm.com/downloads",
-            "url": "https://git-scm.com/downloads"
-          }
-        },
-        {
-          "id": "editor",
-          "text": "Install Visual Studio Code (or the editor you like best)",
-          "link": {
-            "text": "code.visualstudio.com",
-            "url": "https://code.visualstudio.com/"
-          }
-        },
-        {
-          "id": "uv",
-          "text": "Install uv, then run uv --version (uv can install Python for you)",
-          "link": {
-            "text": "uv installation guide",
-            "url": "https://docs.astral.sh/uv/getting-started/installation/"
-          }
-        },
-        {
-          "id": "python",
-          "text": "Run uv python install 3.12, then uv run --python 3.12 python --version"
-        },
-        {
-          "id": "folder",
-          "text": "Create a folder for your work, open it in your editor, and open a terminal inside it"
-        }
-      ]
+     "id": "signin",
+     "text": "Sign in on this page and bookmark it, so your progress is saved"
     },
     {
-      "id": 1,
-      "title": "Python type hints",
-      "summary": "Type hints describe what a function takes and returns. Python does not check them while the program runs: your editor and tools like mypy read them. Checking at runtime needs validation (Pydantic, Day 3).",
-      "slides": "slides/day-01-python-fundamentals-and-type-hints.html",
-      "items": [
-        {
-          "id": "read",
-          "text": "Read the Day 1 lesson (hook, three pieces, worked example)"
-        },
-        {
-          "id": "code",
-          "text": "Step 1: copy practice_types.py, run it, and match the expected output"
-        },
-        {
-          "id": "change",
-          "text": "Step 2: change n to 3 and predict the result before you run it"
-        },
-        {
-          "id": "wrong",
-          "text": "Step 3: run broken.py (a wrong-typed call) and note what happens"
-        },
-        {
-          "id": "mypy",
-          "text": "Step 3: run mypy and read one error message"
-        },
-        {
-          "id": "yours",
-          "text": "Step 4: write shout(text, times) with type hints and test it"
-        },
-        {
-          "id": "sentence",
-          "text": "Write one sentence in your own words: what does a type hint guarantee in Python?"
-        }
-      ],
-      "lesson": "lessons/day-01.html",
-      "goal": "Write a typed Python function, and explain what a type hint does and does not do."
+     "id": "github",
+     "text": "Create a free GitHub account",
+     "link": {
+      "text": "github.com/signup",
+      "url": "https://github.com/signup"
+     }
     },
     {
-      "id": 2,
-      "title": "Project setup with uv",
-      "summary": "uv creates the project, the virtual environment and the dependency lock file in one tool. A src-layout keeps your package importable only when installed, which catches path bugs early. pyproject.toml is the single file that describes your project.",
-      "slides": null,
-      "items": [
-        {
-          "id": "read",
-          "text": "Read the Day 2 lesson (hook, three pieces, worked example)"
-        },
-        {
-          "id": "warm",
-          "text": "Answer the two warm-up questions from memory"
-        },
-        {
-          "id": "init",
-          "text": "Step 1: create the project with uv init --package --lib, then run the import check (imported ok)"
-        },
-        {
-          "id": "module",
-          "text": "Step 2: add documents.py, predict preview(d, 3), then run it"
-        },
-        {
-          "id": "break",
-          "text": "Step 3: cause a ModuleNotFoundError on purpose and read the message"
-        },
-        {
-          "id": "yours",
-          "text": "Step 4: write reading_minutes and test it (400 words gives 2.0)"
-        },
-        {
-          "id": "git",
-          "text": "Make your first Git commit and add a Status line to the README"
-        }
-      ],
-      "lesson": "lessons/day-02.html",
-      "goal": "Create a Python project with uv, add a typed module, run it, and make your first Git commit."
+     "id": "git",
+     "text": "Install Git, then open a terminal and run git --version",
+     "link": {
+      "text": "git-scm.com/downloads",
+      "url": "https://git-scm.com/downloads"
+     }
     },
     {
-      "id": 3,
-      "title": "async/await and Pydantic",
-      "summary": "An AI call spends most of its time waiting. async lets Python do other work while it waits, so three one-second calls can finish in about one second with asyncio.gather. Pydantic turns type hints into real runtime checks and raises a ValidationError on bad data.",
-      "slides": "slides/day-03-async-and-pydantic.html",
-      "items": [
-        {
-          "id": "read",
-          "text": "Read the Day 3 lesson (hook, three pieces, worked example)"
-        },
-        {
-          "id": "gather",
-          "text": "Step 1: run async_demo.py with asyncio.gather (about 1 second)"
-        },
-        {
-          "id": "sequential",
-          "text": "Step 2: change it to three sequential awaits, predict the time, then run it (about 3 seconds)"
-        },
-        {
-          "id": "model",
-          "text": "Step 3: uv add pydantic, run schemas.py, and read the ValidationError"
-        },
-        {
-          "id": "break",
-          "text": "Step 4: forget the await on purpose and read the warning"
-        },
-        {
-          "id": "yours",
-          "text": "Step 5: add a temperature field (0 to 1) to ChatRequest and test 1.5"
-        },
-        {
-          "id": "commit",
-          "text": "Commit your work with Git"
-        }
-      ],
-      "lesson": "lessons/day-03.html",
-      "goal": "Make three slow calls finish in about one second with asyncio.gather, and validate data with a Pydantic model."
+     "id": "editor",
+     "text": "Install Visual Studio Code (or the editor you like best)",
+     "link": {
+      "text": "code.visualstudio.com",
+      "url": "https://code.visualstudio.com/"
+     }
+    },
+    {
+     "id": "uv",
+     "text": "Install uv, then run uv --version (uv can install Python for you)",
+     "link": {
+      "text": "uv installation guide",
+      "url": "https://docs.astral.sh/uv/getting-started/installation/"
+     }
+    },
+    {
+     "id": "python",
+     "text": "Run uv python install 3.12, then uv run --python 3.12 python --version"
+    },
+    {
+     "id": "folder",
+     "text": "Create a folder for your work, open it in your editor, and open a terminal inside it"
     }
-  ]
+   ]
+  },
+  {
+   "id": 1,
+   "title": "Python type hints",
+   "summary": "Type hints describe what a function takes and returns. Python does not check them while the program runs: your editor and tools like mypy read them. Checking at runtime needs validation (Pydantic, Day 3).",
+   "slides": "slides/day-01-python-fundamentals-and-type-hints.html",
+   "items": [
+    {
+     "id": "read",
+     "text": "Read the Day 1 lesson (hook, three pieces, worked example)"
+    },
+    {
+     "id": "code",
+     "text": "Step 1: copy practice_types.py, run it, and match the expected output"
+    },
+    {
+     "id": "change",
+     "text": "Step 2: change n to 3 and predict the result before you run it"
+    },
+    {
+     "id": "wrong",
+     "text": "Step 3: run broken.py (a wrong-typed call) and note what happens"
+    },
+    {
+     "id": "mypy",
+     "text": "Step 3: run mypy and read one error message"
+    },
+    {
+     "id": "yours",
+     "text": "Step 4: write shout(text, times) with type hints and test it"
+    },
+    {
+     "id": "sentence",
+     "text": "Write one sentence in your own words: what does a type hint guarantee in Python?"
+    }
+   ],
+   "lesson": "lessons/day-01.html",
+   "goal": "Write a typed Python function, and explain what a type hint does and does not do."
+  },
+  {
+   "id": 2,
+   "title": "Project setup with uv",
+   "summary": "uv creates the project, the virtual environment and the dependency lock file in one tool. A src-layout keeps your package importable only when installed, which catches path bugs early. pyproject.toml is the single file that describes your project.",
+   "slides": null,
+   "items": [
+    {
+     "id": "read",
+     "text": "Read the Day 2 lesson (hook, three pieces, worked example)"
+    },
+    {
+     "id": "warm",
+     "text": "Answer the two warm-up questions from memory"
+    },
+    {
+     "id": "init",
+     "text": "Step 1: create the project with uv init --package --lib, then run the import check (imported ok)"
+    },
+    {
+     "id": "module",
+     "text": "Step 2: add documents.py, predict preview(d, 3), then run it"
+    },
+    {
+     "id": "break",
+     "text": "Step 3: cause a ModuleNotFoundError on purpose and read the message"
+    },
+    {
+     "id": "yours",
+     "text": "Step 4: write reading_minutes and test it (400 words gives 2.0)"
+    },
+    {
+     "id": "git",
+     "text": "Make your first Git commit and add a Status line to the README"
+    }
+   ],
+   "lesson": "lessons/day-02.html",
+   "goal": "Create a Python project with uv, add a typed module, run it, and make your first Git commit."
+  },
+  {
+   "id": 3,
+   "title": "async/await and Pydantic",
+   "summary": "An AI call spends most of its time waiting. async lets Python do other work while it waits, so three one-second calls can finish in about one second with asyncio.gather. Pydantic turns type hints into real runtime checks and raises a ValidationError on bad data.",
+   "slides": "slides/day-03-async-and-pydantic.html",
+   "items": [
+    {
+     "id": "read",
+     "text": "Read the Day 3 lesson (hook, three pieces, worked example)"
+    },
+    {
+     "id": "gather",
+     "text": "Step 1: run async_demo.py with asyncio.gather (about 1 second)"
+    },
+    {
+     "id": "sequential",
+     "text": "Step 2: change it to three sequential awaits, predict the time, then run it (about 3 seconds)"
+    },
+    {
+     "id": "model",
+     "text": "Step 3: uv add pydantic, run schemas.py, and read the ValidationError"
+    },
+    {
+     "id": "break",
+     "text": "Step 4: forget the await on purpose and read the warning"
+    },
+    {
+     "id": "yours",
+     "text": "Step 5: add a temperature field (0 to 1) to ChatRequest and test 1.5"
+    },
+    {
+     "id": "commit",
+     "text": "Commit your work with Git"
+    }
+   ],
+   "lesson": "lessons/day-03.html",
+   "goal": "Make three slow calls finish in about one second with asyncio.gather, and validate data with a Pydantic model."
+  },
+  {
+   "id": 4,
+   "title": "Errors and logging",
+   "summary": "When something goes wrong, your code should fail loudly and clearly. You raise a specific error, catch only that one, and write log messages at the right level (DEBUG, INFO, WARNING, ERROR) instead of print. Swallowing an error hides the real problem and costs you later.",
+   "slides": "slides/day-04-errors-and-logging.html",
+   "items": [
+    {
+     "id": "read",
+     "text": "Answer the two warm-up questions from memory, then guess the hook"
+    },
+    {
+     "id": "run",
+     "text": "Step 1: run errors_demo.py and match the output"
+    },
+    {
+     "id": "debug",
+     "text": "Step 2: set the level to DEBUG, predict the new lines, then run it"
+    },
+    {
+     "id": "swallow",
+     "text": "Step 3: swallow the error with except Exception: pass and read the confusing result"
+    },
+    {
+     "id": "yours",
+     "text": "Step 4: write safe_top_k and test it with 5, abc and 99"
+    },
+    {
+     "id": "commit",
+     "text": "Commit your work with Git"
+    }
+   ],
+   "lesson": "lessons/day-04.html",
+   "goal": "Make a failed lookup leave a clear log line instead of silence."
+  }
+ ]
 };
 const CFG = window.APP_CONFIG || {};
 const $ = id => document.getElementById(id);
