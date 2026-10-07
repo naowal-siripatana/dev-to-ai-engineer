@@ -146,7 +146,7 @@ print(shout(&quot;hello&quot;, 2))</code></pre><div class="out"><b>You should se
 <ol><li>What does a type hint guarantee while the program runs?</li><li>In Step 3, why did <code>find_user(users, 1)</code> print <code>None</code> instead of failing?</li><li>Which tool would have caught the mistake before you ran the program?</li></ol>
 <details><summary>Answers</summary><ol><li>Nothing. Python ignores hints at runtime; they are for you, your editor and tools like mypy.</li><li>Because <code>dict.get</code> returns <code>None</code> when the key is missing, and the integer <code>1</code> is not the key <code>"1"</code>. Python never checked that the key was supposed to be a string.</li><li><code>mypy</code> (or an editor that reads type hints).</li></ol></details></section>
 
-<section id="game" class="game"><h2><span class="n">+</span> &middot; Bonus game: Sticky Note Sorter <span class="t">5 min, optional</span></h2>
+<section id="game" class="game"><h2><span class="n">+</span> &middot; Game: Sticky Note Sorter <span class="t">5 min</span></h2>
 <style>
 .game .gbox{background:#2A1F45;color:#FFF1E2;border:3px solid var(--outline);border-radius:14px;padding:14px 16px;box-shadow:4px 4px 0 var(--outline)}
 .game .gtop{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-family:var(--px);font-size:.85rem;margin-bottom:8px}
@@ -218,7 +218,7 @@ $("gq2").addEventListener("click",function(ev){var t=ev.target.closest("button")
 $("gnext").addEventListener("click",function(){if(i===order.length-1){finish()}else{i++;show()}});
 })();
 </script>
-<p><small>Tip for today&rsquo;s checklist: this game is a bonus, so it is not a checklist item. If you score under 10, read &ldquo;Piece 2&rdquo; again and replay: the rounds are shuffled.</small></p></section>
+<p><small>Tick &ldquo;Play the Sticky Note Sorter game&rdquo; on My Learning when you reach the end. Any score counts. If you score under 10, read &ldquo;Piece 2&rdquo; again and replay: the rounds are shuffled.</small></p></section>
 
 <section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2>
 <p><strong>You made:</strong> typed functions, saw Python ignore a wrong type, and made <code>mypy</code> catch it. That is a real skill.</p>
