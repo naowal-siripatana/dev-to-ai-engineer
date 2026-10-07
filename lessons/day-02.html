@@ -127,6 +127,61 @@ git commit -m &quot;First commit&quot;
 git log --oneline</code></pre><div class="out"><b>You should see</b><br>one line, like: <code>947c3d2 First commit</code> (your number will differ)</div><p>If Git asks who you are, run <code>git config --global user.name "Your Name"</code> and <code>git config --global user.email "you@example.com"</code>, then commit again.</p></section>
 <section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;command not found: uv&rdquo;</strong>: reopen the terminal, or redo the uv step of Day 0.</li><li><strong>ModuleNotFoundError on a correct name</strong>: run it with <code>uv run</code>, from the project folder.</li><li><strong>&ldquo;nothing to commit&rdquo;</strong>: you may have committed already. Run <code>git log --oneline</code>.</li><li><strong>Still stuck?</strong> Comment on the video with the exact message you see.</li></ul></section>
 <section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What is <code>pyproject.toml</code> for?</li><li>Why did <code>python3 -c &quot;import my_ai_project&quot;</code> fail, but <code>uv run python -c ...</code> worked?</li><li>Why put the code under <code>src/</code>?</li></ol><details><summary>Answers</summary><ol><li>It is the project&rsquo;s ID card: name, Python version, and packages.</li><li>Plain <code>python3</code> does not use the project&rsquo;s private environment, where your package is installed. <code>uv run</code> does.</li><li>The code is importable only after it is installed. That catches &ldquo;works only from this folder&rdquo; mistakes early and keeps source files apart from other files.</li></ol></details></section>
+<section id="game-day2" class="game"><h2><span class="n">+</span> &middot; Game: Project Doctor <span class="t">5 min</span></h2>
+<style>
+.game .gbox{background:#2A1F45;color:#FFF1E2;border:3px solid var(--outline);border-radius:14px;padding:14px 16px;box-shadow:4px 4px 0 var(--outline)}
+.game .gtop{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-family:var(--px);font-size:.85rem;margin-bottom:8px}
+.game .gtop span{background:#1C1430;border:2px solid #ffffff44;border-radius:99px;padding:1px 12px}
+.game pre{margin:6px 0 10px;font-size:.88rem;white-space:pre-wrap;word-break:break-word}
+.game .q{font-family:var(--px);margin:8px 0 8px}
+.game .choices{display:flex;gap:10px;flex-wrap:wrap}
+.game button{font-family:var(--px);font-weight:600;font-size:.95rem;color:var(--ink);background:var(--honey);border:3px solid var(--outline);border-radius:12px;padding:6px 16px;min-height:44px;cursor:pointer;box-shadow:0 4px 0 var(--outline);text-align:left}
+.game button:hover:not(:disabled){background:var(--mint)}
+.game button:disabled{cursor:default;opacity:.55;box-shadow:none}
+.game button.pick{opacity:1;background:var(--cream);outline:3px solid var(--mint)}
+.game button:focus-visible{outline:3px solid var(--coral-d);outline-offset:2px}
+.game .fb{background:var(--cream);color:var(--ink);border:2px solid var(--line);border-left:8px solid var(--mint);border-radius:10px;padding:10px 14px;margin-top:12px;font-size:.92rem}
+.game .fb.bad{border-left-color:#FF6B4A}
+.game .fb b{font-family:var(--px)}
+.game .fb code{display:block;margin:4px 0;white-space:pre-wrap}
+.game .dog{float:right;margin:0 0 6px 10px}
+.game .end h3{font-size:1.2rem;margin-bottom:4px}
+</style>
+<p><p>You are the project doctor. Each round shows a symptom from a real terminal. Pick the most likely cause or fix, then see the real output and why.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day2-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day2-play">Start the game</button></div>
+<div id="day2-round" hidden><div class="gtop"><span id="day2-num">Round 1</span><span id="day2-score">Score 0</span></div>
+<pre hidden><code id="day2-code"></code></pre><div class="q" id="day2-q"></div><div class="choices" id="day2-opts"></div>
+<div class="fb" id="day2-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day2-next" hidden>Next round</button></p></div>
+<div id="day2-end" class="end" hidden></div></div>
+<script>
+(function(){
+var K="day2",R=[{"c": "$ python3 -c \"import my_ai_project\"", "q": "You see this error. What is the most likely cause?", "o": ["You ran plain python3, which does not know the project's private toolbox", "The package name has a typo", "pyproject.toml is missing"], "a": 0, "out": "ModuleNotFoundError: No module named 'my_ai_project'", "why": "uv run uses the project's toolbox. Plain python3 does not."}, {"c": "$ uv run python -c \"from my_ai_project.document import Document\"", "q": "Your file is called documents.py. Which fix is right?", "o": ["Fix the typo: it is documents, not document", "Install the package again", "Delete uv.lock"], "a": 0, "out": "ModuleNotFoundError: No module named 'my_ai_project.document'", "why": "The module name must match the file name exactly."}, {"c": "$ uv --version", "q": "What do you try first?", "o": ["Close and reopen the terminal, or redo the uv step of Day 0", "Reinstall Python", "Run git init"], "a": 0, "out": "zsh:1: command not found: uv", "why": "A terminal opened before the install does not know about uv yet."}, {"c": "", "q": "Which file is the ID card of the project (its name, Python version and packages)?", "o": ["pyproject.toml", "README.md", ".gitignore"], "a": 0, "out": "", "why": "pyproject.toml is the project's ID card. README.md is words about the project, and .gitignore lists files Git should skip."}, {"c": "", "q": "In a src-layout, where does your code live?", "o": ["src/my_ai_project/", "Next to pyproject.toml", "Inside the .venv folder"], "a": 0, "out": "", "why": "Code is imported as a package, so an 'it only works from this folder' mistake shows up early."}, {"c": "$ git status", "q": "You wrote code, but Git says this. What happened?", "o": ["Your files were not saved, or you are in the wrong folder", "Git is broken", "uv deleted your files"], "a": 0, "out": "On branch main\nnothing to commit, working tree clean", "why": "Git only sees saved changes inside the repository folder."}],RANKS=["Apprentice", "Project mechanic", "Project doctor"],TAKE="A project is an ID card, a private toolbox and a src folder, and most beginner errors come from running things outside the toolbox.";
+var $=function(i){return document.getElementById(K+"-"+i)};
+var order,i,score;
+function shuffle(a){a=a.slice();for(var k=a.length-1;k>0;k--){var j=Math.floor(Math.random()*(k+1));var t=a[k];a[k]=a[j];a[j]=t}return a}
+function start(){order=shuffle(R);i=0;score=0;$("start").hidden=true;$("end").hidden=true;$("round").hidden=false;show()}
+function show(){var r=order[i];$("num").textContent="Round "+(i+1)+" / "+order.length;$("score").textContent="Score "+score+" / "+order.length;
+var c=$("code");if(r.c){c.textContent=r.c;c.parentNode.hidden=false}else{c.parentNode.hidden=true}
+$("q").textContent=r.q;var box=$("opts");box.textContent="";var opts=shuffle(r.o);
+opts.forEach(function(o){var b=document.createElement("button");b.type="button";b.textContent=o;b.addEventListener("click",function(){answer(o,b)});box.appendChild(b)});
+$("fb").hidden=true;$("next").hidden=true;box.querySelector("button").focus()}
+function answer(o,btn){var r=order[i],ok=(o===r.o[r.a]);var bs=$("opts").querySelectorAll("button");for(var k=0;k<bs.length;k++){bs[k].disabled=true}btn.classList.add("pick");if(ok)score++;
+var fb=$("fb");fb.className="fb"+(ok?"":" bad");fb.textContent="";
+var d=document.createElement("div");var b=document.createElement("b");b.textContent=ok?"Correct. ":"Not quite. ";d.appendChild(b);if(!ok){d.appendChild(document.createTextNode("The answer: "+r.o[r.a]))}fb.appendChild(d);
+if(r.out){var l=document.createElement("div");l.textContent="Real output:";fb.appendChild(l);var c=document.createElement("code");c.textContent=r.out;fb.appendChild(c)}
+var w=document.createElement("div");w.textContent=r.why;fb.appendChild(w);fb.hidden=false;
+$("score").textContent="Score "+score+" / "+order.length;var n=$("next");n.textContent=(i===order.length-1)?"See my result":"Next round";n.hidden=false;n.focus()}
+function finish(){$("round").hidden=true;var max=order.length,rank=score>=max-1?RANKS[2]:(score>=max-2?RANKS[1]:RANKS[0]);var best=score;
+try{var o=parseInt(localStorage.getItem("best-"+K)||"0",10);if(o>best)best=o;localStorage.setItem("best-"+K,String(best))}catch(e){}
+var e=$("end");e.textContent="";var h=document.createElement("h3");h.className="px";h.textContent="You scored "+score+" / "+max+": "+rank;e.appendChild(h);
+var p=document.createElement("p");p.textContent=TAKE+" Best score on this device: "+best+" / "+max+".";e.appendChild(p);
+var b=document.createElement("button");b.type="button";b.textContent="Play again";b.addEventListener("click",start);e.appendChild(b);e.hidden=false;b.focus()}
+$("play").addEventListener("click",start);
+$("next").addEventListener("click",function(){if(i===order.length-1){finish()}else{i++;show()}});
+})();
+</script>
+<p><small>Tick &ldquo;Play the Project Doctor game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
 <section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a real Python project with a typed module, and your first commit. This folder will grow all the way to the capstone.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 2 checklist. Finish all items to unlock Day 3.</li><li>Share one line in the comments: what was the most confusing part?</li><li><strong>Tomorrow:</strong> Day 3, async/await and Pydantic. Three slow calls in about one second, and data that refuses to be wrong.</li></ul></section>
 </main>
 <footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>

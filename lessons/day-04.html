@@ -131,6 +131,61 @@ for raw in [&quot;5&quot;, &quot;abc&quot;, &quot;99&quot;]:
 <p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Add error handling and logging examples"</code>.</p></section>
 <section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>I see no log lines</strong>: you forgot <code>logging.basicConfig(...)</code>, or the level is higher than the message. The default level hides <code>INFO</code> and <code>DEBUG</code>.</li><li><strong>The lines come in a different order</strong>: normal. Logs and <code>print</code> travel by different channels.</li><li><strong>The log line appears twice</strong>: you called <code>basicConfig</code> in two files. Call it once, at the start of the program.</li><li><strong>&ldquo;nothing to commit&rdquo;</strong>: you did not save the files, or you are in the wrong folder.</li></ul></section>
 <section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is <code>except Exception: pass</code> a bad idea?</li><li>When would you use <code>print</code>, and when <code>logging</code>?</li><li>A document is not found (expected) versus the database is down (unexpected). Which log level fits each?</li></ol><details><summary>Answers</summary><ol><li>It hides the real problem, so you see a confusing error later, or no error at all.</li><li><code>print</code> is for the person using the program. <code>logging</code> is for you, with levels you can turn up and down.</li><li>Not found: <code>WARNING</code> (or <code>INFO</code>), and handle it. Database down: <code>ERROR</code>, with the traceback.</li></ol></details></section>
+<section id="game-day4" class="game"><h2><span class="n">+</span> &middot; Game: Log Detective <span class="t">5 min</span></h2>
+<style>
+.game .gbox{background:#2A1F45;color:#FFF1E2;border:3px solid var(--outline);border-radius:14px;padding:14px 16px;box-shadow:4px 4px 0 var(--outline)}
+.game .gtop{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-family:var(--px);font-size:.85rem;margin-bottom:8px}
+.game .gtop span{background:#1C1430;border:2px solid #ffffff44;border-radius:99px;padding:1px 12px}
+.game pre{margin:6px 0 10px;font-size:.88rem;white-space:pre-wrap;word-break:break-word}
+.game .q{font-family:var(--px);margin:8px 0 8px}
+.game .choices{display:flex;gap:10px;flex-wrap:wrap}
+.game button{font-family:var(--px);font-weight:600;font-size:.95rem;color:var(--ink);background:var(--honey);border:3px solid var(--outline);border-radius:12px;padding:6px 16px;min-height:44px;cursor:pointer;box-shadow:0 4px 0 var(--outline);text-align:left}
+.game button:hover:not(:disabled){background:var(--mint)}
+.game button:disabled{cursor:default;opacity:.55;box-shadow:none}
+.game button.pick{opacity:1;background:var(--cream);outline:3px solid var(--mint)}
+.game button:focus-visible{outline:3px solid var(--coral-d);outline-offset:2px}
+.game .fb{background:var(--cream);color:var(--ink);border:2px solid var(--line);border-left:8px solid var(--mint);border-radius:10px;padding:10px 14px;margin-top:12px;font-size:.92rem}
+.game .fb.bad{border-left-color:#FF6B4A}
+.game .fb b{font-family:var(--px)}
+.game .fb code{display:block;margin:4px 0;white-space:pre-wrap}
+.game .dog{float:right;margin:0 0 6px 10px}
+.game .end h3{font-size:1.2rem;margin-bottom:4px}
+</style>
+<p><p>Which lines show up, and what does the error say? Each round is a real snippet, with the real output after you answer.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day4-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day4-play">Start the game</button></div>
+<div id="day4-round" hidden><div class="gtop"><span id="day4-num">Round 1</span><span id="day4-score">Score 0</span></div>
+<pre hidden><code id="day4-code"></code></pre><div class="q" id="day4-q"></div><div class="choices" id="day4-opts"></div>
+<div class="fb" id="day4-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day4-next" hidden>Next round</button></p></div>
+<div id="day4-end" class="end" hidden></div></div>
+<script>
+(function(){
+var K="day4",R=[{"c": "logging.basicConfig(level=logging.INFO, format=\"%(levelname)s: %(message)s\")\nlogger = logging.getLogger(\"demo\")\nlogger.debug(\"step 1\")\nlogger.info(\"step 2\")\nlogger.warning(\"step 3\")\nlogger.error(\"step 4\")", "q": "Which lines are printed?", "o": ["INFO, WARNING and ERROR (three lines)", "All four lines", "Only ERROR"], "a": 0, "out": "INFO: step 2\nWARNING: step 3\nERROR: step 4", "why": "The level is a volume knob: INFO shows INFO and everything louder. DEBUG is quieter, so it stays hidden."}, {"c": "logging.basicConfig(level=logging.WARNING, format=\"%(levelname)s: %(message)s\")\n... the same four calls ...", "q": "Now the level is WARNING. Which lines are printed?", "o": ["WARNING and ERROR", "INFO, WARNING and ERROR", "Only ERROR"], "a": 0, "out": "WARNING: step 3\nERROR: step 4", "why": "Turn the knob up and the quiet messages disappear, without touching any other line."}, {"c": "logger = logging.getLogger(\"demo\")   # no basicConfig\nlogger.info(\"step 1\")\nlogger.warning(\"step 2\")", "q": "You forgot basicConfig. What is printed?", "o": ["Only step 2, with no level label", "step 1 and step 2", "Nothing"], "a": 0, "out": "step 2", "why": "By default Python shows WARNING and above, and without basicConfig there is no level label in front."}, {"c": "def get(d, k):\n    try:\n        value = d[k]\n    except Exception:\n        pass\n    return value\n\nprint(get({\"a\": 1}, \"b\"))", "q": "The key b does not exist, and the error is swallowed. What do you see?", "o": ["A confusing UnboundLocalError on the return line", "Nothing, get returns None", "KeyError: 'b'"], "a": 0, "out": "UnboundLocalError: cannot access local variable 'value' where it is not associated with a value", "why": "The real problem (a missing key) was hidden, so a different error shows up later."}, {"c": "try:\n    1 / 0\nexcept ZeroDivisionError:\n    logger.exception(\"calculation failed\")", "q": "What does logger.exception add, compared with logger.error?", "o": ["The full traceback of the error", "Nothing new", "It stops the program"], "a": 0, "out": "ERROR: calculation failed\nTraceback (most recent call last):\n  ...\nZeroDivisionError: division by zero", "why": "Use it inside an except block: you keep the message and the story of how it happened."}, {"c": "", "q": "A document is not found, and you handled it with a friendly answer. Which level fits?", "o": ["WARNING", "ERROR", "DEBUG"], "a": 0, "out": "", "why": "Odd but recovered is a WARNING. ERROR is for something that really failed, like the database being down."}],RANKS=["Log rookie", "Log detective", "Log master"],TAKE="Levels are volume knobs, a swallowed error shows up later as a confusing one, and logger.exception keeps the traceback for 2 a.m.";
+var $=function(i){return document.getElementById(K+"-"+i)};
+var order,i,score;
+function shuffle(a){a=a.slice();for(var k=a.length-1;k>0;k--){var j=Math.floor(Math.random()*(k+1));var t=a[k];a[k]=a[j];a[j]=t}return a}
+function start(){order=shuffle(R);i=0;score=0;$("start").hidden=true;$("end").hidden=true;$("round").hidden=false;show()}
+function show(){var r=order[i];$("num").textContent="Round "+(i+1)+" / "+order.length;$("score").textContent="Score "+score+" / "+order.length;
+var c=$("code");if(r.c){c.textContent=r.c;c.parentNode.hidden=false}else{c.parentNode.hidden=true}
+$("q").textContent=r.q;var box=$("opts");box.textContent="";var opts=shuffle(r.o);
+opts.forEach(function(o){var b=document.createElement("button");b.type="button";b.textContent=o;b.addEventListener("click",function(){answer(o,b)});box.appendChild(b)});
+$("fb").hidden=true;$("next").hidden=true;box.querySelector("button").focus()}
+function answer(o,btn){var r=order[i],ok=(o===r.o[r.a]);var bs=$("opts").querySelectorAll("button");for(var k=0;k<bs.length;k++){bs[k].disabled=true}btn.classList.add("pick");if(ok)score++;
+var fb=$("fb");fb.className="fb"+(ok?"":" bad");fb.textContent="";
+var d=document.createElement("div");var b=document.createElement("b");b.textContent=ok?"Correct. ":"Not quite. ";d.appendChild(b);if(!ok){d.appendChild(document.createTextNode("The answer: "+r.o[r.a]))}fb.appendChild(d);
+if(r.out){var l=document.createElement("div");l.textContent="Real output:";fb.appendChild(l);var c=document.createElement("code");c.textContent=r.out;fb.appendChild(c)}
+var w=document.createElement("div");w.textContent=r.why;fb.appendChild(w);fb.hidden=false;
+$("score").textContent="Score "+score+" / "+order.length;var n=$("next");n.textContent=(i===order.length-1)?"See my result":"Next round";n.hidden=false;n.focus()}
+function finish(){$("round").hidden=true;var max=order.length,rank=score>=max-1?RANKS[2]:(score>=max-2?RANKS[1]:RANKS[0]);var best=score;
+try{var o=parseInt(localStorage.getItem("best-"+K)||"0",10);if(o>best)best=o;localStorage.setItem("best-"+K,String(best))}catch(e){}
+var e=$("end");e.textContent="";var h=document.createElement("h3");h.className="px";h.textContent="You scored "+score+" / "+max+": "+rank;e.appendChild(h);
+var p=document.createElement("p");p.textContent=TAKE+" Best score on this device: "+best+" / "+max+".";e.appendChild(p);
+var b=document.createElement("button");b.type="button";b.textContent="Play again";b.addEventListener("click",start);e.appendChild(b);e.hidden=false;b.focus()}
+$("play").addEventListener("click",start);
+$("next").addEventListener("click",function(){if(i===order.length-1){finish()}else{i++;show()}});
+})();
+</script>
+<p><small>Tick &ldquo;Play the Log Detective game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
 <section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> code that fails clearly, and a log that tells the story. Every AI service you build later will need both. You will use this again when FastAPI has to send back a clear error to the person calling your API.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 4 checklist.</li><li>Share one line in the comments: what did the <code>UnboundLocalError</code> look like on your machine?</li><li><strong>Next:</strong> tests, so you can change code and know it still works.</li></ul></section>
 </main>
 <footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>

@@ -122,6 +122,61 @@ asyncio.run(main())</code></pre><div class="out"><b>You should see</b><br>&lt;co
 <p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Add async demo and ChatRequest"</code>.</p></section>
 <section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;No module named pydantic&rdquo;</strong>: run <code>uv add pydantic</code> first, and run the file with <code>uv run</code>.</li><li><strong>The time is not 1.0s</strong>: it can be 1.0s to 1.1s. If it is about 3s, check that you used <code>gather</code>.</li><li><strong><code>await</code> outside a function</strong>: <code>await</code> only works inside an <code>async def</code>.</li><li><strong>Still stuck?</strong> Comment on the video with the exact message you see.</li></ul></section>
 <section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does <code>gather</code> finish three one-second calls in about one second?</li><li>What happens if you forget <code>await</code> in front of an async call?</li><li>What is the difference between a type hint and a Pydantic model at runtime?</li></ol><details><summary>Answers</summary><ol><li>The three calls wait at the same time instead of one after another.</li><li>You get a coroutine object instead of the answer, and Python warns that it was never awaited.</li><li>A type hint is ignored at runtime. A Pydantic model checks and converts the data when you create it, and raises a <code>ValidationError</code> if it is wrong.</li></ol></details></section>
+<section id="game-day3" class="game"><h2><span class="n">+</span> &middot; Game: Time Machine <span class="t">5 min</span></h2>
+<style>
+.game .gbox{background:#2A1F45;color:#FFF1E2;border:3px solid var(--outline);border-radius:14px;padding:14px 16px;box-shadow:4px 4px 0 var(--outline)}
+.game .gtop{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-family:var(--px);font-size:.85rem;margin-bottom:8px}
+.game .gtop span{background:#1C1430;border:2px solid #ffffff44;border-radius:99px;padding:1px 12px}
+.game pre{margin:6px 0 10px;font-size:.88rem;white-space:pre-wrap;word-break:break-word}
+.game .q{font-family:var(--px);margin:8px 0 8px}
+.game .choices{display:flex;gap:10px;flex-wrap:wrap}
+.game button{font-family:var(--px);font-weight:600;font-size:.95rem;color:var(--ink);background:var(--honey);border:3px solid var(--outline);border-radius:12px;padding:6px 16px;min-height:44px;cursor:pointer;box-shadow:0 4px 0 var(--outline);text-align:left}
+.game button:hover:not(:disabled){background:var(--mint)}
+.game button:disabled{cursor:default;opacity:.55;box-shadow:none}
+.game button.pick{opacity:1;background:var(--cream);outline:3px solid var(--mint)}
+.game button:focus-visible{outline:3px solid var(--coral-d);outline-offset:2px}
+.game .fb{background:var(--cream);color:var(--ink);border:2px solid var(--line);border-left:8px solid var(--mint);border-radius:10px;padding:10px 14px;margin-top:12px;font-size:.92rem}
+.game .fb.bad{border-left-color:#FF6B4A}
+.game .fb b{font-family:var(--px)}
+.game .fb code{display:block;margin:4px 0;white-space:pre-wrap}
+.game .dog{float:right;margin:0 0 6px 10px}
+.game .end h3{font-size:1.2rem;margin-bottom:4px}
+</style>
+<p><p>Predict what the stopwatch shows, or what Python prints, before you see the real result. Each call below pretends to be a one-second AI call.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day3-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day3-play">Start the game</button></div>
+<div id="day3-round" hidden><div class="gtop"><span id="day3-num">Round 1</span><span id="day3-score">Score 0</span></div>
+<pre hidden><code id="day3-code"></code></pre><div class="q" id="day3-q"></div><div class="choices" id="day3-opts"></div>
+<div class="fb" id="day3-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day3-next" hidden>Next round</button></p></div>
+<div id="day3-end" class="end" hidden></div></div>
+<script>
+(function(){
+var K="day3",R=[{"c": "async def call(p):\n    await asyncio.sleep(1)\n    return p\n\nasync def main():\n    start = time.perf_counter()\n    await asyncio.gather(call(\"a\"), call(\"b\"), call(\"c\"))\n    print(f\"{time.perf_counter() - start:.0f}s\")", "q": "What does it print?", "o": ["1s", "3s", "It crashes"], "a": 0, "out": "1s", "why": "gather starts all three calls together, so they wait at the same time."}, {"c": "async def main():\n    start = time.perf_counter()\n    await call(\"a\")\n    await call(\"b\")\n    await call(\"c\")\n    print(f\"{time.perf_counter() - start:.0f}s\")", "q": "Same call function. What does it print now?", "o": ["3s", "1s", "It crashes"], "a": 0, "out": "3s", "why": "Each await finishes before the next one starts, so the waits add up."}, {"c": "async def call(p):\n    time.sleep(1)   # not asyncio.sleep\n    return p\n\n... await asyncio.gather(call(\"a\"), call(\"b\"), call(\"c\"))", "q": "It uses gather, so what does it print?", "o": ["3s", "1s", "It crashes"], "a": 0, "out": "3s", "why": "time.sleep blocks the whole event loop, so nothing else can run. Use await asyncio.sleep inside async code."}, {"c": "async def main():\n    answer = call(\"a\")\n    print(answer)", "q": "The await is missing. What do you see?", "o": ["A coroutine object and a warning", "The text a", "None"], "a": 0, "out": "RuntimeWarning: coroutine 'call' was never awaited\n<coroutine object call at 0x...>", "why": "Without await you get the unfinished job, not its result. The 0x... number differs on every run."}, {"c": "class ChatRequest(BaseModel):\n    question: str = Field(min_length=1, max_length=2000)\n    top_k: int = Field(default=3, ge=1, le=10)\n\nprint(ChatRequest(question=\"What is E101?\", top_k=\"5\"))", "q": "top_k is the text \"5\". What happens?", "o": ["It prints top_k=5, as a number", "ValidationError, because it is text", "It prints top_k='5', still text"], "a": 0, "out": "question='What is E101?' top_k=5", "why": "Pydantic converts text that clearly means a number. Bad values are refused."}, {"c": "ChatRequest(question=\"What is E101?\", top_k=99)", "q": "top_k must be between 1 and 10. What happens with 99?", "o": ["A ValidationError that says it must be at most 10", "It is accepted", "It quietly becomes 10"], "a": 0, "out": "1 validation error for ChatRequest\ntop_k\n  Input should be less than or equal to 10 [type=less_than_equal, input_value=99, input_type=int]", "why": "Pydantic is the bouncer: bad data is stopped at the door, with a message that says why."}],RANKS=["Waiting in line", "Time traveller", "Event-loop master"],TAKE="async lets the waits overlap, one blocking call can freeze everything, and Pydantic checks the data at the door.";
+var $=function(i){return document.getElementById(K+"-"+i)};
+var order,i,score;
+function shuffle(a){a=a.slice();for(var k=a.length-1;k>0;k--){var j=Math.floor(Math.random()*(k+1));var t=a[k];a[k]=a[j];a[j]=t}return a}
+function start(){order=shuffle(R);i=0;score=0;$("start").hidden=true;$("end").hidden=true;$("round").hidden=false;show()}
+function show(){var r=order[i];$("num").textContent="Round "+(i+1)+" / "+order.length;$("score").textContent="Score "+score+" / "+order.length;
+var c=$("code");if(r.c){c.textContent=r.c;c.parentNode.hidden=false}else{c.parentNode.hidden=true}
+$("q").textContent=r.q;var box=$("opts");box.textContent="";var opts=shuffle(r.o);
+opts.forEach(function(o){var b=document.createElement("button");b.type="button";b.textContent=o;b.addEventListener("click",function(){answer(o,b)});box.appendChild(b)});
+$("fb").hidden=true;$("next").hidden=true;box.querySelector("button").focus()}
+function answer(o,btn){var r=order[i],ok=(o===r.o[r.a]);var bs=$("opts").querySelectorAll("button");for(var k=0;k<bs.length;k++){bs[k].disabled=true}btn.classList.add("pick");if(ok)score++;
+var fb=$("fb");fb.className="fb"+(ok?"":" bad");fb.textContent="";
+var d=document.createElement("div");var b=document.createElement("b");b.textContent=ok?"Correct. ":"Not quite. ";d.appendChild(b);if(!ok){d.appendChild(document.createTextNode("The answer: "+r.o[r.a]))}fb.appendChild(d);
+if(r.out){var l=document.createElement("div");l.textContent="Real output:";fb.appendChild(l);var c=document.createElement("code");c.textContent=r.out;fb.appendChild(c)}
+var w=document.createElement("div");w.textContent=r.why;fb.appendChild(w);fb.hidden=false;
+$("score").textContent="Score "+score+" / "+order.length;var n=$("next");n.textContent=(i===order.length-1)?"See my result":"Next round";n.hidden=false;n.focus()}
+function finish(){$("round").hidden=true;var max=order.length,rank=score>=max-1?RANKS[2]:(score>=max-2?RANKS[1]:RANKS[0]);var best=score;
+try{var o=parseInt(localStorage.getItem("best-"+K)||"0",10);if(o>best)best=o;localStorage.setItem("best-"+K,String(best))}catch(e){}
+var e=$("end");e.textContent="";var h=document.createElement("h3");h.className="px";h.textContent="You scored "+score+" / "+max+": "+rank;e.appendChild(h);
+var p=document.createElement("p");p.textContent=TAKE+" Best score on this device: "+best+" / "+max+".";e.appendChild(p);
+var b=document.createElement("button");b.type="button";b.textContent="Play again";b.addEventListener("click",start);e.appendChild(b);e.hidden=false;b.focus()}
+$("play").addEventListener("click",start);
+$("next").addEventListener("click",function(){if(i===order.length-1){finish()}else{i++;show()}});
+})();
+</script>
+<p><small>Tick &ldquo;Play the Time Machine game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
 <section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> three calls that finish in one second, and a data model that refuses bad input. Both are used in every AI backend.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 3 checklist.</li><li>Share one line in the comments: how many seconds did your <code>gather</code> take?</li><li><strong>Next:</strong> what happens when things go wrong: errors, logs and tests.</li></ul></section>
 </main>
 <footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
