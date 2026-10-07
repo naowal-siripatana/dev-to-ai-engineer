@@ -91,252 +91,19 @@
 <footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="privacy.html">Privacy</a> &middot; <a href="course.html">Course outline</a> &middot; <a href="index.html">Back to the map</a></footer>
 
 <script>
-const CURRICULUM = {
- "days": [
-  {
-   "id": 0,
-   "gate": false,
-   "title": "Setup: get your tools ready",
-   "summary": "Do this once, before Day 1. Everything here is free and takes about 30 minutes. Sign in first (you already have), so your checklist is saved while you tick each step. This day does not lock anything: if you already have the tools, tick them and move on.",
-   "slides": "slides/day-00-setup.html",
-   "items": [
-    {
-     "id": "signin",
-     "text": "Sign in on this page and bookmark it, so your progress is saved"
-    },
-    {
-     "id": "github",
-     "text": "Create a free GitHub account",
-     "link": {
-      "text": "github.com/signup",
-      "url": "https://github.com/signup"
-     }
-    },
-    {
-     "id": "git",
-     "text": "Install Git, then open a terminal and run git --version",
-     "link": {
-      "text": "git-scm.com/downloads",
-      "url": "https://git-scm.com/downloads"
-     }
-    },
-    {
-     "id": "editor",
-     "text": "Install Visual Studio Code (or the editor you like best)",
-     "link": {
-      "text": "code.visualstudio.com",
-      "url": "https://code.visualstudio.com/"
-     }
-    },
-    {
-     "id": "uv",
-     "text": "Install uv, then run uv --version (uv can install Python for you)",
-     "link": {
-      "text": "uv installation guide",
-      "url": "https://docs.astral.sh/uv/getting-started/installation/"
-     }
-    },
-    {
-     "id": "python",
-     "text": "Run uv python install 3.12, then uv run --python 3.12 python --version"
-    },
-    {
-     "id": "folder",
-     "text": "Create a folder for your work, open it in your editor, and open a terminal inside it"
-    }
-   ]
-  },
-  {
-   "id": 1,
-   "title": "Python type hints",
-   "summary": "Type hints describe what a function takes and returns. Python does not check them while the program runs: your editor and tools like mypy read them. Checking at runtime needs validation (Pydantic, Day 3).",
-   "slides": "slides/day-01-python-fundamentals-and-type-hints.html",
-   "items": [
-    {
-     "id": "read",
-     "text": "Read the Day 1 lesson (hook, three pieces, worked example)"
-    },
-    {
-     "id": "code",
-     "text": "Step 1: copy practice_types.py, run it, and match the expected output"
-    },
-    {
-     "id": "change",
-     "text": "Step 2: change n to 3 and predict the result before you run it"
-    },
-    {
-     "id": "mypy",
-     "text": "Step 3: run broken.py (a wrong-typed call), then run mypy and read one error message"
-    },
-    {
-     "id": "yours",
-     "text": "Step 4: write shout(text, times) with type hints and test it"
-    },
-    {
-     "id": "sentence",
-     "text": "Write one sentence in your own words: what does a type hint guarantee in Python?"
-    },
-    {
-     "id": "game",
-     "text": "Play the Sticky Note Sorter game to the end and see your score"
-    }
-   ],
-   "lesson": "lessons/day-01.html",
-   "goal": "Write a typed Python function, and explain what a type hint does and does not do."
-  },
-  {
-   "id": 2,
-   "title": "Project setup with uv",
-   "summary": "uv creates the project, the virtual environment and the dependency lock file in one tool. A src-layout keeps your package importable only when installed, which catches path bugs early. pyproject.toml is the single file that describes your project.",
-   "slides": null,
-   "items": [
-    {
-     "id": "read",
-     "text": "Read the Day 2 lesson and answer the two warm-up questions from memory"
-    },
-    {
-     "id": "init",
-     "text": "Step 1: create the project with uv init --package --lib, then run the import check (imported ok)"
-    },
-    {
-     "id": "module",
-     "text": "Step 2: add documents.py, predict preview(d, 3), then run it"
-    },
-    {
-     "id": "break",
-     "text": "Step 3: cause a ModuleNotFoundError on purpose and read the message"
-    },
-    {
-     "id": "yours",
-     "text": "Step 4: write reading_minutes and test it (400 words gives 2.0)"
-    },
-    {
-     "id": "git",
-     "text": "Make your first Git commit and add a Status line to the README"
-    },
-    {
-     "id": "game",
-     "text": "Play the Project Doctor game to the end and see your score"
-    }
-   ],
-   "lesson": "lessons/day-02.html",
-   "goal": "Create a Python project with uv, add a typed module, run it, and make your first Git commit."
-  },
-  {
-   "id": 3,
-   "title": "async/await and Pydantic",
-   "summary": "An AI call spends most of its time waiting. async lets Python do other work while it waits, so three one-second calls can finish in about one second with asyncio.gather. Pydantic turns type hints into real runtime checks and raises a ValidationError on bad data.",
-   "slides": "slides/day-03-async-and-pydantic.html",
-   "items": [
-    {
-     "id": "read",
-     "text": "Read the Day 3 lesson (hook, three pieces, worked example)"
-    },
-    {
-     "id": "gather",
-     "text": "Steps 1-2: run async_demo.py with asyncio.gather (about 1 second), then change it to three sequential awaits, predict the time and run it (about 3 seconds)"
-    },
-    {
-     "id": "model",
-     "text": "Step 3: uv add pydantic, run schemas.py, and read the ValidationError"
-    },
-    {
-     "id": "break",
-     "text": "Step 4: forget the await on purpose and read the warning"
-    },
-    {
-     "id": "yours",
-     "text": "Step 5: add a temperature field (0 to 1) to ChatRequest and test 1.5"
-    },
-    {
-     "id": "commit",
-     "text": "Commit your work with Git"
-    },
-    {
-     "id": "game",
-     "text": "Play the Time Machine game to the end and see your score"
-    }
-   ],
-   "lesson": "lessons/day-03.html",
-   "goal": "Make three slow calls finish in about one second with asyncio.gather, and validate data with a Pydantic model."
-  },
-  {
-   "id": 4,
-   "title": "Errors and logging",
-   "summary": "When something goes wrong, your code should fail loudly and clearly. You raise a specific error, catch only that one, and write log messages at the right level (DEBUG, INFO, WARNING, ERROR) instead of print. Swallowing an error hides the real problem and costs you later.",
-   "slides": "slides/day-04-errors-and-logging.html",
-   "items": [
-    {
-     "id": "read",
-     "text": "Answer the two warm-up questions from memory, then guess the hook"
-    },
-    {
-     "id": "run",
-     "text": "Step 1: run errors_demo.py and match the output"
-    },
-    {
-     "id": "debug",
-     "text": "Step 2: set the level to DEBUG, predict the new lines, then run it"
-    },
-    {
-     "id": "swallow",
-     "text": "Step 3: swallow the error with except Exception: pass and read the confusing result"
-    },
-    {
-     "id": "yours",
-     "text": "Step 4: write safe_top_k and test it with 5, abc and 99"
-    },
-    {
-     "id": "commit",
-     "text": "Commit your work with Git"
-    },
-    {
-     "id": "game",
-     "text": "Play the Log Detective game to the end and see your score"
-    }
-   ],
-   "lesson": "lessons/day-04.html",
-   "goal": "Make a failed lookup leave a clear log line instead of silence."
-  },
-  {
-   "id": 5,
-   "title": "Testing with pytest and a fake LLM client",
-   "summary": "Tests that call the real AI are slow, cost money and change every time. You hand the function a fake client, so a test runs in a blink and gives the same answer every time. You write tests for the normal case, an edge case and an error case with pytest.",
-   "slides": null,
-   "items": [
-    {
-     "id": "read",
-     "text": "Answer the two warm-up questions from memory, then guess the hook"
-    },
-    {
-     "id": "run",
-     "text": "Step 1: add pytest, run the 4 tests and match 4 passed"
-    },
-    {
-     "id": "change",
-     "text": "Step 2: change max_words to 4, predict which test fails, then read the message"
-    },
-    {
-     "id": "break",
-     "text": "Step 3: comment out the empty-text check and read DID NOT RAISE"
-    },
-    {
-     "id": "yours",
-     "text": "Step 4: write summarize_or_default and its two tests (6 passed)"
-    },
-    {
-     "id": "commit",
-     "text": "Commit your work with Git"
-    },
-    {
-     "id": "game",
-     "text": "Play the Test Detective game to the end and see your score"
-    }
-   ],
-   "lesson": "lessons/day-05.html",
-   "goal": "Write a pytest test that checks an AI function without calling the real model."
-  }
- ]
+/* The list of days is small and loaded first. Each day's details (summary, links, item texts) load only when you open that day. */
+let CURRICULUM = {days:[]};
+const detailCache = new Map();   // day id -> detail object
+const detailLoading = new Map(); // day id -> promise
+const loadIndex = async () => {
+  const r = await fetch("curriculum/index.json"); if (!r.ok) throw new Error("index");
+  const j = await r.json();
+  CURRICULUM = {days: j.days.map(d => Object.assign({}, d, {items: d.items.map(id => ({id}))}))};
+};
+const loadDay = id => {
+  if (detailCache.has(id)) return Promise.resolve(detailCache.get(id));
+  if (!detailLoading.has(id)) detailLoading.set(id, fetch("curriculum/day-"+id+".json").then(r => { if (!r.ok) throw new Error("day "+id); return r.json(); }).then(j => { detailCache.set(id, j); return j; }).finally(() => detailLoading.delete(id)));
+  return detailLoading.get(id);
 };
 const CFG = window.APP_CONFIG || {};
 const $ = id => document.getElementById(id);
@@ -484,29 +251,38 @@ function viewDashboard(){
       det.append(el("div",{class:"body"},[el("p",{class:"small",text:"Finish the Day "+prevGate(idx).id+" checklist to unlock this day."})]));
       return det;
     }
-    const list = el("ul",{class:"items"});
-    d.items.forEach(it=>{
-      const id="c-"+d.id+"-"+it.id, on=done.has(key(d.id,it.id));
-      const cb=el("input",{type:"checkbox",id}); cb.checked=on;
-      const li=el("li",{class:on?"done":""},[el("label",{class:"check",for:id},[cb,el("span",{class:"t",text:it.text})]), it.link?el("a",{class:"small",href:it.link.url,target:"_blank",rel:"noopener",text:it.link.text+" \u2197"}):null]);
-      cb.addEventListener("change", async ()=>{
-        const val=cb.checked, k=key(d.id,it.id);
-        val?done.add(k):done.delete(k);
-        try { await api.setItem(user.id,d.id,it.id,val); } catch(e){ val?done.delete(k):done.add(k); cb.checked=!val; alert("Could not save. Check your connection and try again."); return; }
-        const y=window.scrollY; viewDashboard();
-        const dEl=document.querySelectorAll("details.day")[idx]; if(dEl) dEl.open=true;
-        window.scrollTo(0,y);
+    const body = el("div",{class:"body"},[el("p",{class:"small",text:"Loading..."})]);
+    det.append(body);
+    const fill = info => {
+      const list = el("ul",{class:"items"});
+      info.items.forEach(it=>{
+        const id="c-"+d.id+"-"+it.id, on=done.has(key(d.id,it.id));
+        const cb=el("input",{type:"checkbox",id}); cb.checked=on;
+        const li=el("li",{class:on?"done":""},[el("label",{class:"check",for:id},[cb,el("span",{class:"t",text:it.text})]), it.link?el("a",{class:"small",href:it.link.url,target:"_blank",rel:"noopener",text:it.link.text+" \u2197"}):null]);
+        cb.addEventListener("change", async ()=>{
+          const val=cb.checked, k=key(d.id,it.id);
+          val?done.add(k):done.delete(k);
+          try { await api.setItem(user.id,d.id,it.id,val); } catch(e){ val?done.delete(k):done.add(k); cb.checked=!val; alert("Could not save. Check your connection and try again."); return; }
+          const y=window.scrollY; viewDashboard();
+          const dEl=document.querySelectorAll("details.day")[idx]; if(dEl) dEl.open=true;
+          window.scrollTo(0,y);
+        });
+        list.append(li);
       });
-      list.append(li);
-    });
-    const count=d.items.filter(i=>done.has(key(d.id,i.id))).length;
-    det.append(el("div",{class:"body"},[
-      el("p",{text:d.summary}),
-      (d.lesson||d.slides)?el("div",{class:"row"},[d.lesson?el("a",{class:"btn",href:d.lesson,text:"Open the lesson"}):null, d.slides?el("a",{class:"btn alt",href:d.slides,text:"Open the slides"}):null]):null,
-      el("p",{class:"small",text:count+" of "+d.items.length+" done"}),
-      list,
-      finished?el("div",{class:"notice",text: d.gate===false?"Setup complete. You are ready for Day 1.":(idx<CURRICULUM.days.length-1?"Day "+d.id+" complete. Day "+(d.id+1)+" is unlocked.":"Day "+d.id+" complete.")}):null
-    ]));
+      const count=d.items.filter(i=>done.has(key(d.id,i.id))).length;
+      body.replaceChildren(
+        el("p",{text:info.summary}),
+        (info.lesson||info.slides)?el("div",{class:"row"},[info.lesson?el("a",{class:"btn",href:info.lesson,text:"Open the lesson"}):null, info.slides?el("a",{class:"btn alt",href:info.slides,text:"Open the slides"}):null]):null,
+        el("p",{class:"small",text:count+" of "+d.items.length+" done"}),
+        list,
+        finished?el("div",{class:"notice",text: d.gate===false?"Setup complete. You are ready for Day 1.":(idx<CURRICULUM.days.length-1?"Day "+d.id+" complete. Day "+(d.id+1)+" is unlocked.":"Day "+d.id+" complete.")}):null
+      );
+    };
+    const open = () => loadDay(d.id).then(fill).catch(()=>{ body.replaceChildren(el("p",{class:"small",text:"This day could not be loaded. Check your connection and open it again."})); });
+    if (detailCache.has(d.id)) fill(detailCache.get(d.id));
+    else if (idx===first) open();
+    else det.addEventListener("toggle",()=>{ if (det.open && !detailCache.has(d.id)) open(); },{once:false});
+    if (idx===first) loadDay(d.id+1).catch(()=>{});
     return det;
   });
   const optBox=el("input",{type:"checkbox",id:"optset"}); optBox.checked=!!profile.email_opt_in;
@@ -541,12 +317,14 @@ function viewError(msg){
 /* ---------- boot ---------- */
 (async function(){
   try {
+    const indexReady = loadIndex();
     const s = await api.session();
     if (!s) { $("signout").hidden=true; return viewLogin(); }
     user = s.user;
     profile = await api.profile(user.id);
     if (!profile) return viewError("Your profile was not created. Please sign out and sign in again.");
     const rows = await api.progress(user.id);
+    await indexReady;
     done = new Set(rows.filter(r=>r.done).map(r=>key(r.day,r.item)));
     $("who").textContent = (user.user_metadata&&user.user_metadata.full_name)||user.email||"";
     $("signout").hidden=false;

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 6 - Git workflows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 6 &middot; LEVEL 1: PYTHON</div><h1>Git workflows</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to try a change on a branch and merge it back into main.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why do we hand the AI client into a function instead of creating it inside?</li><li>Git says <code>nothing to commit</code> and you are sure you changed a file. What are two likely reasons?</li></ol><details><summary>Answers</summary><ol><li>So a test can hand in a fake: no network, no key, the same answer every time.</li><li>The file was not saved, or you are in the wrong folder.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You change five files, and now nothing works. How do you get back to the version that worked an hour ago?</strong></p><details><summary>Guess first, then open</summary><p>Only if you saved that version before. In Git, a <strong>commit</strong> is a save point you can return to. Today you will make small save points, and try a risky idea on a safe copy.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: a commit is a save point, made in two steps</h3>
+<p>Think of a box. <code>git add</code> puts files in the box (this is called <strong>staging</strong>). <code>git commit -m "message"</code> seals the box and writes a note on it. Small commits with clear messages make a history you can read.</p>
+<h3>Piece 2: a branch is a safe copy of your line of work</h3>
+<p>The main line is called <code>main</code>. A <strong>branch</strong> lets you try an idea without touching <code>main</code>. <code>git switch -c idea</code> creates the branch <code>idea</code> and moves you onto it.</p>
+<h3>Piece 3: a merge brings the branch back</h3>
+<p><code>git merge idea</code> (run while you are on <code>main</code>) pulls the changes in. If both sides changed the same line, Git cannot choose for you. It stops with a <strong>conflict</strong> and marks the spot in the file. You pick what stays, then commit.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> Git is the same tool you use in Visual Studio or Rider, only here you type the commands. <code>git switch</code> is the newer way to say <code>git checkout</code> for branches. Your <code>.gitignore</code> plays the role of the one that skips <code>bin/</code> and <code>obj/</code> in .NET: here it skips <code>.venv/</code> and <code>__pycache__/</code>.</div>
+<div class="box cap"><strong>Capstone:</strong> every lab ends with a commit, and risky experiments (like a new chunk size for RAG) go on a branch, so <code>main</code> always runs.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">3 min</span></h2><p>Read it first. A tiny history with one commit.</p><pre><code>mkdir git-practice
+cd git-practice
+git init -b main
+echo &quot;Day 6: learning Git&quot; &gt; notes.txt
+git status
+git add notes.txt
+git commit -m &quot;Add notes&quot;
+git log --oneline</code></pre><div class="out"><b>You should see</b><br>Initialized empty Git repository in .../git-practice/.git/<br>(git status, before add) Untracked files: notes.txt<br>[main (root-commit) 7f6da32] Add notes<br>&nbsp;1 file changed, 1 insertion(+)<br>7f6da32 Add notes</div><p><small>The short code before the message (<code>7f6da32</code>) is the commit&rsquo;s name. Yours will be different.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>You work in a new practice folder first, so you can break things safely.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Run the commands from the worked example, one by one. Read what <code>git status</code> says <em>before</em> and <em>after</em> <code>git add</code>.</p><div class="out"><b>You should see</b><br>Untracked files:<br>&nbsp;&nbsp;&nbsp;&nbsp;notes.txt<br>...<br>Changes to be committed:<br>&nbsp;&nbsp;&nbsp;&nbsp;new file:&nbsp;&nbsp; notes.txt</div>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Add a line to the file: <code>echo "Commits are save points." &gt;&gt; notes.txt</code>. <strong>Predict:</strong> what will <code>git status -s</code> show, and what will <code>git diff</code> show? Then run both, and commit with <code>git commit -am "Add a line about commits"</code>.</p><details><summary>Check your prediction</summary><div class="out"><b>You should see</b><br>&nbsp;M notes.txt<br><br>@@ -1 +1,2 @@<br>&nbsp;Day 6: learning Git<br>+Commits are save points.</div><p><code>M</code> means modified. In the diff, <code>+</code> marks the line you added.</p></details>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Change the same line on two branches, then merge them. Use these commands on a Mac, or edit the file by hand on Windows:</p><pre><code>git switch -c shorter-title
+sed -i &#x27;&#x27; &#x27;s/learning Git/Git basics/&#x27; notes.txt
+git commit -am &quot;Shorten the title&quot;
+git switch main
+sed -i &#x27;&#x27; &#x27;s/learning Git/Git workflows/&#x27; notes.txt
+git commit -am &quot;Rename the title&quot;
+git merge shorter-title</code></pre><div class="out"><b>You should see</b><br>Auto-merging notes.txt<br>CONFLICT (content): Merge conflict in notes.txt<br>Automatic merge failed; fix conflicts and then commit the result.</div>
+<p>Open <code>notes.txt</code>. Git left markers for you:</p><pre><code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+Day 6: Git workflows
+=======
+Day 6: Git basics
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; shorter-title
+Commits are save points.</code></pre>
+<p>The part under <code>HEAD</code> is <code>main</code>&rsquo;s version. The part above the last marker is the branch&rsquo;s. Keep the line you like, delete the three marker lines, save, and finish the merge:</p><pre><code>git add notes.txt
+git commit -m &quot;Merge shorter-title&quot;
+git log --oneline --graph</code></pre><div class="out"><b>You should see</b><br>*&nbsp;&nbsp; 6678997 Merge shorter-title<br>|\<br>| * 3f2f419 Shorten the title<br>* | e425f06 Rename the title<br>|/<br>* 1e35494 Add a line about commits<br>* 7f6da32 Add notes</div>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>In your <code>my-ai-project</code> from Day 2, do a full round on your own: create a branch called <code>add-status</code>, add a Status line to <code>README.md</code> (for example &ldquo;Status: Day 6, branches&rdquo;), commit it, switch back to <code>main</code>, merge, and show the history with <code>git log --oneline</code>. Then delete the branch with <code>git branch -d add-status</code>.</p><details><summary>Hint 1</summary><p>Create and enter the branch in one command: <code>git switch -c add-status</code>.</p></details><details><summary>Hint 2</summary><p>Merge from <code>main</code>: first <code>git switch main</code>, then <code>git merge add-status</code>.</p></details><details><summary>Solution</summary><pre><code>git switch -c add-status
+# edit README.md and save
+git commit -am &quot;Add a status line&quot;
+git switch main
+git merge add-status
+git log --oneline
+git branch -d add-status</code></pre><div class="out"><b>You should see</b><br>Switched to a new branch 'add-status'<br>Updating f8756ce..f77bf64<br>Fast-forward<br>f77bf64 Add a status line<br>f8756ce First commit<br>Deleted branch add-status (was f77bf64).</div><p><code>Fast-forward</code> means <code>main</code> had no new commits, so Git just moved it ahead. No conflict this time. Your commit names will differ.</p></details>
+<p><strong>Teach-back (1 minute):</strong> record a voice note or write 5 sentences: <em>what is a branch, and why would you use one?</em> Use no word without one line of meaning.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;fatal: not a git repository&rdquo;</strong>: you are in the wrong folder. Go into the project folder, or run <code>git init -b main</code> there.</li><li><strong>&ldquo;Author identity unknown&rdquo;</strong>: Git needs your name once. Run <code>git config --global user.name &quot;Your Name&quot;</code> and <code>git config --global user.email &quot;you@example.com&quot;</code>, then commit again.</li><li><strong>&ldquo;Your local changes would be overwritten by checkout&rdquo;</strong>: commit your changes first, then switch.</li><li><strong>The conflict markers are still in the file</strong>: delete the three marker lines before you <code>git add</code>.</li><li><strong>Lost in a merge?</strong> <code>git merge --abort</code> goes back to before you started.</li></ul></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What is the difference between <code>git add</code> and <code>git commit</code>?</li><li>Why try an idea on a branch instead of on <code>main</code>?</li><li>In a conflict, what do the lines under <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</code> show?</li></ol><details><summary>Answers</summary><ol><li><code>add</code> puts changes in the box (staging). <code>commit</code> seals the box as a save point.</li><li><code>main</code> stays safe and working. If the idea fails, you throw the branch away.</li><li>Your own version, from the branch you are on. The part after <code>=======</code> is the other branch&rsquo;s version.</li></ol></details></section>
+<section id="game-day6" class="game"><h2><span class="n">+</span> &middot; Game: Git Time Traveller <span class="t">5 min</span></h2>
+<p><p>Git tells you exactly where your work is. Read each situation, pick the answer, then see the real Git message.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day6-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day6-play">Start the game</button></div>
+<div id="day6-round" hidden><div class="gtop"><span id="day6-num">Round 1</span><span id="day6-score">Score 0</span></div>
+<pre hidden><code id="day6-code"></code></pre><div class="q" id="day6-q"></div><div class="choices" id="day6-opts"></div>
+<div class="fb" id="day6-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day6-next" hidden>Next round</button></p></div>
+<div id="day6-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day6",[{"c": "$ git add notes.txt\n$ git status", "q": "Where is notes.txt now?", "o": ["Staged: in the box, not saved in history yet", "Committed: saved in history", "Untracked: Git has never seen it"], "a": 0, "out": "Changes to be committed:\n\tnew file:   notes.txt", "why": "add puts the file in the box. Only commit seals the box and makes the save point."}, {"c": "# you already committed everything\n$ git commit -m \"again\"", "q": "Is something wrong?", "o": ["No: there is nothing new to save", "Yes: Git lost your file", "Yes: you must reinstall Git"], "a": 0, "out": "On branch main\nnothing to commit, working tree clean", "why": "A clean tree means every change is already saved. This is a good message."}, {"c": "$ git switch -c idea", "q": "What does the -c do?", "o": ["Creates the branch, then moves you onto it", "Copies main into a folder", "Deletes the branch idea"], "a": 0, "out": "Switched to a new branch 'idea'", "why": "-c means create. Now you can try things on idea while main stays safe."}, {"c": "# main has no new commits since you made the branch add-status\n$ git merge add-status", "q": "What kind of merge is this?", "o": ["Fast-forward: main simply moves ahead", "A conflict", "Git deletes main"], "a": 0, "out": "Updating f8756ce..f77bf64\nFast-forward\n README.md | 2 ++\n 1 file changed, 2 insertions(+)", "why": "Nothing else changed on main, so there is nothing to combine. Git just moves the label forward."}, {"c": "<<<<<<< HEAD\nDay 6: Git workflows\n=======\nDay 6: Git basics\n>>>>>>> shorter-title\nCommits are save points.", "q": "You are on main. Which line is main's version?", "o": ["Day 6: Git workflows (between <<<<<<< HEAD and =======)", "Day 6: Git basics (between ======= and >>>>>>>)", "Both are kept automatically"], "a": 0, "out": "CONFLICT (content): Merge conflict in notes.txt\nAutomatic merge failed; fix conflicts and then commit the result.", "why": "HEAD is where you are. You pick what stays, delete the three marker lines, then git add and git commit."}, {"c": "$ git switch other", "q": "Git refuses with the message below. What is wrong?", "o": ["You have uncommitted changes that would be overwritten: commit them first", "The branch other was deleted", "Your internet is down"], "a": 0, "out": "error: Your local changes to the following files would be overwritten by checkout:\n\tf\nPlease commit your changes or stash them before you switch branches.\nAborting", "why": "Git protects unsaved work. Commit it (or stash it), then switch."}, {"c": "$ git status -s\n?? .gitignore\n?? app.py\n\n# .gitignore contains:\n.venv/\n__pycache__/", "q": "The folders .venv and __pycache__ exist but are not listed. Why?", "o": ["The .gitignore file tells Git to skip generated folders", "Git cannot see folders", "They were committed already"], "a": 0, "out": "", "why": "Generated and downloadable files (a virtual environment, caches) do not belong in history. Your code and README do."}],["Save-point rookie", "Branch explorer", "Git time traveller"],"A commit is a save point, a branch is a safe copy to try ideas, and a merge brings it back, with markers to read when two changes meet.");</script>
+<p><small>Tick &ldquo;Play the Git Time Traveller game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a history of save points, a branch, a merge, and a fixed conflict. You can now try things without fear.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 6 checklist.</li><li>Share one line in the comments: what did your first conflict look like?</li><li><strong>Next:</strong> your first Project Lab, the scaffold of the AI knowledge assistant. Git comes back in every lab.</li></ul></section>
+</main>
+<footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
