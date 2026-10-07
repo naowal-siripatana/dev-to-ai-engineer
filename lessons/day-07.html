@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 7 - Project Lab 1: load a Document</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 7 &middot; LEVEL 1: PYTHON &middot; PROJECT LAB</div><h1>Project Lab 1: load a Document</h1>
+<div class="meta"><span>2.5-3 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to add a tested, typed Document loader to your project on a branch, and merge it.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does Pydantic do when the data is bad?</li><li>In an <code>except</code> block, what are the two honest choices?</li><li>What is the difference between <code>git add</code> and <code>git commit</code>?</li></ol><details><summary>Answers</summary><ol><li>It raises a <code>ValidationError</code> that lists the problems.</li><li>Handle it (safe answer and a log line), or let it travel up. Never swallow it.</li><li><code>add</code> puts changes in the box. <code>commit</code> seals the box as a save point.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A knowledge assistant needs knowledge. Where does the first document come from?</strong></p><details><summary>Guess first, then open</summary><p>From a plain text file you can open, read and trust. Today you build the part that opens it, checks it, and turns it into a clean <code>Document</code>. Everything later in this series (chunks, embeddings, answers with sources) starts from this.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: write the finish line first</h3>
+<p>A lab is a build session, not a lecture. Before you type, write what <strong>done looks like</strong> in words. Today: one command prints a title and the reading time, the tests pass, <code>mypy</code> is quiet, and the work is merged. If you cannot say it, you cannot tell when you are finished.</p>
+<h3>Piece 2: check the data at the door</h3>
+<p>A file is just text. Turn it into a <code>Document</code> (a Pydantic model, Day 3) <em>once</em>, at the door. After that the rest of the code can trust that every document has an id and a title.</p>
+<h3>Piece 3: tests get their own temporary folder</h3>
+<p>A test that reads files should never touch your real folders. pytest gives each test an empty temporary folder through a parameter called <code>tmp_path</code>. The test writes a tiny file there, loads it, and the folder disappears after.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>Path</code> from <code>pathlib</code> does the job of <code>System.IO.Path</code> and <code>File</code> together. <code>tmp_path</code> is like a temp directory that xUnit would clean up for you. <code>python -m my_ai_project</code> runs the package like a small console app with a <code>Main</code>.</div>
+<div class="box cap"><strong>Capstone:</strong> this is the first real feature of the AI knowledge assistant. Later, RAG will split each <code>Document</code> into chunks and embed them. We keep the project name <code>my-ai-project</code> for now.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. This is the finish line you are building toward: one command, one clean line, and three green checks.</p><pre><code>uv run python -m my_ai_project knowledge/error-e101.md
+uv run pytest -q
+uv run mypy src tests</code></pre><div class="out"><b>You should see</b><br>INFO documents: loaded error-e101.md (31 words)<br>Error E101: sensor timeout (0.2 min read)<br><br>.....&nbsp;&nbsp;[100%]<br>5 passed in 0.12s<br><br>Success: no issues found in 4 source files</div><p><small>The time in the pytest line will differ on your machine. The first line comes from the logging you learned on Day 4.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Build it <span class="t">2.5 h</span></h2>
+<p>Work in your <code>my-ai-project</code> from Day 2. Delete the practice files <code>try_documents.py</code> and <code>bad.py</code> if you still have them: they use the old <code>Document</code>.</p>
+<h3><span class="step">Plan</span> 10 min</h3>
+<p>Open <code>README.md</code> and write five lines: <em>what I build today</em>, and <em>done looks like</em> (copy the three commands from the worked example). Do not skip this: it is your finish line.</p>
+
+<h3><span class="step">Step 1</span> Branch and install <small>(15 min)</small></h3>
+<p>Work on a branch, so <code>main</code> stays safe (Day 6). Then add the tools:</p><pre><code>git switch -c lab-1-documents
+uv add pydantic
+uv add --dev pytest mypy
+git status</code></pre><div class="out"><b>You should see</b><br>Switched to a new branch 'lab-1-documents'<br>(uv installs pydantic, then pytest and mypy)<br>On branch lab-1-documents<br>Changes not staged for commit: pyproject.toml, uv.lock</div>
+<h3><span class="step">Step 2</span> The model <small>(30 min)</small></h3>
+<p>Replace everything in <code>src/my_ai_project/documents.py</code> with this. It turns <code>Document</code> into a Pydantic model that refuses an empty id or title. Then delete <code>documents_extra.py</code>: <code>reading_minutes</code> lives here now.</p><pre><code>from pydantic import BaseModel, Field
+
+
+class Document(BaseModel):
+    doc_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    body: str
+
+
+def word_count(doc: Document) -&gt; int:
+    return len(doc.body.split())
+
+
+def reading_minutes(doc: Document, words_per_minute: int = 200) -&gt; float:
+    return word_count(doc) / words_per_minute</code></pre>
+<p><strong>Mid-point check-in.</strong> Run this one line. It should print the title and <code>2.0</code>. If it does not, fix it before you go on.</p><pre><code>uv run python -c &quot;from my_ai_project.documents import Document, reading_minutes; d = Document(doc_id=&#x27;1&#x27;, title=&#x27;Guide&#x27;, body=&#x27;word &#x27; * 400); print(d.title, reading_minutes(d))&quot;</code></pre><div class="out"><b>You should see</b><br>Guide 2.0</div>
+<p>Then try an empty title on purpose: <code>Document(doc_id='1', title='', body='x')</code>. Read the message.</p><div class="out"><b>You should see</b><br>1 validation error for Document<br>title<br>&nbsp;&nbsp;String should have at least 1 character [type=string_too_short, input_value='', input_type=str]</div>
+<h3><span class="step">Step 3</span> The loader and a tiny command <small>(40 min)</small></h3>
+<p>Replace <code>documents.py</code> again with the full version. New: a clear error type (Day 4), logging, and <code>load_document</code> that reads a Markdown file.</p><pre><code>import logging
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(&quot;documents&quot;)
+
+
+class DocumentNotFoundError(Exception):
+    &quot;&quot;&quot;Raised when a document file does not exist.&quot;&quot;&quot;
+
+
+class Document(BaseModel):
+    doc_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    body: str
+
+
+def word_count(doc: Document) -&gt; int:
+    return len(doc.body.split())
+
+
+def reading_minutes(doc: Document, words_per_minute: int = 200) -&gt; float:
+    return word_count(doc) / words_per_minute
+
+
+def load_document(path: Path) -&gt; Document:
+    if not path.is_file():
+        raise DocumentNotFoundError(f&quot;no document at {path}&quot;)
+    lines = path.read_text(encoding=&quot;utf-8&quot;).splitlines()
+    if lines and lines[0].startswith(&quot;# &quot;):
+        title = lines[0].removeprefix(&quot;# &quot;).strip()
+        body = &quot;\n&quot;.join(lines[1:]).strip()
+    else:
+        title = path.stem
+        body = &quot;\n&quot;.join(lines).strip()
+    logger.info(&quot;loaded %s (%d words)&quot;, path.name, len(body.split()))
+    return Document(doc_id=path.stem, title=title, body=body)</code></pre><p>Create the knowledge file <code>knowledge/error-e101.md</code> (a <code>knowledge</code> folder next to <code>pyproject.toml</code>):</p><pre><code># Error E101: sensor timeout
+
+The sensor did not answer within ten seconds. Check the cable, then restart the sensor service. If the error comes back, open a ticket and write down the time it happened.</code></pre><p>Create <code>src/my_ai_project/__main__.py</code>. This is what <code>python -m my_ai_project</code> runs:</p><pre><code>import logging
+import sys
+from pathlib import Path
+
+from my_ai_project.documents import DocumentNotFoundError, load_document, reading_minutes
+
+logging.basicConfig(level=logging.INFO, format=&quot;%(levelname)s %(name)s: %(message)s&quot;)
+logger = logging.getLogger(&quot;cli&quot;)
+
+
+def main() -&gt; int:
+    if len(sys.argv) != 2:
+        print(&quot;usage: python -m my_ai_project &lt;file.md&gt;&quot;)
+        return 2
+    try:
+        doc = load_document(Path(sys.argv[1]))
+    except DocumentNotFoundError as err:
+        logger.warning(&quot;%s&quot;, err)
+        print(&quot;Sorry, I could not find that file.&quot;)
+        return 1
+    print(f&quot;{doc.title} ({reading_minutes(doc):.1f} min read)&quot;)
+    return 0
+
+
+if __name__ == &quot;__main__&quot;:
+    raise SystemExit(main())</code></pre><p><strong>Predict:</strong> what will the command print for a file that does not exist? Then run both:</p><pre><code>uv run python -m my_ai_project knowledge/error-e101.md
+uv run python -m my_ai_project knowledge/nope.md</code></pre><details><summary>Check your prediction</summary><div class="out"><b>You should see</b><br>INFO documents: loaded error-e101.md (31 words)<br>Error E101: sensor timeout (0.2 min read)<br><br>WARNING cli: no document at knowledge/nope.md<br>Sorry, I could not find that file.</div><p>The missing file is handled: a specific error, a warning in the log, a friendly answer. No traceback for the user.</p></details>
+<h3><span class="step">Step 4</span> Your turn: the tests <small>(40 min)</small></h3>
+<p>Create <code>tests/test_documents.py</code> and write these five tests yourself. The first one is shown as a model. Use <code>tmp_path</code> to write small files.</p>
+<ol><li>(model) <code>load_document</code> reads the title and the body of a file that starts with <code># Error E101</code>.</li><li>A file with no <code># </code> first line gets its file name (without <code>.md</code>) as the title.</li><li>A missing file raises <code>DocumentNotFoundError</code>.</li><li><code>reading_minutes</code> of a 400-word document is <code>2.0</code>.</li><li><code>Document</code> with an empty title raises a <code>ValidationError</code>.</li></ol><pre><code>def test_load_document_reads_title_and_body(tmp_path: Path) -&gt; None:
+    file = tmp_path / &quot;error-e101.md&quot;
+    file.write_text(&quot;# Error E101\n\nCheck the cable.\n&quot;, encoding=&quot;utf-8&quot;)
+    doc = load_document(file)
+    assert doc.doc_id == &quot;error-e101&quot;
+    assert doc.title == &quot;Error E101&quot;
+    assert doc.body == &quot;Check the cable.&quot;</code></pre><details><summary>Hint 1</summary><p>For errors, use <code>with pytest.raises(DocumentNotFoundError):</code> (Day 5). For the empty title, the error type is <code>pydantic.ValidationError</code>.</p></details><details><summary>Hint 2</summary><p>Import what you need at the top: <code>from pathlib import Path</code>, <code>import pytest</code>, <code>from pydantic import ValidationError</code>, and the names from <code>my_ai_project.documents</code>.</p></details><details><summary>Solution</summary><pre><code>from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from my_ai_project.documents import (
+    Document,
+    DocumentNotFoundError,
+    load_document,
+    reading_minutes,
+)
+
+
+def test_load_document_reads_title_and_body(tmp_path: Path) -&gt; None:
+    file = tmp_path / &quot;error-e101.md&quot;
+    file.write_text(&quot;# Error E101\n\nCheck the cable.\n&quot;, encoding=&quot;utf-8&quot;)
+    doc = load_document(file)
+    assert doc.doc_id == &quot;error-e101&quot;
+    assert doc.title == &quot;Error E101&quot;
+    assert doc.body == &quot;Check the cable.&quot;
+
+
+def test_load_document_uses_the_file_name_when_there_is_no_title(tmp_path: Path) -&gt; None:
+    file = tmp_path / &quot;faq.md&quot;
+    file.write_text(&quot;Just some text.&quot;, encoding=&quot;utf-8&quot;)
+    assert load_document(file).title == &quot;faq&quot;
+
+
+def test_missing_file_raises_a_clear_error(tmp_path: Path) -&gt; None:
+    with pytest.raises(DocumentNotFoundError):
+        load_document(tmp_path / &quot;nope.md&quot;)
+
+
+def test_reading_minutes() -&gt; None:
+    doc = Document(doc_id=&quot;1&quot;, title=&quot;Guide&quot;, body=&quot;word &quot; * 400)
+    assert reading_minutes(doc) == 2.0
+
+
+def test_document_needs_a_title() -&gt; None:
+    with pytest.raises(ValidationError):
+        Document(doc_id=&quot;1&quot;, title=&quot;&quot;, body=&quot;text&quot;)</code></pre></details><p>Run <code>uv run pytest -q</code>:</p><div class="out"><b>You should see</b><br>.....&nbsp;&nbsp;[100%]<br>5 passed in 0.12s</div>
+<h3><span class="step">Step 5</span> mypy, commit, merge <small>(20 min)</small></h3>
+<p>Run <code>uv run mypy src tests</code>. It should say <code>Success</code>. Then break it on purpose: in <code>__main__.py</code> change <code>load_document(Path(sys.argv[1]))</code> to <code>load_document(sys.argv[1])</code>, run mypy again, read the message, and change it back.</p><div class="out"><b>You should see</b><br>src/my_ai_project/__main__.py:16: error: Argument 1 to "load_document" has incompatible type "str"; expected "Path"&nbsp; [arg-type]<br>Found 1 error in 1 file (checked 4 source files)</div><p>The command line gives you text, but the function wants a <code>Path</code>. The checker found it before you ran anything (Day 1). Fix it back, run pytest and mypy once more, then save and merge:</p><pre><code>git add -A
+git commit -m &quot;Turn Document into a Pydantic model and add load_document, a CLI and tests&quot;
+git switch main
+git merge lab-1-documents
+git log --oneline
+git branch -d lab-1-documents</code></pre><div class="out"><b>You should see</b><br>Updating 46692eb..750d8f3<br>Fast-forward<br>&nbsp;5 files changed, 99 insertions(+), 14 deletions(-)<br>750d8f3 Turn Document into a Pydantic model and add load_document, a CLI and tests<br>46692eb Day 2 state<br>Deleted branch lab-1-documents (was 750d8f3).</div><p><small>Your commit names and counts will differ. <code>Fast-forward</code> is fine: it means <code>main</code> had no new commits.</small></p>
+<h3><span class="step">Reflection</span> <small>(10 min)</small></h3>
+<p>Add a short <strong>Lab log</strong> to your README with three lines: <em>what worked</em>, <em>what broke</em>, and <em>what I change next time</em>. Commit it. Looking back is what makes the next lab faster.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;Sorry, I could not find that file&rdquo; but the file is there</strong>: the path is relative to the folder you are in. Run the command from the project folder, the one with <code>pyproject.toml</code>.</li><li><strong>A <code>ValidationError</code> about <code>title</code></strong>: <code>title</code> may not be empty. In a file the title comes from a first line that starts with <code># </code> (hash and a space).</li><li><strong>mypy says <code>expected &quot;Path&quot;</code></strong>: wrap the text with <code>Path(...)</code>. Do not silence the checker.</li><li><strong>pytest runs 0 tests</strong>: file and function names must start with <code>test_</code> (Day 5).</li><li><strong>&ldquo;No module named pydantic&rdquo;</strong>: run <code>uv add pydantic</code>, and use <code>uv run</code>, not plain <code>python3</code>.</li><li><strong>Merge conflict</strong>: you changed the same lines on <code>main</code> and on the branch. Day 6 shows how to read the markers.</li></ul></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does <code>load_document</code> raise <code>DocumentNotFoundError</code> instead of returning <code>None</code>?</li><li>Why do the tests write files into <code>tmp_path</code>?</li><li>Why check the data inside <code>Document</code>, and not everywhere the document is used?</li></ol><details><summary>Answers</summary><ol><li>A clear error with a name and message says what went wrong. A silent <code>None</code> moves the problem somewhere else, later.</li><li>Each test gets its own empty temporary folder, so tests never touch your real files and never affect each other.</li><li>One place checks, and the rest of the code can trust the object. Fewer checks, fewer bugs.</li></ol></details></section>
+<section id="game-day7" class="game"><h2><span class="n">+</span> &middot; Game: Lab Referee <span class="t">5 min</span></h2>
+<p><p>You are the referee of today's lab. Each round shows what a learner saw. Decide what is going on, then check the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day7-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day7-play">Start the game</button></div>
+<div id="day7-round" hidden><div class="gtop"><span id="day7-num">Round 1</span><span id="day7-score">Score 0</span></div>
+<pre hidden><code id="day7-code"></code></pre><div class="q" id="day7-q"></div><div class="choices" id="day7-opts"></div>
+<div class="fb" id="day7-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day7-next" hidden>Next round</button></p></div>
+<div id="day7-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day7",[{"c": "# you are inside the src/ folder\n$ uv run python -m my_ai_project knowledge/error-e101.md", "q": "The file exists, but you see this. Why?", "o": ["The relative path starts from the folder you are in: run it from the project root", "Pydantic rejected the file", "mypy blocked the command"], "a": 0, "out": "WARNING cli: no document at knowledge/error-e101.md\nSorry, I could not find that file.", "why": "A path like knowledge/... is looked up from where you stand. Go back to the folder with pyproject.toml."}, {"c": "Document(doc_id='1', title='', body='x')", "q": "What stops this from being created?", "o": ["Field(min_length=1) on title", "The body is too short", "doc_id must be a number"], "a": 0, "out": "1 validation error for Document\ntitle\n  String should have at least 1 character [type=string_too_short, input_value='', input_type=str]", "why": "The model checks the data at the door, and the message says which field and why."}, {"c": "# in __main__.py\ndoc = load_document(sys.argv[1])", "q": "mypy says: expected \"Path\". What is the right fix?", "o": ["Wrap it: load_document(Path(sys.argv[1]))", "Delete the type hint on load_document", "Add # type: ignore everywhere"], "a": 0, "out": "src/my_ai_project/__main__.py:16: error: Argument 1 to \"load_document\" has incompatible type \"str\"; expected \"Path\"  [arg-type]", "why": "Fix the call. Silencing the checker only hides the bug until it runs."}, {"c": "def test_load_document_reads_title_and_body(tmp_path: Path) -> None:\n    file = tmp_path / \"error-e101.md\"\n    file.write_text(\"# Error E101\\n\\nCheck the cable.\\n\")", "q": "Why does the test write its file into tmp_path?", "o": ["Each test gets its own empty temporary folder, so it never touches your real files", "It makes the test faster than memory", "pytest only allows files in /tmp"], "a": 0, "out": "", "why": "A temporary folder keeps tests safe and independent. It is deleted afterwards."}, {"c": "$ git switch main\n$ git merge lab-1-documents", "q": "main had no new commits. What kind of merge is this?", "o": ["Fast-forward: main just moves ahead", "A conflict", "A rebase that rewrites history"], "a": 0, "out": "Updating 46692eb..750d8f3\nFast-forward\n 5 files changed, 99 insertions(+), 14 deletions(-)", "why": "Nothing else changed on main, so there is nothing to combine."}, {"c": "$ uv run python -m my_ai_project knowledge/nope.md", "q": "The user sees a friendly line, not a traceback. Which Day 4 idea is this?", "o": ["Handle the specific error, log a warning, and answer kindly", "Swallow the error with except Exception: pass", "Let the error travel up to the user"], "a": 0, "out": "WARNING cli: no document at knowledge/nope.md\nSorry, I could not find that file.", "why": "A specific error, a log line for you, and a friendly answer for the user."}],["Lab trainee", "Lab assistant", "Lab referee"],"A finish line written first, data checked at the door, tests in a temporary folder, and a branch merged only when everything is green.");</script>
+<p><small>Tick &ldquo;Play the Lab Referee game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> the first real feature of the AI knowledge assistant: typed, checked, logged, tested, and merged from a branch.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 7 checklist.</li><li>Share one line in the comments: what broke in your lab, and how did you find it?</li><li><strong>Next:</strong> Sunday is a review and plan day (Day 8). Then FastAPI starts on Monday, and this <code>Document</code> will travel through an API.</li></ul></section>
+</main>
+<footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
