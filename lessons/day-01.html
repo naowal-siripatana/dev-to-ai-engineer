@@ -146,6 +146,80 @@ print(shout(&quot;hello&quot;, 2))</code></pre><div class="out"><b>You should se
 <ol><li>What does a type hint guarantee while the program runs?</li><li>In Step 3, why did <code>find_user(users, 1)</code> print <code>None</code> instead of failing?</li><li>Which tool would have caught the mistake before you ran the program?</li></ol>
 <details><summary>Answers</summary><ol><li>Nothing. Python ignores hints at runtime; they are for you, your editor and tools like mypy.</li><li>Because <code>dict.get</code> returns <code>None</code> when the key is missing, and the integer <code>1</code> is not the key <code>"1"</code>. Python never checked that the key was supposed to be a string.</li><li><code>mypy</code> (or an editor that reads type hints).</li></ol></details></section>
 
+<section id="game" class="game"><h2><span class="n">+</span> &middot; Bonus game: Sticky Note Sorter <span class="t">5 min, optional</span></h2>
+<style>
+.game .gbox{background:#2A1F45;color:#FFF1E2;border:3px solid var(--outline);border-radius:14px;padding:14px 16px;box-shadow:4px 4px 0 var(--outline)}
+.game .gtop{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-family:var(--px);font-size:.85rem;margin-bottom:8px}
+.game .gtop span{background:#1C1430;border:2px solid #ffffff44;border-radius:99px;padding:1px 12px}
+.game pre{margin:6px 0 10px;font-size:.88rem;white-space:pre-wrap;word-break:break-word}
+.game .q{font-family:var(--px);margin:8px 0 6px}
+.game .choices{display:flex;gap:10px;flex-wrap:wrap}
+.game button{font-family:var(--px);font-weight:600;font-size:.95rem;color:var(--ink);background:var(--honey);border:3px solid var(--outline);border-radius:12px;padding:0 16px;min-height:44px;cursor:pointer;box-shadow:0 4px 0 var(--outline)}
+.game button:hover:not(:disabled){background:var(--mint)}
+.game button:disabled{cursor:default;opacity:.55;box-shadow:none}
+.game button.pick{opacity:1;background:var(--cream);outline:3px solid var(--mint)}
+.game button:focus-visible{outline:3px solid var(--coral-d);outline-offset:2px}
+.game .fb{background:var(--cream);color:var(--ink);border:2px solid var(--line);border-left:8px solid var(--mint);border-radius:10px;padding:10px 14px;margin-top:12px;font-size:.92rem}
+.game .fb.bad{border-left-color:#FF6B4A}
+.game .fb b{font-family:var(--px)}
+.game .fb code{display:block;margin:4px 0;white-space:pre-wrap}
+.game .dog{float:right;margin:0 0 6px 10px}
+.game .end h3{font-size:1.2rem;margin-bottom:4px}
+</style>
+<p>Fetch the pixel dog delivers a small function with a sticky note (a type hint) and one call. Two questions each round: <strong>what does Python do when it runs?</strong> and <strong>does <code>mypy</code> flag it before you run?</strong> 8 rounds, 2 points each. Real results, no tricks.</p>
+<div class="gbox" id="gbox" aria-live="polite">
+<svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="gstart"><p>Ready? You need no setup. Just read the code and decide.</p><button type="button" id="gplay">Start the game</button></div>
+<div id="ground" hidden>
+<div class="gtop"><span id="gnum">Round 1 / 8</span><span id="gscore">Score 0 / 16</span></div>
+<pre><code id="gcode"></code></pre>
+<div class="q">1. When Python runs this, it...</div>
+<div class="choices" id="gq1"><button type="button" data-v="runs">runs without an error</button><button type="button" data-v="crashes">crashes with an error</button></div>
+<div class="q">2. Before running, <code>mypy</code>...</div>
+<div class="choices" id="gq2"><button type="button" data-v="flags">flags a problem</button><button type="button" data-v="quiet">stays quiet</button></div>
+<div class="fb" id="gfb" hidden></div>
+<p style="margin-top:12px"><button type="button" id="gnext" hidden>Next round</button></p>
+</div>
+<div id="gend" class="end" hidden></div>
+</div>
+<script>
+(function(){
+var R=[
+{c:'def double(x: int) -> int:\n    return x * 2\n\nprint(double("ha"))',crash:false,out:'haha',flag:true,msg:'Argument 1 to "double" has incompatible type "str"; expected "int"',why:'Python ignores the hint, and "ha" * 2 is a perfectly fine thing to do.'},
+{c:'def word_count(text: str) -> int:\n    return len(text.split())\n\nprint(word_count(123))',crash:true,out:"AttributeError: 'int' object has no attribute 'split'",flag:true,msg:'Argument 1 to "word_count" has incompatible type "int"; expected "str"',why:'The error shows up inside the function, not at the hint.'},
+{c:'def add(a: int, b: int) -> int:\n    return a + b\n\nprint(add(2, 3))',crash:false,out:'5',flag:false,msg:'Success: no issues found',why:'The call matches the hints, so everything is quiet. Good code is quiet.'},
+{c:'def greet(name: str) -> str:\n    return "Hi " + name\n\nprint(greet(None))',crash:true,out:'TypeError: can only concatenate str (not "NoneType") to str',flag:true,msg:'Argument 1 to "greet" has incompatible type "None"; expected "str"',why:'None is not a string, and the + fails only when the line runs.'},
+{c:'def total(prices: list[float]) -> float:\n    return sum(prices)\n\nprint(total([1, 2, 3]))',crash:false,out:'6',flag:false,msg:'Success: no issues found',why:'mypy lets an int stand in where a float is expected, so a list of ints is fine here.'},
+{c:'def find_user(users: dict[str, str], user_id: str) -> str | None:\n    return users.get(user_id)\n\nprint(find_user({"1": "Ann"}, 1))',crash:false,out:'None',flag:true,msg:'Argument 2 to "find_user" has incompatible type "int"; expected "str"',why:'The wrong key type is not an error in Python: the lookup just finds nothing. This is the quiet one from Step 3.'},
+{c:'age: int = "ten"\nprint(age)',crash:false,out:'ten',flag:true,msg:'Incompatible types in assignment (expression has type "str", variable has type "int")',why:'Hints on variables are sticky notes too.'},
+{c:'def half(n: int) -> int:\n    return n / 2\n\nprint(half(4))',crash:false,out:'2.0',flag:true,msg:'Incompatible return value type (got "float", expected "int")',why:'The hint promised an int, but / gives a float. Python does not care. mypy does.'}
+];
+var $=function(i){return document.getElementById(i)};
+var order,i,score,a1,a2;
+function shuffle(a){a=a.slice();for(var k=a.length-1;k>0;k--){var j=Math.floor(Math.random()*(k+1));var t=a[k];a[k]=a[j];a[j]=t}return a}
+function setChoices(id,on){var b=$(id).querySelectorAll("button");for(var k=0;k<b.length;k++){b[k].disabled=!on;b[k].classList.remove("pick")}}
+function start(){order=shuffle(R);i=0;score=0;$("gstart").hidden=true;$("gend").hidden=true;$("ground").hidden=false;show()}
+function show(){var r=order[i];a1=null;a2=null;$("gnum").textContent="Round "+(i+1)+" / "+order.length;$("gscore").textContent="Score "+score+" / "+(order.length*2);$("gcode").textContent=r.c;setChoices("gq1",true);setChoices("gq2",true);$("gfb").hidden=true;$("gnext").hidden=true;$("gq1").querySelector("button").focus()}
+function answer(q,v,btn){if(q===1){if(a1!==null)return;a1=v}else{if(a2!==null)return;a2=v}var box=$(q===1?"gq1":"gq2").querySelectorAll("button");for(var k=0;k<box.length;k++){box[k].disabled=true}btn.classList.add("pick");if(a1!==null&&a2!==null)reveal()}
+function reveal(){var r=order[i],ok1=(a1==="crashes")===r.crash,ok2=(a2==="flags")===r.flag;score+=(ok1?1:0)+(ok2?1:0);
+var fb=$("gfb");fb.className="fb"+((ok1&&ok2)?"":" bad");fb.textContent="";
+function line(label,ok,text){var d=document.createElement("div");var b=document.createElement("b");b.textContent=label+(ok?": correct. ":": not quite. ");d.appendChild(b);d.appendChild(document.createTextNode(text));fb.appendChild(d)}
+line("Python",ok1,r.crash?"It crashed:":"It ran, and printed:");var c1=document.createElement("code");c1.textContent=r.out;fb.appendChild(c1);
+line("mypy",ok2,r.flag?"It flags this before you run:":"It stays quiet:");var c2=document.createElement("code");c2.textContent=r.msg;fb.appendChild(c2);
+var w=document.createElement("div");w.textContent=r.why;fb.appendChild(w);fb.hidden=false;
+$("gscore").textContent="Score "+score+" / "+(order.length*2);var n=$("gnext");n.textContent=(i===order.length-1)?"See my result":"Next round";n.hidden=false;n.focus()}
+function finish(){$("ground").hidden=true;var max=order.length*2,rank=score>=14?"mypy whisperer":(score>=10?"Type detective":"Sticky-note rookie");var best=score;try{var o=parseInt(localStorage.getItem("day1-sticky-best")||"0",10);if(o>best)best=o;localStorage.setItem("day1-sticky-best",String(best))}catch(e){}
+var e=$("gend");e.textContent="";var h=document.createElement("h3");h.className="px";h.textContent="You scored "+score+" / "+max+": "+rank;e.appendChild(h);
+var p=document.createElement("p");p.textContent="Look at the pattern. Python crashed in only 2 of the 8 rounds, but mypy found a problem in 6 of them, and it found them before anything ran. That is the job of a type hint: a sticky note that your tools read, not a rule Python enforces. Best score on this device: "+best+" / "+max+".";e.appendChild(p);
+var b=document.createElement("button");b.type="button";b.textContent="Play again";b.addEventListener("click",start);e.appendChild(b);e.hidden=false;b.focus()}
+$("gplay").addEventListener("click",start);
+$("gq1").addEventListener("click",function(ev){var t=ev.target.closest("button");if(t&&!t.disabled)answer(1,t.dataset.v,t)});
+$("gq2").addEventListener("click",function(ev){var t=ev.target.closest("button");if(t&&!t.disabled)answer(2,t.dataset.v,t)});
+$("gnext").addEventListener("click",function(){if(i===order.length-1){finish()}else{i++;show()}});
+})();
+</script>
+<p><small>Tip for today&rsquo;s checklist: this game is a bonus, so it is not a checklist item. If you score under 10, read &ldquo;Piece 2&rdquo; again and replay: the rounds are shuffled.</small></p></section>
+
 <section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2>
 <p><strong>You made:</strong> typed functions, saw Python ignore a wrong type, and made <code>mypy</code> catch it. That is a real skill.</p>
 <ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 1 checklist. Finish all the items to unlock Day 2.</li><li>Share one line in the comments: what surprised you?</li><li><strong>Tomorrow:</strong> Day 2, project setup with <code>uv</code>. And on Day 3 you will meet Pydantic, which turns hints into real checks.</li></ul></section>
