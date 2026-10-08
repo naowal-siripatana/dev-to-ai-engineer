@@ -20,7 +20,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{--night:#2A1F45;--cream:#FFF1E2;--card:#FFF9F2;--peach:#FFE9D2;--ink:#3A2450;--muted:#7A6590;--line:#E3C3A5;--outline:#1C1430;
-    --coral:#FF6B4A;--coral-d:#D9472A;--honey:#FFC15E;--honey-d:#B86E00;--mint:#7FE0C2;--mint-d:#17806A;--lav:#C9BCEF;
+    --p0:#7FE0C2;--p1:#C9BCEF;--p2:#FFC15E;--p3:#FF6B4A;--coral:#FF6B4A;--coral-d:#D9472A;--honey:#FFC15E;--honey-d:#B86E00;--mint:#7FE0C2;--mint-d:#17806A;--lav:#C9BCEF;
     --px:'Jersey 15',monospace;--body:'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif}
   *{box-sizing:border-box;margin:0}
   html,body{min-height:100%}
@@ -63,6 +63,20 @@
   .badge{font-family:var(--px);font-size:.72rem;border:2px solid var(--outline);border-radius:99px;padding:2px 10px;background:var(--peach)}
   .badge.done{background:var(--mint)}.badge.open{background:var(--honey)}.badge.locked{background:#e6dcef;color:var(--muted)}.badge.late{background:#ffd0c4}
   details.day.locked>summary{cursor:not-allowed;opacity:.8}
+  details.phase,details.mod{border:3px solid var(--outline);border-radius:16px;background:#FFF9F2f7;box-shadow:5px 5px 0 var(--outline);overflow:hidden}
+  details.mod{border-radius:14px;box-shadow:3px 3px 0 var(--outline);background:var(--peach)}
+  details.phase>summary,details.mod>summary{list-style:none;cursor:pointer;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px}
+  details.phase>summary::-webkit-details-marker,details.mod>summary::-webkit-details-marker{display:none}
+  details.phase>summary:before,details.mod>summary:before,details.day>summary:before{content:"\25B8";font-family:var(--body);font-weight:800;color:var(--muted);transition:transform .15s}
+  details[open]>summary:before{transform:rotate(90deg)}
+  details.phase>summary{background:var(--c,var(--lav))}
+  .pn,.mn{font-family:var(--body);font-weight:800;background:var(--cream);border:2px solid var(--outline);border-radius:8px;padding:2px 10px}
+  .pt,.mt{font-family:var(--px);font-weight:600;flex:1;min-width:140px;font-size:1.05rem}
+  .pc{font-size:.82rem;font-weight:800}
+  .group{display:grid;gap:12px;padding:12px}
+  details.phase>.group{background:#FFF1E2cc}
+  .btn.sm{min-height:34px;font-size:.85rem;padding:0 12px;box-shadow:0 2px 0 var(--outline)}
+  .tools{margin:0 0 12px}
   .body{padding:4px 18px 18px;border-top:2px dashed var(--line)}
   .body p{margin:12px 0}
   .items{list-style:none;padding:0;display:grid;gap:8px;margin:12px 0}
@@ -95,12 +109,16 @@
 <script>
 /* The list of days is small and loaded first. Each day's details (summary, links, item texts) load only when you open that day. */
 let CURRICULUM = {days:[]};
+let META = {phases:[], modules:[]};   // phase names and module titles, to group the days
+const openPhase = new Set(), openMod = new Set();   // which groups are open, kept when the list is drawn again
+let groupsInit = false;
 const detailCache = new Map();   // day id -> detail object
 const detailLoading = new Map(); // day id -> promise
 const loadIndex = async () => {
   const r = await fetch("curriculum/index.json"); if (!r.ok) throw new Error("index");
   const j = await r.json();
   CURRICULUM = {days: j.days.map(d => Object.assign({}, d, {items: d.items.map(id => ({id}))}))};
+  META = {phases: j.phases || [], modules: j.modules || []};
 };
 const loadDay = id => {
   if (detailCache.has(id)) return Promise.resolve(detailCache.get(id));
@@ -289,6 +307,40 @@ function viewDashboard(){
     if (idx===first) loadDay(d.id+1).catch(()=>{});
     return det;
   });
+  // Group the days: Phase > Module > Day. Day 0 (setup) is not part of a module and stays on top.
+  const standalone = [], phases = new Map();
+  CURRICULUM.days.forEach((d,idx)=>{
+    const mod = META.modules[d.m];
+    if (!mod) { standalone.push(dayEls[idx]); return; }
+    if (!phases.has(mod.phase)) phases.set(mod.phase, new Map());
+    const mm = phases.get(mod.phase);
+    if (!mm.has(d.m)) mm.set(d.m, []);
+    mm.get(d.m).push(idx);
+  });
+  if (!groupsInit) {
+    groupsInit = true;
+    const cur = CURRICULUM.days[first>=0?first:CURRICULUM.days.length-1], cm = cur && META.modules[cur.m];
+    if (cm) { openMod.add(cur.m); openPhase.add(cm.phase); }
+  }
+  const stat = idxs => idxs.filter(i=>isDayDone(CURRICULUM.days[i])).length+" of "+idxs.length+" days done";
+  const group = (cls, open, set, key, head, kids) => {
+    const g = el("details",{class:cls}); g.open = open;
+    g.addEventListener("toggle",()=>{ g.open ? set.add(key) : set.delete(key); });
+    g.append(head, el("div",{class:"group"},kids));
+    return g;
+  };
+  const groupEls = [];
+  phases.forEach((mods,pi)=>{
+    const all = [].concat(...mods.values());
+    const head = el("summary",{style:"--c:var(--p"+pi+")"},[el("span",{class:"pn",text:"Phase "+(pi+1)}),el("span",{class:"pt",text:META.phases[pi]||""}),el("span",{class:"pc",text:stat(all)})]);
+    const modEls = [...mods].map(([m,idxs])=>group("mod", openMod.has(m), openMod, m,
+      el("summary",{},[el("span",{class:"mn",text:"M"+META.modules[m].num}),el("span",{class:"mt",text:META.modules[m].title}),el("span",{class:"pc",text:stat(idxs)})]),
+      idxs.map(i=>dayEls[i])));
+    groupEls.push(group("phase", openPhase.has(pi), openPhase, pi, head, modEls));
+  });
+  const setGroups = on => document.querySelectorAll("details.phase,details.mod").forEach(g=>{ g.open = on; });
+  const expandBtn = el("button",{class:"btn sec sm",type:"button",text:"Expand all"}), collapseBtn = el("button",{class:"btn sec sm",type:"button",text:"Collapse all"});
+  expandBtn.addEventListener("click",()=>setGroups(true)); collapseBtn.addEventListener("click",()=>setGroups(false));
   const optBox=el("input",{type:"checkbox",id:"optset"}); optBox.checked=!!profile.email_opt_in;
   optBox.addEventListener("change", async ()=>{
     const f={email_opt_in:optBox.checked,email_opt_in_at:optBox.checked?new Date().toISOString():null};
@@ -302,7 +354,8 @@ function viewDashboard(){
       el("div",{class:"bar",role:"progressbar","aria-valuenow":String(pct),"aria-valuemin":"0","aria-valuemax":"100"},[el("i")]),
       el("p",{class:"small",text:doneCount+" of "+total+" checklist items done"})
     ]),
-    el("div",{class:"days"},[...dayEls,
+    el("div",{class:"tools row"},[expandBtn,collapseBtn]),
+    el("div",{class:"days"},[...standalone, ...groupEls,
       el("div",{class:"card"},[el("h2",{text:"More days are on the way"}),el("p",{text:"New days are added as the series is published. Come back and your progress will be here."})])
     ]),
     el("div",{class:"card",style:"margin-top:18px"},[
