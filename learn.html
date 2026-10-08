@@ -13,8 +13,9 @@
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="preload" href="assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/pixelify-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/fonts.css">
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -214,7 +215,9 @@ function viewGate(){
       cont
     ])
   );
-  sub.addEventListener("click",()=>{ ack.disabled=false; });
+  // Opening the subscribe page counts as the first move: the box is ticked for you (you can untick it) and Continue opens.
+  // The email box stays unticked: the privacy page promises that nothing is sent without your own tick.
+  sub.addEventListener("click",()=>{ ack.disabled=false; ack.checked=true; cont.disabled=false; });
   ack.addEventListener("change",()=>{ cont.disabled = !ack.checked; });
   cont.addEventListener("click", async ()=>{
     cont.disabled=true;
@@ -321,10 +324,10 @@ function viewError(msg){
     const s = await api.session();
     if (!s) { $("signout").hidden=true; return viewLogin(); }
     user = s.user;
-    profile = await api.profile(user.id);
+    // The profile, the progress and the day list do not depend on each other, so they load together.
+    const [prof, rows] = await Promise.all([api.profile(user.id), api.progress(user.id), indexReady]);
+    profile = prof;
     if (!profile) return viewError("Your profile was not created. Please sign out and sign in again.");
-    const rows = await api.progress(user.id);
-    await indexReady;
     done = new Set(rows.filter(r=>r.done).map(r=>key(r.day,r.item)));
     $("who").textContent = (user.user_metadata&&user.user_metadata.full_name)||user.email||"";
     $("signout").hidden=false;

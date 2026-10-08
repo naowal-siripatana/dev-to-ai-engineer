@@ -1,0 +1,2 @@
+Nunito (Vernon Adams, Cyreal, Jacques Le Bailly) and Pixelify Sans (Stefie Justprince) are licensed under the SIL Open Font License 1.1: https://openfontlicense.org
+Files are the latin subset served by Google Fonts (fonts.google.com), copied here so pages load without a request to another site.
