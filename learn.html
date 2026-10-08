@@ -64,7 +64,9 @@
   .badge.done{background:var(--mint)}.badge.open{background:var(--honey)}.badge.locked{background:#e6dcef;color:var(--muted)}.badge.late{background:#ffd0c4}
   details.day.locked>summary{cursor:not-allowed;opacity:.8}
   details.phase,details.mod{border:3px solid var(--outline);border-radius:16px;background:#FFF9F2f7;box-shadow:5px 5px 0 var(--outline);overflow:hidden}
-  details.mod{border-radius:14px;box-shadow:3px 3px 0 var(--outline);background:var(--peach)}
+  details.mod{border:0;border-radius:0;box-shadow:none;background:none;overflow:visible}
+  details.mod>summary{padding:8px 4px;border-bottom:2px dashed var(--line)}
+  details.mod>.group{padding:12px 0 4px}
   details.phase>summary,details.mod>summary{list-style:none;cursor:pointer;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px}
   details.phase>summary::-webkit-details-marker,details.mod>summary::-webkit-details-marker{display:none}
   details.phase>summary:before,details.mod>summary:before,details.day>summary:before{content:"\25B8";font-family:var(--body);font-weight:800;color:var(--muted);transition:transform .15s}
