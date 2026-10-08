@@ -334,8 +334,7 @@ try {
     const l=el("button",{class:"lbl",type:"button","aria-label":"Module "+m.num+": "+m.title},[el("b",{text:m.num}),el("span",{text:m.title})]);
     l.addEventListener("click",()=>select(i)); stage.append(l); labels.push(l);
   });
-  /* Keep the labels out of the way: a label that would cover the title, the buttons, the panel or the controls moves instead of
-     disappearing: first under its island, then just past the thing it would cover. It only hides when there is no free spot. */
+  /* Keep the labels out of the way of the title, the buttons, the panel and the controls (see the frame loop below). */
   let uiRects = [];
   const refreshUi = () => {
     const sr = stage.getBoundingClientRect();
@@ -471,8 +470,7 @@ try {
     const ph = sel<0 ? 2 : MODULES[sel].phase;
     costume.forEach((c,ci)=>c.visible = ci===ph);
 
-    // Work out where every label wants to be, then place them nearest-first (the open module first),
-    // so a far label moves out of the way of a near one instead of piling on top of it.
+    // Work out where every label wants to be on screen.
     const lblWant = labels.map((l,i)=>{
       v.copy(pos[i]).add(up).project(camera);
       const d=camera.position.distanceTo(pos[i]);
@@ -484,13 +482,14 @@ try {
       if (z.k!==k) { z.k=k; z.w=l.offsetWidth; z.h=l.offsetHeight; }
       return {i,l,d,op,sx:(v.x*0.5+0.5)*W,sy:(-v.y*0.5+0.5)*H,sy2:(-v2.y*0.5+0.5)*H,w:z.w,h:z.h};
     });
-    const placed = [];
-    lblWant.slice().sort((a,b)=>(b.i===sel)-(a.i===sel)||a.d-b.d).forEach(f=>{
+    // With a module open, only its own label shows, and it moves out of the way of the title or buttons instead of hiding.
+    // In the overview every label shows, and a label that would cover something simply stays hidden (no jumping around).
+    lblWant.forEach(f=>{
       let px=f.sx, pt=f.sy-f.h, op=f.op;
-      if (op>0) {
-        const spot=place(f.sx,f.sy,f.sy2,f.w,f.h,W,H,placed);
-        if (spot) { px=spot[0]; pt=spot[1]; placed.push({l:px-f.w/2-3,t:pt-3,r:px+f.w/2+3,b:pt+f.h+3}); } else op=0;
-      }
+      if (sel>=0) {
+        if (f.i!==sel) op=0;
+        else { const spot=place(f.sx,f.sy,f.sy2,f.w,f.h,W,H,[]); if (spot) { px=spot[0]; pt=spot[1]; } }
+      } else if (op>0 && hitsAny(px,pt,f.w,f.h,[])) op=0;
       f.l.style.opacity=op; f.l.style.pointerEvents=op<0.2?"none":"auto";
       f.l.style.transform="translate("+px+"px,"+pt+"px) translate(-50%,0)";
     });
