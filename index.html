@@ -14,12 +14,12 @@
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preload" href="assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="assets/fonts/pixelify-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/fonts.css">
 <style>
   :root{--night:#2A1F45;--night2:#3A2C5E;--cream:#FFF1E2;--card:#FFF9F2;--ink:#3A2450;--muted:#7A6590;--line:#E3C3A5;--shadow:#F2D2B6;--outline:#1C1430;
     --coral:#FF6B4A;--coral-d:#D9472A;--honey:#FFC15E;--honey-d:#B86E00;--blush:#FF9EC4;--mint:#7FE0C2;--mint-d:#17806A;--lav:#C9BCEF;
-    --px:'Pixelify Sans',monospace;--body:'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif;
+    --px:'Jersey 15',monospace;--body:'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif;
     --p0:var(--mint);--p1:var(--lav);--p2:var(--honey);--p3:var(--coral)}
   *{box-sizing:border-box;margin:0}
   html{scroll-behavior:smooth}
@@ -120,6 +120,7 @@
   }
   #gl{opacity:0;transition:opacity .6s ease}#stage.ready #gl,#stage.no3d #gl{opacity:1}
   @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.hud .bar i,.lbl,#gl{transition:none}}
+  .tag,#daily .badge,.lbl{font-family:var(--body);font-weight:800}
 </style>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
