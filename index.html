@@ -334,6 +334,19 @@ try {
     const l=el("button",{class:"lbl",type:"button","aria-label":"Module "+m.num+": "+m.title},[el("b",{text:m.num}),el("span",{text:m.title})]);
     l.addEventListener("click",()=>select(i)); stage.append(l); labels.push(l);
   });
+  /* Keep the labels out of the way: they hide when they would cover the title, the buttons, the panel or the controls,
+     and when a module is open only that module and its two neighbours keep a label. */
+  let uiRects = [];
+  const refreshUi = () => {
+    const sr = stage.getBoundingClientRect();
+    uiRects = [".hero",".hud",".login",".legend","#panel",".controls"].map(q=>stage.querySelector(q)).filter(Boolean).map(n=>{
+      const r=n.getBoundingClientRect(); return {l:r.left-sr.left-8,t:r.top-sr.top-8,r:r.right-sr.left+8,b:r.bottom-sr.top+8};
+    }).filter(r=>r.r>r.l&&r.b>r.t);
+  };
+  const lblSize = labels.map(()=>({w:90,h:24,k:""}));
+  refreshUi();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(refreshUi);
+  setTimeout(refreshUi,700);
 
   const dog = new THREE.Group(), GOLD=0xF2B65A, LIGHT=0xFBE3B0, DARK=0xC98530, INK=0x1C1430, PINK=0xFF9EC4;
   const ell = (r,sx,sy,sz,c,x,y,z,p,e=0) => { const m=sph(r,c,x,y,z,p,e); m.scale.set(sx,sy,sz); return m; };
@@ -392,13 +405,13 @@ try {
     const w=stage.clientWidth,h=stage.clientHeight;
     renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); target();
   }
-  addEventListener("resize",()=>{resize(); if(reduce){camPos.copy(tPos);camLook.copy(tLook);}});
+  addEventListener("resize",()=>{resize(); refreshUi(); if(reduce){camPos.copy(tPos);camLook.copy(tLook);}});
   function goDog(){
     const i=Math.max(sel,0);
     if (i===fetch.idx) return;
     fetch.from.copy(dog.position); fetch.to.copy(spot(i)); fetch.idx=i; fetch.t=reduce?1:0;
   }
-  three = { onSelect(){ target(); goDog(); if(reduce){camPos.copy(tPos);camLook.copy(tLook);} },
+  three = { onSelect(){ refreshUi(); target(); goDog(); if(reduce){camPos.copy(tPos);camLook.copy(tLook);} },
     snap(){ target(); camPos.copy(tPos); camLook.copy(tLook); const i=Math.max(sel,0); fetch.idx=i; fetch.t=1; fetch.from.copy(spot(i)); fetch.to.copy(spot(i)); dog.position.copy(spot(i)); } };
   resize(); camPos.copy(tPos); camLook.copy(tLook); dog.position.copy(spot(0));
 
@@ -454,10 +467,15 @@ try {
       v.copy(pos[i]).add(up).project(camera);
       const d=camera.position.distanceTo(pos[i]);
       const vis=v.z<1&&Math.abs(v.x)<1.05&&Math.abs(v.y)<1.05;
-      const op=!vis?0:sel<0?1:Math.max(0,Math.min(1,1-(d-22)/26));
-      l.style.opacity=op; l.style.pointerEvents=op<0.2?"none":"auto";
+      let op=!vis?0:sel<0?1:Math.max(0,Math.min(1,1-(d-22)/26));
+      if (sel>=0 && Math.abs(i-sel)>1) op=0;
+      const sx=(v.x*0.5+0.5)*W, sy=(-v.y*0.5+0.5)*H;
       l.classList.toggle("compact",sel<0); l.classList.toggle("on",i===sel);
-      l.style.transform="translate("+((v.x*0.5+0.5)*W)+"px,"+((-v.y*0.5+0.5)*H)+"px) translate(-50%,-100%)";
+      const z=lblSize[i], k=(sel<0?"c":"f")+(i===sel?"on":"");
+      if (z.k!==k) { z.k=k; z.w=l.offsetWidth; z.h=l.offsetHeight; }
+      if (op>0 && uiRects.some(r=>sx+z.w/2>r.l&&sx-z.w/2<r.r&&sy>r.t&&sy-z.h<r.b)) op=0;
+      l.style.opacity=op; l.style.pointerEvents=op<0.2?"none":"auto";
+      l.style.transform="translate("+sx+"px,"+sy+"px) translate(-50%,-100%)";
     });
     renderer.render(scene,camera);
     requestAnimationFrame(frame);
