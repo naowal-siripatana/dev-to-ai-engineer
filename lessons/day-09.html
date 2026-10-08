@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 9 - FastAPI: your first endpoint</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/pixelify-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 9 &middot; LEVEL 2: AI BACKEND</div><h1>FastAPI: your first endpoint</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to run a FastAPI app and call GET /health and POST /api/chat from the docs page.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does Pydantic do with <code>top_k=99</code> when the limit is 10?</li><li>How do you try an idea on a branch and then bring it back into <code>main</code>?</li></ol><details><summary>Answers</summary><ol><li>It raises a <code>ValidationError</code> that says the value must be at most 10.</li><li><code>git switch -c idea</code>, commit your work, <code>git switch main</code>, then <code>git merge idea</code>.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You type a web address in a browser, and a page appears. What if the &ldquo;page&rdquo; were one of your own Python functions?</strong></p><details><summary>Guess first, then open</summary><p>Then another program, a browser, a phone app or a front end, can call your function from far away. That is what an API is, and today you build the first one.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: an endpoint is a function with an address</h3>
+<p>In FastAPI you put a line above a function: <code>@app.get("/health")</code>. It says: &ldquo;when someone asks for <code>/health</code>, run this function and send back what it returns&rdquo;. <code>get</code> is the kind of request (reading). <code>post</code> is for sending data in.</p>
+<h3>Piece 2: you get a test page for free</h3>
+<p>FastAPI builds a page at <code>/docs</code> where you can see every endpoint, fill in data and press a button. You do not need any other tool to try your API.</p>
+<h3>Piece 3: models in, models out</h3>
+<p>The data a client sends is a Pydantic model (<code>ChatRequest</code>), and the data you send back is another (<code>ChatResponse</code>). You already know Pydantic from Day 3: FastAPI uses it to check the request <em>before</em> your function runs. A bad request gets a <strong>422</strong> and a message that says why. Your function never sees it.</p>
+<table><tr><th>Status</th><th>Meaning</th></tr><tr><td><code>200</code></td><td>OK, here is your answer</td></tr><tr><td><code>404</code></td><td>Not Found: there is no such address</td></tr><tr><td><code>405</code></td><td>Method Not Allowed: the address exists, but not for this kind of request</td></tr><tr><td><code>422</code></td><td>The data you sent did not pass the checks</td></tr></table>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>@app.get("/health")</code> is <code>app.MapGet("/health", ...)</code> in an ASP.NET Core minimal API, and <code>/docs</code> is the same Swagger UI you may know. A Pydantic model plays the role of a request DTO with validation. One difference: ASP.NET Core returns <code>400</code> for bad data, FastAPI returns <code>422</code>.</div>
+<div class="box cap"><strong>Capstone:</strong> <code>POST /api/chat</code> is the front door of the AI knowledge assistant. Today it gives a fake answer. Later it will call a real model and return sources.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">3 min</span></h2><p>Read it first. A tiny web API with two endpoints. <code>src/my_ai_project/api.py</code></p><pre><code>from fastapi import FastAPI
+from pydantic import BaseModel, Field
+
+app = FastAPI(title=&quot;my-ai-project&quot;)
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=3, ge=1, le=10)
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: list[str]
+
+
+@app.get(&quot;/health&quot;)
+def health() -&gt; dict[str, str]:
+    return {&quot;status&quot;: &quot;ok&quot;}
+
+
+@app.post(&quot;/api/chat&quot;)
+def chat(request: ChatRequest) -&gt; ChatResponse:
+    return ChatResponse(answer=f&quot;(fake) You asked: {request.question}&quot;, sources=[])</code></pre><p>Start it, then open <code>http://127.0.0.1:8000/health</code> in your browser:</p><pre><code>uv add fastapi uvicorn
+uv run uvicorn my_ai_project.api:app</code></pre><div class="out"><b>You should see</b><br>INFO:&nbsp;&nbsp;&nbsp;&nbsp; Started server process [12345]<br>INFO:&nbsp;&nbsp;&nbsp;&nbsp; Waiting for application startup.<br>INFO:&nbsp;&nbsp;&nbsp;&nbsp; Application startup complete.<br>INFO:&nbsp;&nbsp;&nbsp;&nbsp; Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)</div><p>The browser shows:</p><div class="out"><b>You should see</b><br>{"status":"ok"}</div><p><small>The number in <code>[12345]</code> differs on every run. <code>uvicorn</code> is the small program that runs your app. Stop it with Ctrl+C.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code> from Day 2 (and Day 7). Work on <code>main</code> or on a branch, as you like.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Save the code as <code>src/my_ai_project/api.py</code>, then run the two commands from the worked example. Open <code>/health</code> in your browser, then open <code>/docs</code>. In <code>/docs</code>, open <code>POST /api/chat</code>, press <strong>Try it out</strong>, write <code>{"question": "What is E101?"}</code> and press <strong>Execute</strong>.</p><div class="out"><b>You should see</b><br>200&nbsp;&nbsp;{"answer":"(fake) You asked: What is E101?","sources":[]}</div>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Change the <code>health</code> function to return <code>{"status": "ok", "version": "0.1.0"}</code>. <strong>Predict:</strong> what will the browser show, and do you need to restart? Then check. (Tip: start the server with <code>--reload</code> and it restarts by itself each time you save.)</p><details><summary>Check your prediction</summary><div class="out"><b>You should see</b><br>{"status":"ok","version":"0.1.0"}</div><p>The server keeps the <em>old</em> code in memory. Press Ctrl+C and start it again, or use <code>--reload</code>. Without it, the page does not change.</p></details>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Send bad requests and read the answers. In <code>/docs</code>, send an empty question. Then open <code>http://127.0.0.1:8000/api/chat</code> in your browser (a <code>GET</code> on a <code>POST</code> address). Then open <code>/nope</code>. (Or use <code>curl</code>:)</p><pre><code>curl -i http://127.0.0.1:8000/health
+curl -i -X POST http://127.0.0.1:8000/api/chat -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;question&quot;: &quot;&quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>POST empty question:<br>422&nbsp;&nbsp;{"detail":[{"type":"string_too_short","loc":["body","question"],"msg":"String should have at least 1 character","input":"","ctx":{"min_length":1}}]}<br><br>GET /api/chat in the browser:<br>405&nbsp;&nbsp;{"detail":"Method Not Allowed"}<br><br>GET /nope:<br>404&nbsp;&nbsp;{"detail":"Not Found"}</div>
+<p>Read the 422: <code>loc</code> says <em>where</em> (the body, the field <code>question</code>), and <code>msg</code> says <em>what</em>. Pydantic stopped the request before your function ran.</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Add an endpoint <code>GET /api/greet/{name}</code> that returns <code>{"message": "Hello, Naowal!"}</code> for <code>/api/greet/Naowal</code>. The part in curly braces is a <strong>path parameter</strong>: FastAPI gives it to your function as the argument <code>name</code>. Restart and test it in the browser.</p><details><summary>Hint 1</summary><p>Copy the shape of the <code>health</code> function. The function needs one parameter with the same name as the one in the braces.</p></details><details><summary>Hint 2</summary><p>Return an f-string: <code>f"Hello, {name}!"</code> inside a dictionary with the key <code>"message"</code>.</p></details><details><summary>Solution</summary><pre><code>@app.get(&quot;/api/greet/{name}&quot;)
+def greet(name: str) -&gt; dict[str, str]:
+    return {&quot;message&quot;: f&quot;Hello, {name}!&quot;}</code></pre><div class="out"><b>You should see</b><br>{"message":"Hello, Naowal!"}</div></details>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Add the first FastAPI endpoints"</code>. If you work on <code>main</code>, that is fine for today.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;command not found: uvicorn&rdquo;</strong>: run it as <code>uv run uvicorn ...</code>, from the project folder, after <code>uv add fastapi uvicorn</code>.</li><li><strong>&ldquo;Error loading ASGI app. Could not import module&rdquo;</strong>: the name after <code>uvicorn</code> must match your file: <code>my_ai_project.api:app</code> means file <code>api.py</code> and variable <code>app</code>. Check for a typo.</li><li><strong>&ldquo;address already in use&rdquo;</strong>: another server is still running on port 8000. Stop it with Ctrl+C, or start this one on another port with <code>--port 8001</code>.</li><li><strong>You saved the file but nothing changed</strong>: restart the server, or start it with <code>--reload</code>.</li><li><strong>&ldquo;nothing to commit&rdquo;</strong>: you did not save the files, or you are in the wrong folder.</li></ul></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What does the line <code>@app.get(&quot;/health&quot;)</code> do?</li><li>The address <code>/api/chat</code> exists, but a browser visit shows <code>405</code>. Why?</li><li>A request with an empty question gets a <code>422</code>. Who did the checking, and did your function run?</li></ol><details><summary>Answers</summary><ol><li>It connects the address <code>/health</code> (for reading) to the function below it. When someone asks for that address, FastAPI runs the function and sends back what it returns.</li><li>A browser visit is a <code>GET</code>, but <code>/api/chat</code> only accepts <code>POST</code>. The address exists, the kind of request is wrong.</li><li>Pydantic, through the <code>ChatRequest</code> model, before your function. Your function did not run.</li></ol></details></section>
+<section id="game-day9" class="game"><h2><span class="n">+</span> &middot; Game: Request Detective <span class="t">5 min</span></h2>
+<p><p>Your API is running. A client sends a request. What does it get back? Read the situation, pick the answer, then see the real response.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day9-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day9-play">Start the game</button></div>
+<div id="day9-round" hidden><div class="gtop"><span id="day9-num">Round 1</span><span id="day9-score">Score 0</span></div>
+<pre hidden><code id="day9-code"></code></pre><div class="q" id="day9-q"></div><div class="choices" id="day9-opts"></div>
+<div class="fb" id="day9-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day9-next" hidden>Next round</button></p></div>
+<div id="day9-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day9",[{"c": "GET http://127.0.0.1:8000/health", "q": "What does the client get?", "o": ["200 OK and the JSON {\"status\":\"ok\"}", "404 Not Found", "422 Unprocessable Entity"], "a": 0, "out": "HTTP/1.1 200 OK\n{\"status\":\"ok\"}", "why": "The address exists and the function returns a dictionary, which FastAPI sends as JSON."}, {"c": "GET http://127.0.0.1:8000/nope", "q": "There is no function for this address. What does the client get?", "o": ["404 Not Found", "405 Method Not Allowed", "200 OK with an empty body"], "a": 0, "out": "HTTP/1.1 404 Not Found\n{\"detail\":\"Not Found\"}", "why": "404 means there is no such address."}, {"c": "# the route is @app.post(\"/api/chat\")\nGET http://127.0.0.1:8000/api/chat   (a browser visit)", "q": "What does the client get?", "o": ["405 Method Not Allowed", "404 Not Found", "200 OK with a fake answer"], "a": 0, "out": "HTTP/1.1 405 Method Not Allowed\n{\"detail\":\"Method Not Allowed\"}", "why": "The address exists, but only for POST. A browser visit is a GET."}, {"c": "POST /api/chat\n{\"question\": \"\"}", "q": "The question must have at least 1 character. What happens?", "o": ["422 from Pydantic, and your function never runs", "200 OK with an empty answer", "500 because your code crashes"], "a": 0, "out": "HTTP/1.1 422 Unprocessable Entity\n{\"detail\":[{\"type\":\"string_too_short\",\"loc\":[\"body\",\"question\"],\"msg\":\"String should have at least 1 character\", ...}]}", "why": "The request model is checked before your function. loc says where, msg says what."}, {"c": "POST /api/chat\n{\"question\": \"What is E101?\"}", "q": "What does the client get?", "o": ["200 OK with the answer and an empty list of sources", "422, because sources is missing", "A web page"], "a": 0, "out": "HTTP/1.1 200 OK\n{\"answer\":\"(fake) You asked: What is E101?\",\"sources\":[]}", "why": "top_k has a default of 3, so the client does not have to send it. The response model shapes what comes back."}, {"c": "", "q": "Which address shows the free interactive page where you can try every endpoint?", "o": ["/docs", "/health", "/api/chat"], "a": 0, "out": "<title>my-ai-project - Swagger UI<\/title>", "why": "FastAPI builds /docs from your code: the endpoints, the models and a Try it out button."}],["Request rookie", "Request detective", "API detective"],"A GET and a POST are different requests, 404 means no such address, 405 means the wrong kind of request, and 422 means the data failed its checks before your code ran.");</script>
+<p><small>Tick &ldquo;Play the Request Detective game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> your first web API: two endpoints, a test page you did not have to build, and a request that is checked before your code runs.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 9 checklist.</li><li>Share one line in the comments: what did your <code>422</code> look like?</li><li><strong>Next:</strong> Wednesday goes deeper into request and response models. This week ends with three endpoints: <code>/api/chat</code>, <code>/api/summarize</code> and <code>/api/extract</code>.</li></ul></section>
+</main>
+<footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

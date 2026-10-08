@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 7 &middot; Project Lab 1</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/pixelify-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<style>
+  :root{--night:#2A1F45;--night2:#3A2C5E;--cream:#FFF1E2;--card:#FFF9F2;--peach:#FFE9D2;--ink:#3A2450;--muted:#7A6590;--line:#E3C3A5;--outline:#1C1430;
+    --coral:#FF6B4A;--coral-d:#D9472A;--honey:#FFC15E;--honey-d:#B86E00;--mint:#7FE0C2;--mint-d:#17806A;--lav:#C9BCEF;
+    --px:'Pixelify Sans',monospace;--body:'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;color:var(--ink);font-family:var(--body);background:#2A1F45;background:linear-gradient(180deg,#2A1F45 0%,#4B3873 38%,#B77C9E 78%,#FFC4A3 100%) fixed}
+  #deck{position:relative;height:100vh;height:100svh;overflow:hidden}
+  .slide{position:absolute;inset:60px 5vw 70px;display:none;flex-direction:column;justify-content:center;padding:4vh 5vw;opacity:0;transition:opacity .25s ease;background:#FFF9F2f7;border:3px solid var(--outline);border-radius:16px;box-shadow:8px 8px 0 var(--outline);overflow:auto}
+  .slide.active{display:flex;opacity:1}
+  .kicker{color:var(--mint-d);font-family:var(--px);font-size:.85rem;letter-spacing:.16em;text-transform:uppercase;margin-bottom:.6rem;font-weight:700}
+  h1{font-family:var(--px);font-size:clamp(1.6rem,4vw,2.6rem);margin:0 0 .4rem;line-height:1.12;color:var(--ink)}
+  h2{font-family:var(--px);font-size:clamp(1.2rem,2.6vw,1.7rem);margin:0 0 1rem;color:var(--coral-d)}
+  .sub{color:var(--muted);font-size:clamp(.95rem,1.6vw,1.15rem);margin-bottom:1.2rem}
+  ul{margin:0;padding-left:1.2em}
+  li{margin-bottom:.55rem;line-height:1.5;font-size:clamp(.95rem,1.5vw,1.15rem)}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem 1.4rem}
+  @media (max-width:700px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--peach);border:2px solid var(--line);border-radius:12px;padding:1rem 1.2rem}
+  .card h3{margin:0 0 .35rem;font-family:var(--px);font-size:1rem;color:var(--coral-d)}
+  .card p{margin:0;font-size:.95rem;line-height:1.5}
+  .box{background:var(--cream);border:2px solid var(--line);border-left:8px solid var(--mint);border-radius:12px;padding:1.1rem 1.4rem;font-size:clamp(.95rem,1.5vw,1.1rem);line-height:1.6}
+  .box.warn{border-left-color:var(--honey)}
+  .box.cap{border-left-color:var(--coral)}
+  .box.bridge{border-left-color:var(--lav)}
+  .box.plan{border-left-color:var(--lav)}
+  code{background:var(--peach);border:1px solid var(--line);border-radius:5px;padding:.1em .4em;font-size:.9em;color:var(--ink)}
+  pre{background:#2A1F45;color:#FFF1E2;border:3px solid var(--outline);border-radius:10px;padding:1rem 1.2rem;font-size:clamp(.8rem,1.3vw,1rem);overflow-x:auto;margin:0 0 1rem}
+  pre code{background:none;border:0;padding:0;color:inherit}
+  .badge{display:inline-block;font-family:var(--px);background:var(--peach);border:2px solid var(--line);border-radius:999px;padding:.3rem .9rem;font-size:.85rem;color:var(--muted);margin-bottom:1rem}
+  .bar{position:fixed;top:0;left:0;height:6px;background:linear-gradient(90deg,var(--mint),var(--coral));transition:width .2s ease;z-index:10}
+  .home{position:fixed;top:14px;left:5vw;z-index:12;font-family:var(--px);font-size:.95rem;color:var(--ink);background:var(--mint);border:3px solid var(--outline);box-shadow:3px 3px 0 var(--outline);padding:6px 14px;text-decoration:none;min-height:36px;display:inline-flex;align-items:center}
+  .home:hover{background:var(--honey)}
+  .nav{position:fixed;bottom:16px;right:5vw;display:flex;gap:.5rem;align-items:center;color:var(--cream);font-family:var(--px);font-size:.9rem;z-index:10}
+  .nav button{background:var(--honey);border:3px solid var(--outline);color:var(--ink);box-shadow:3px 3px 0 var(--outline);width:44px;height:44px;cursor:pointer;font-size:1rem}
+  .nav button:hover{background:var(--mint)}
+  .nav span{font-family:var(--body);font-weight:800;background:var(--night);border:3px solid var(--outline);padding:8px 10px;min-width:64px;text-align:center}
+  .clickzone{position:absolute;top:0;bottom:0;width:6%;z-index:5;cursor:pointer}
+  .clickzone.left{left:0}.clickzone.right{right:0}
+  .footer-title{position:fixed;bottom:22px;left:5vw;color:var(--cream);background:var(--night);border:3px solid var(--outline);padding:6px 12px;font-family:var(--px);font-size:.8rem;z-index:10;max-width:50vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .home:focus-visible,.nav button:focus-visible{outline:3px solid var(--coral);outline-offset:3px}
+  @media (max-width:700px){.slide{inset:56px 3vw 74px;padding:3vh 5vw}.footer-title{display:none}.nav{right:3vw}.home{left:3vw}}
+</style>
+</head>
+<body>
+<a class="home" href="../index.html" aria-label="Back to the home page">&#9664; Home</a>
+<div class="bar" id="bar" style="width:0%"></div>
+<div id="deck">
+
+<div class="slide active">
+  <div class="kicker">Module 01 &middot; Day 7 &middot; Project Lab</div>
+  <h1>Load a Document</h1>
+<div class="sub">The first real feature of the AI knowledge assistant</div><div class="box">Goal today: add a tested, typed Document loader to your project on a branch, and merge it.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Hook</div>
+  <h2>A knowledge assistant needs knowledge</h2>
+<div class="grid"><div class="card"><h3>The question</h3><p>Where does the first document come from?</p></div><div class="card"><h3>The answer</h3><p>A plain text file you can open, read and trust.</p></div><div class="card"><h3>Today</h3><p>Build the part that opens it, checks it, and turns it into a clean Document.</p></div><div class="card"><h3>Later</h3><p>Chunks, embeddings and answers with sources all start from here.</p></div></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Piece 1</div>
+  <h2>Write the finish line first</h2>
+<pre><code>uv run python -m my_ai_project knowledge/error-e101.md
+uv run pytest -q
+uv run mypy src tests</code></pre><div class="sub">Before you type: one command prints a title and the reading time, the tests pass, <code>mypy</code> is quiet, and the work is merged. If you cannot say it, you cannot tell when you are finished.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Piece 2</div>
+  <h2>Check the data at the door</h2>
+<pre><code>class Document(BaseModel):
+    doc_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    body: str</code></pre><div class="sub">A file is just text. Turn it into a <code>Document</code> once, at the door. After that, the rest of the code can trust every document.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">Piece 3</div>
+  <h2>Tests get their own temporary folder</h2>
+<pre><code>def test_missing_file_raises_a_clear_error(tmp_path: Path) -&gt; None:
+    with pytest.raises(DocumentNotFoundError):
+        load_document(tmp_path / &quot;nope.md&quot;)</code></pre><div class="sub"><code>tmp_path</code> is an empty folder that pytest gives each test and removes after. Your real folders stay untouched.</div>
+</div>
+
+<div class="slide">
+  <div class="kicker">From Another Language</div>
+  <h2>Bridge</h2>
+<div class="grid"><div class="card"><h3>pathlib.Path</h3><p>Does the job of <code>System.IO.Path</code> and <code>File</code> together.</p></div><div class="card"><h3>tmp_path</h3><p>Like a temp directory that xUnit would clean up for you.</p></div><div class="card"><h3>python -m my_ai_project</h3><p>Runs the package like a small console app with a <code>Main</code>.</p></div><div class="card"><h3>Pydantic model</h3><p>Like a DTO with validation that runs when you create it.</p></div></div>
+</div>
+
+<div class="slide">
+  <div class="kicker">The Build</div>
+  <h2>About 2.5 hours, in 5 steps</h2>
+<ul><li><strong>Plan:</strong> write the finish line in your README (10 min)</li><li><strong>Step 1:</strong> branch <code>lab-1-documents</code>, then add pydantic, pytest, mypy</li><li><strong>Step 2:</strong> the Document model, and a mid-point check</li><li><strong>Step 3:</strong> <code>load_document</code> and a tiny command</li><li><strong>Step 4:</strong> write the 5 tests yourself</li><li><strong>Step 5:</strong> mypy clean, commit, merge, delete the branch, then a 3-line lab log</li></ul>
+</div>
+
+<div class="slide">
+  <div class="kicker">Capstone Tie-In</div>
+  <h2>Where this goes</h2>
+<div class="box cap">This is the first real feature of the assistant: typed, checked, logged, tested, and merged from a branch. Later, RAG splits each Document into chunks and embeds them.</div><div class="badge" style="margin-top:1.2rem;">Next: Sunday review, then FastAPI</div>
+</div>
+
+</div>
+
+<div class="clickzone left" onclick="go(-1)"></div>
+<div class="clickzone right" onclick="go(1)"></div>
+<div class="footer-title">Day 7 &middot; Project Lab 1</div>
+<div class="nav">
+  <button onclick="go(-1)">&larr;</button>
+  <span id="counter">1 / N</span>
+  <button onclick="go(1)">&rarr;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let i = 0;
+  function render() {
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    document.getElementById('counter').textContent = (i+1) + ' / ' + slides.length;
+    document.getElementById('bar').style.width = ((i+1)/slides.length*100) + '%';
+  }
+  function go(delta) {
+    i = Math.max(0, Math.min(slides.length - 1, i + delta));
+    render();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'h' || e.key === 'H') { location.href = '../index.html'; return; }
+    if (['ArrowRight', ' ', 'PageDown'].includes(e.key)) go(1);
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) go(-1);
+  });
+  render();
+</script>
+</body>
+</html>
