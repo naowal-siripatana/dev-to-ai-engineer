@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 12 - Mixed practice: /api/summarize with a fake LLM</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 12 &middot; LEVEL 2: AI BACKEND &middot; MIXED PRACTICE</div><h1>Mixed practice: /api/summarize with a fake LLM</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to build POST /api/summarize from a blank file, with a fake LLM and tests that prove it.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a test for an AI function use a <em>fake</em> client instead of the real model?</li><li>A request has <code>top_k</code> 99 and the limit is 10. What does the client get back?</li></ol><details><summary>Answers</summary><ol><li>So the test is fast, free and gives the same answer every time. It checks your code, not the model.</li><li>A <code>422</code> that says the value must be at most 10. Pydantic stops the request before your function runs.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Today there is no recipe to copy. You have a goal, a small contract, and everything you need is already in your project. How much of it can you build from memory?</strong></p><details><summary>Why a blank file?</summary><p>Mixing old ideas into one new task is what makes them stick. Reading a recipe feels easy and teaches little. Getting stuck for two minutes and then finding the answer teaches a lot. If you get stuck, the Stuck section has hints before solutions.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
+<p>No new ideas today. Here is the map of what you will reuse.</p>
+<h3>Piece 1: a fake model (Day 5)</h3>
+<p>A small class with a <code>complete(prompt)</code> method that returns a fixed answer. Your <code>summarize</code> function from Day 5 takes any client that has that method, so the fake can stand in for the real model.</p>
+<h3>Piece 2: models in, models out (Day 9 and Day 11)</h3>
+<p>One model for what the client sends, one for what comes back, and a route that connects them.</p>
+<h3>Piece 3: one test through the front door (new, but small)</h3>
+<p><code>TestClient</code> lets a test call your API like a client does, without starting a server. You call <code>client.post(...)</code> and check the status code and the JSON.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>TestClient</code> plays the role of <code>WebApplicationFactory</code> in ASP.NET Core integration tests, and the fake client is a hand-made test double (the same idea as a mock you would register in dependency injection).</div>
+<div class="box cap"><strong>Capstone:</strong> <code>/api/summarize</code> is the second of the three endpoints you ship this week. Because it talks to a fake today, swapping in a real model later changes one line.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">3 min</span></h2><p>No code to copy today. This is the <strong>contract</strong>: what your finished endpoint must do. Read it, then build it.</p><table><tr><th></th><th>Details</th></tr><tr><td>Address</td><td><code>POST /api/summarize</code></td></tr><tr><td>The client sends</td><td><code>text</code> (required, 1 to 20000 characters) and <code>max_words</code> (a whole number from 1 to 200, default 20)</td></tr><tr><td>The client gets back</td><td><code>summary</code> (text) and <code>words</code> (how many words the summary has)</td></tr><tr><td>The model</td><td>A fake client. It answers <code>(fake) </code> followed by the text, and <code>summarize</code> cuts the answer to <code>max_words</code> words</td></tr></table><p>When it works, this call:</p><pre><code>curl -i -X POST http://127.0.0.1:8000/api/summarize -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;text&quot;: &quot;Error E101 means the sensor timed out after ten seconds.&quot;, &quot;max_words&quot;: 5}&#x27;</code></pre><div class="out"><b>You should see</b><br>HTTP/1.1 200 OK<br>content-type: application/json<br><br>{"summary":"(fake) Error E101 means the","words":5}</div><p>Note that the summary is cut at 5 words, and the 5 includes the word <code>(fake)</code>.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">25 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c summarize-api</code>). You need <code>summarizer.py</code> from Day 5 and <code>api.py</code> from Day 11. If you do not have <code>summarizer.py</code>, open Day 5 and copy the finished <code>summarize</code> function and the <code>LlmClient</code> class.</p>
+<h3><span class="step">Step 1</span> The fake client, from a blank file</h3>
+<p>Create <code>src/my_ai_project/llm.py</code> with a class <code>FakeLlmClient</code>. Its method <code>complete(prompt)</code> returns <code>"(fake) "</code> followed by the prompt <em>without</em> the first part, <code>"Summarize in one sentence: "</code> (look at what <code>summarize</code> sends). Check it before you go on: run <code>uv run mypy src</code> and expect <code>Success: no issues found</code>.</p>
+<h3><span class="step">Step 2</span> The models and the route</h3>
+<p>In <code>api.py</code>, write <code>SummarizeRequest</code> and <code>SummarizeResponse</code> from the contract table, then the route <code>POST /api/summarize</code> that calls your <code>summarize</code> function with the fake client. Start the server (<code>uv run uvicorn my_ai_project.api:app --reload</code>) and run the call from the worked example. Match the output, including the <code>words</code> number. Then change <code>max_words</code> to 3 and <strong>predict</strong> the summary before you send it.</p>
+<h3><span class="step">Step 3</span> One test</h3>
+<p>Add the tools, then write <strong>one</strong> test in <code>tests/test_api.py</code> that sends the worked-example request through <code>TestClient</code> and checks the status code, the summary and <code>words</code>.</p><pre><code>uv add --dev pytest httpx2</code></pre>
+<p>Run <code>uv run pytest</code> and expect <code>1 passed</code>. Then break it on purpose: change the expected <code>words</code> from 5 to 6, run it, and read how pytest shows the difference. Change it back.</p>
+<h3><span class="step">Step 4</span> Your turn: a surprise</h3>
+<p>Send this request with <code>curl</code> (or from <code>/docs</code>):</p><pre><code>curl -i -X POST http://127.0.0.1:8000/api/summarize -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;text&quot;: &quot;   &quot;}&#x27;</code></pre>
+<p>Look at the status code. The text has three spaces, so it passes the <code>min_length</code> rule. <strong>What does the client get, and is it a good answer?</strong> Fix it so the client gets a clear <code>400</code> instead, and add a second test that proves it. You already know two ways to do it from Day 5 and Day 11.</p>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Add /api/summarize with a fake LLM and tests"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;ModuleNotFoundError: No module named 'my_ai_project.llm'&rdquo;</strong>: the file must be inside <code>src/my_ai_project/</code>, and you must run commands with <code>uv run</code>.</li><li><strong>The summary has no <code>(fake)</code></strong>: the fake client must put <code>"(fake) "</code> in front of its answer.</li><li><strong>Your test fails with <code>ValueError</code> and not a status code</strong>: <code>TestClient</code> re-raises an error that your route does not handle. That is the same bug as the <code>500</code> in Step 4, shown differently. Fix the route, not the test.</li><li><strong>&ldquo;fixture 'client' not found&rdquo; or &ldquo;ModuleNotFoundError: httpx2&rdquo;</strong>: run <code>uv add --dev pytest httpx2</code>, and create <code>client = TestClient(app)</code> at the top of the test file.</li></ul><details><summary>Hint 1: Steps 1 and 2</summary><p>Your <code>summarize</code> function has the shape <code>summarize(text, client, max_words)</code> and returns text. The response needs the number of words in that text: split it and count. The route can build the response with <code>SummarizeResponse(summary=..., words=...)</code>.</p></details><details><summary>Solution: Steps 1 and 2</summary><p><code>src/my_ai_project/llm.py</code>:</p><pre><code>class FakeLlmClient:
+    &quot;&quot;&quot;Stands in for the real model: no network, no cost, same answer every time.&quot;&quot;&quot;
+
+    def complete(self, prompt: str) -&gt; str:
+        return &quot;(fake) &quot; + prompt.removeprefix(&quot;Summarize in one sentence: &quot;)</code></pre><p>Add two imports at the top of <code>api.py</code>, then the models and the route at the bottom:</p><pre><code>from my_ai_project.llm import FakeLlmClient
+from my_ai_project.summarizer import summarize</code></pre><pre><code>class SummarizeRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=20000)
+    max_words: int = Field(default=20, ge=1, le=200)
+
+
+class SummarizeResponse(BaseModel):
+    summary: str
+    words: int</code></pre><pre><code>llm_client = FakeLlmClient()
+
+
+@app.post(&quot;/api/summarize&quot;)
+def summarize_text(request: SummarizeRequest) -&gt; SummarizeResponse:
+    summary = summarize(request.text, llm_client, request.max_words)
+    return SummarizeResponse(summary=summary, words=len(summary.split()))</code></pre></details><details><summary>Solution: Step 3</summary><p><code>tests/test_api.py</code>:</p><pre><code>from fastapi.testclient import TestClient
+
+from my_ai_project.api import app
+
+client = TestClient(app)
+
+
+def test_summarize_returns_a_short_summary() -&gt; None:
+    response = client.post(
+        &quot;/api/summarize&quot;,
+        json={&quot;text&quot;: &quot;Error E101 means the sensor timed out after ten seconds.&quot;, &quot;max_words&quot;: 5},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body[&quot;summary&quot;] == &quot;(fake) Error E101 means the&quot;
+    assert body[&quot;words&quot;] == 5</code></pre></details><details><summary>Hint 2: Step 4</summary><p>The <code>500</code> comes from a <code>ValueError</code> that <code>summarize</code> raises for blank text, and nothing catches it. Either catch it in the route and turn it into an <code>HTTPException</code>, or reject blank text earlier with a <code>@field_validator</code> like Day 11. (A validator gives a <code>422</code>, so for a <code>400</code> catch it in the route.)</p></details><details><summary>Solution: Step 4</summary><p>Import <code>HTTPException</code> from <code>fastapi</code> and change the route body:</p><pre><code>    try:
+        summary = summarize(request.text, llm_client, request.max_words)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err</code></pre><p>Add the second test to <code>tests/test_api.py</code>:</p><pre><code>def test_blank_text_is_a_client_error() -&gt; None:
+    response = client.post(&quot;/api/summarize&quot;, json={&quot;text&quot;: &quot;   &quot;})
+    assert response.status_code == 400
+    assert response.json() == {&quot;detail&quot;: &quot;text must not be empty&quot;}</code></pre><p>Run <code>uv run pytest</code> and expect <code>2 passed</code>. In a browser or with <code>curl</code>, the blank request now returns <code>400</code> and <code>{"detail":"text must not be empty"}</code>.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>In the test, why does nothing call the real model, and what would break if it did?</li><li>The blank request gave a <code>500</code> before your fix. Whose fault is a <code>500</code>, and whose fault is a <code>400</code>?</li><li>Which part of today came from which earlier day?</li></ol><details><summary>Answers</summary><ol><li>The route uses the fake client, so the test is fast, free and the same every time. With a real model the test could be slow, cost money and give a different summary on each run.</li><li>A <code>500</code> means the server failed: your code did something you did not plan for. A <code>400</code> (or <code>422</code>) means the request was wrong and the client can fix it. Blank text is the client&rsquo;s mistake, so it should be a <code>400</code>.</li><li>The fake client and <code>summarize</code> are from Day 5, the request and response models are from Day 9 and Day 11, the error handling is from Day 5 and Day 11. Only <code>TestClient</code> was new.</li></ol></details></section>
+<section id="game-day12" class="game"><h2><span class="n">+</span> &middot; Game: Test Detective <span class="t">5 min</span></h2>
+<p><p>You built <code>/api/summarize</code> with a fake model and tests. Something happens. What is the cause, and what is the right fix?</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day12-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day12-play">Start the game</button></div>
+<div id="day12-round" hidden><div class="gtop"><span id="day12-num">Round 1</span><span id="day12-score">Score 0</span></div>
+<pre hidden><code id="day12-code"></code></pre><div class="q" id="day12-q"></div><div class="choices" id="day12-opts"></div>
+<div class="fb" id="day12-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day12-next" hidden>Next round</button></p></div>
+<div id="day12-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day12",[{"c": "# the fake client answers: \"(fake) \" + the text\nPOST /api/summarize\n{\"text\": \"Error E101 means the sensor timed out\", \"max_words\": 3}", "q": "What is the summary?", "o": ["(fake) Error E101", "Error E101 means", "(fake) Error E101 means the sensor timed out"], "a": 0, "out": "{\"summary\":\"(fake) Error E101\",\"words\":3}", "why": "summarize cuts the model reply to max_words words, and the word (fake) counts as one of them."}, {"c": "POST /api/summarize\n{\"text\": \"   \"}   # three spaces, before any fix", "q": "The text passes min_length=1, and summarize raises ValueError for blank text. What does the client get?", "o": ["500 Internal Server Error", "422 Unprocessable Entity", "200 with an empty summary"], "a": 0, "out": "HTTP/1.1 500 Internal Server Error\nInternal Server Error", "why": "Nothing catches the ValueError, so the server fails. A 500 means your code did something you did not plan for."}, {"c": "try:\n    summary = summarize(request.text, llm_client, request.max_words)\nexcept ValueError as err:\n    raise HTTPException(status_code=400, detail=str(err)) from err", "q": "What does the client get for blank text now?", "o": ["400 with {\"detail\": \"text must not be empty\"}", "500 Internal Server Error", "200 OK"], "a": 0, "out": "HTTP/1.1 400 Bad Request\n{\"detail\":\"text must not be empty\"}", "why": "You turned your own error into a clear answer: the request was wrong, and the client can fix it."}, {"c": "# in the test file\nclient = TestClient(app)\nresponse = client.post(\"/api/summarize\", json={\"text\": \"hello world\", \"max_words\": 5})", "q": "Does this need uvicorn running on port 8000?", "o": ["No, TestClient calls the app directly", "Yes, it sends a real network request", "Yes, but only for POST"], "a": 0, "out": "1 passed in 0.46s", "why": "TestClient runs your app in the same process. No server, no port, no network."}, {"c": "# expected words: 5\nassert body[\"words\"] == 6", "q": "The test checks 6, but the real answer is 5. What does pytest show?", "o": ["A failed test with assert 5 == 6", "A passed test, because it is close", "A 422 from the API"], "a": 0, "out": "FAILED tests/test_api.py::test_summarize_returns_a_short_summary\nE   assert 5 == 6", "why": "A failing test is the signal you want. Read the two values, then decide whether the code or the test is wrong."}, {"c": "", "q": "Why does the endpoint use a fake model today?", "o": ["Fast, free and the same answer every time, so the test checks your code", "Because the real model cannot summarize", "Because FastAPI cannot call a real model"], "a": 0, "out": "", "why": "The fake stands in for the model. Later you swap one line for the real client."}],["Test rookie", "Test detective", "Test hero"],"A fake model keeps tests fast and free, TestClient calls your app without a server, and an error you did not plan for becomes a 500 until you turn it into a clear 400.");</script>
+<p><small>Tick &ldquo;Play the Test Detective game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a second API endpoint from a blank file, with a fake model, validated input, a clear error for bad input and tests that prove it.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 12 checklist.</li><li>Share one line in the comments: where did you get stuck, and what unstuck you?</li><li><strong>Next:</strong> Friday is a short teach-back, then Saturday is Project Lab 2: you add a third endpoint, <code>/api/extract</code>, and the three together become the first version of the AI service.</li></ul></section>
+</main>
+<footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 16 - Dependency injection with Depends()</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 16 &middot; LEVEL 2: AI BACKEND</div><h1>Dependency injection with Depends()</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to change which LLM client every route uses in one place, and swap it in a test.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does <code>/api/extract</code> answer <code>502</code> when the model returns <code>not json</code>?</li><li>In Lab 2 you changed the client in a test with <code>monkeypatch.setattr</code>. What did it replace?</li></ol><details><summary>Answers</summary><ol><li>The thing you called gave a bad answer. <code>500</code> would blame your code and <code>422</code> would blame the client.</li><li>The variable <code>extract_client</code> inside the module <code>api</code>, for the length of that one test.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your route creates its own client, deep inside the file. On Saturday you want a real model, and in a test you want a fake one. How many lines do you have to change, and in how many files?</strong></p><details><summary>Guess first, then open</summary><p>Today the answer is: change <strong>one</strong> function, in <strong>one</strong> file, and every route follows. In a test you change it for that test only, without touching the app code. The trick is that a route stops <em>making</em> its client and starts <em>asking</em> for it.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: ask for it, do not make it</h3>
+<p>A function that creates what it needs (<code>FakeLlmClient()</code> inside the route) is glued to that choice. A function that <em>receives</em> what it needs can work with anything that fits. That is <strong>dependency injection</strong>: the thing a function depends on is handed in from outside. You already did this on Day 5, when you passed the client into <code>summarize()</code>.</p>
+<h3>Piece 2: <code>Depends()</code> hands it in for you</h3>
+<p>You write one small function, <code>get_llm_client()</code>, that returns a client. In a route you add a parameter marked with <code>Depends(get_llm_client)</code>. For every request FastAPI calls the function and passes the result in. To keep the route short we give the pair a name: <code>LlmDep</code>.</p>
+<h3>Piece 3: swap it in a test</h3>
+<p><code>app.dependency_overrides[get_llm_client] = ...</code> tells FastAPI: &ldquo;for now, use this instead&rdquo;. The app code does not change. Always clear the overrides after the test, or the swap leaks into the next one.</p>
+<p>A word about the <strong>service layer</strong>: the route stays thin. It reads the request, calls a plain function (<code>summarize</code>, <code>extract</code>) and turns errors into statuses. The plain functions know nothing about FastAPI, so you can test them without a server, as you did on Day 5.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>Depends()</code> does the job of the DI container in ASP.NET Core (<code>builder.Services.AddScoped&lt;ILlmClient, ...&gt;()</code> and constructor injection), and <code>dependency_overrides</code> is like <code>ConfigureTestServices</code> in <code>WebApplicationFactory</code>. The difference: FastAPI has no container. The wiring is a function you can read, per route.</div>
+<div class="box cap"><strong>Capstone:</strong> on Saturday your <code>/api/chat</code> gets a real model. With <code>get_llm_client()</code> in place, the real client is one more class and one changed line, and all your tests keep using the fake.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. A new file, <code>src/my_ai_project/deps.py</code>, is the one place that decides which client the app uses:</p><pre><code>from typing import Annotated
+
+from fastapi import Depends
+
+from my_ai_project.llm import FakeLlmClient
+from my_ai_project.summarizer import LlmClient
+
+
+def get_llm_client() -&gt; LlmClient:
+    return FakeLlmClient()
+
+
+LlmDep = Annotated[LlmClient, Depends(get_llm_client)]</code></pre><p>Two routes in <code>api.py</code> now ask for it instead of making it. The module-level clients (<code>llm_client</code> and <code>extract_client</code>) are gone:</p><pre><code>from my_ai_project.deps import LlmDep
+
+# the two routes now ask for the client in their parameters:
+@app.post(&quot;/api/summarize&quot;)
+def summarize_text(request: SummarizeRequest, client: LlmDep) -&gt; SummarizeResponse:
+    try:
+        summary = summarize(request.text, client, request.max_words)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return SummarizeResponse(summary=summary, words=len(summary.split()))
+
+
+@app.post(&quot;/api/extract&quot;)
+def extract_fields(request: ExtractRequest, client: LlmDep) -&gt; Extraction:
+    try:
+        return extract(request.text, client)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except ExtractionError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err</code></pre><p>The fake client now answers both kinds of prompt, so one client serves both routes. <code>src/my_ai_project/llm.py</code>:</p><pre><code>EXTRACT_REPLY = &#x27;{&quot;error_code&quot;: &quot;E101&quot;, &quot;severity&quot;: &quot;medium&quot;, &quot;action&quot;: &quot;Check the sensor cable&quot;}&#x27;
+
+
+class FakeLlmClient:
+    &quot;&quot;&quot;Stands in for the real model: no network, no cost, same answer every time.&quot;&quot;&quot;
+
+    def __init__(self, reply: str | None = None) -&gt; None:
+        self.reply = reply
+
+    def complete(self, prompt: str) -&gt; str:
+        if self.reply is not None:
+            return self.reply
+        if prompt.startswith(&quot;Extract&quot;):
+            return EXTRACT_REPLY
+        return &quot;(fake) &quot; + prompt.removeprefix(&quot;Summarize in one sentence: &quot;)</code></pre><p>And the test that used <code>monkeypatch</code> becomes:</p><pre><code>from collections.abc import Iterator
+
+from my_ai_project.deps import get_llm_client
+
+
+@pytest.fixture
+def clean_overrides() -&gt; Iterator[None]:
+    yield
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.usefixtures(&quot;clean_overrides&quot;)
+def test_extract_with_a_bad_model_reply_is_a_502() -&gt; None:
+    app.dependency_overrides[get_llm_client] = lambda: FakeLlmClient(reply=&quot;not json&quot;)
+    response = client.post(&quot;/api/extract&quot;, json={&quot;text&quot;: &quot;The sensor shows E101 again.&quot;})
+    assert response.status_code == 502</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code> from Lab 2, on a branch if you like (<code>git switch -c depends</code>).</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Create <code>deps.py</code>, update <code>llm.py</code>, and change the two routes as in the worked example. Do <strong>not</strong> change the tests yet. Run <code>uv run pytest</code>. <strong>Predict:</strong> will all five tests pass?</p><div class="out"><b>You should see</b><br>FAILED tests/test_api.py::test_extract_with_a_bad_model_reply_is_a_502 - AttributeError: <module 'my_ai_project.api' ...> has no attribute 'extract_client'<br>1 failed, 4 passed</div>
+<p>One test fails: the one that used <code>monkeypatch</code>. It looks for <code>extract_client</code> in <code>api</code>, and that variable no longer exists. Read the message, then replace the test with the one from the worked example (put the imports at the top of the file). Run again and expect <code>5 passed</code>.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>In <code>deps.py</code>, change <code>get_llm_client</code> so that it returns <code>FakeLlmClient(reply="(fake) Hello")</code>:</p><pre><code>def get_llm_client() -&gt; LlmClient:
+    return FakeLlmClient(reply=&quot;(fake) Hello&quot;)</code></pre>
+<p>Start the server and call <code>/api/summarize</code> and <code>/api/extract</code> with any text. <strong>Predict</strong> what each one returns before you send. Then change it back.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>In the <code>summarize_text</code> route, remove the <code>LlmDep</code> and write the plain type <code>LlmClient</code> instead (import it from <code>my_ai_project.summarizer</code>):</p><pre><code>def summarize_text(request: SummarizeRequest, client: LlmClient) -&gt; SummarizeResponse:</code></pre>
+<p>Run <code>uv run python -c "import my_ai_project.api"</code> and read the last line of the error. Put it back. Then break it a second way: in your new test, remove the <code>clean_overrides</code> fixture, and move the test to the top of the file. Run <code>pytest</code> and see what happens to <em>other</em> tests. Put it back.</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Prove that you can swap in a <em>different</em> client without touching the app. Write a class <code>LoudFakeClient</code> in your test file. Its <code>complete</code> method returns what <code>FakeLlmClient</code> would return, in capital letters. Then write a test that overrides <code>get_llm_client</code> with it, calls <code>/api/summarize</code> with <code>"max_words": 5</code> on the text <code>"Error E101 means the sensor timed out after ten seconds."</code>, and checks the summary. Predict the summary first.</p>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Get the LLM client with Depends()"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;Invalid args for response field! ...&rdquo;</strong>: a route parameter has a type FastAPI cannot read as data, like <code>LlmClient</code>. It needs <code>Depends</code>, for example through <code>LlmDep</code>. The message says &ldquo;response field&rdquo;, but the cause is the parameter.</li><li><strong>Your override does nothing</strong>: the key must be the <em>function</em> itself (<code>get_llm_client</code>, no brackets), and the route must use that same function in its <code>Depends</code>.</li><li><strong>Other tests fail after one test with an override</strong>: the override was not cleared. Use the <code>clean_overrides</code> fixture on every test that sets one.</li><li><strong>mypy complains about the fixture</strong>: annotate it as <code>Iterator[None]</code> and import <code>Iterator</code> from <code>collections.abc</code>.</li></ul><details><summary>Hint: Step 4</summary><p>Build on what you already have: <code>FakeLlmClient().complete(prompt)</code> gives the normal fake answer, and <code>.upper()</code> makes capitals. The override value can be the class itself: FastAPI calls it to get an object, just like it calls <code>get_llm_client</code>.</p></details><details><summary>Solution: Step 4</summary><p>In <code>tests/test_api.py</code>:</p><pre><code>class LoudFakeClient:
+    def complete(self, prompt: str) -&gt; str:
+        return FakeLlmClient().complete(prompt).upper()
+
+
+@pytest.mark.usefixtures(&quot;clean_overrides&quot;)
+def test_summarize_with_a_loud_client() -&gt; None:
+    app.dependency_overrides[get_llm_client] = LoudFakeClient
+    response = client.post(
+        &quot;/api/summarize&quot;,
+        json={&quot;text&quot;: &quot;Error E101 means the sensor timed out after ten seconds.&quot;, &quot;max_words&quot;: 5},
+    )
+    assert response.json()[&quot;summary&quot;] == &quot;(FAKE) ERROR E101 MEANS THE&quot;</code></pre><p>The summary is <code>(FAKE) ERROR E101 MEANS THE</code>. Run <code>uv run pytest</code> and expect <code>6 passed</code>.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What changes in a route when it stops <em>making</em> its client and starts <em>asking</em> for it?</li><li>Why is <code>dependency_overrides</code> better than <code>monkeypatch</code> for swapping the client?</li><li>You want the real model next week. Which file do you change to make every route use it?</li></ol><details><summary>Answers</summary><ol><li>The route gets a new parameter marked with <code>Depends(...)</code>, and no longer creates the client itself. FastAPI calls the provider function for each request and passes the result in.</li><li>It uses a feature of FastAPI instead of reaching into a module and replacing a variable by name. It keeps working when you rename or move things, and it swaps the client for every route that asks for it.</li><li><code>deps.py</code>: change <code>get_llm_client</code> to return the real client. The routes stay the same.</li></ol></details></section>
+<section id="game-day16" class="game"><h2><span class="n">+</span> &middot; Game: Swap Master <span class="t">5 min</span></h2>
+<p><p>Your routes now ask for their client with <code>Depends()</code>. Something changes. What happens, and why?</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day16-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day16-play">Start the game</button></div>
+<div id="day16-round" hidden><div class="gtop"><span id="day16-num">Round 1</span><span id="day16-score">Score 0</span></div>
+<pre hidden><code id="day16-code"></code></pre><div class="q" id="day16-q"></div><div class="choices" id="day16-opts"></div>
+<div class="fb" id="day16-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day16-next" hidden>Next round</button></p></div>
+<div id="day16-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day16",[{"c": "# deps.py\ndef get_llm_client() -> LlmClient:\n    return FakeLlmClient(reply=\"(fake) Hello\")\n\nPOST /api/summarize\n{\"text\": \"Error E101 means the sensor timed out\"}", "q": "You changed one function. What does the summary say?", "o": ["(fake) Hello", "(fake) Error E101 means the sensor timed out", "Nothing: you must change the route too"], "a": 0, "out": "{\"summary\":\"(fake) Hello\",\"words\":2}", "why": "The route asks get_llm_client for its client, so one changed function changes the answer for every route that asks."}, {"c": "# same change in deps.py\nPOST /api/extract\n{\"text\": \"E101\"}", "q": "The fake now always replies (fake) Hello. What does /api/extract return?", "o": ["502: the reply is not valid JSON", "200 with the three fields", "422"], "a": 0, "out": "HTTP/1.1 502 Bad Gateway\n{\"detail\":\"model reply was not valid: 1 problem(s)\"}", "why": "The same swap reaches every route. extract() asked for JSON, got text, and the check turned it into a 502."}, {"c": "# the route parameter is written as\ndef summarize_text(request: SummarizeRequest, client: LlmClient) -> SummarizeResponse:", "q": "The Depends is missing. What happens when the app is imported?", "o": ["A FastAPIError: Invalid args for response field", "It works the same", "A 404 on every request"], "a": 0, "out": "fastapi.exceptions.FastAPIError: Invalid args for response field! Hint: check that <class 'my_ai_project.summarizer.LlmClient'> is a valid Pydantic field type. ...", "why": "Without Depends, FastAPI treats the parameter as data from the request, and a client class is not valid data. The message says 'response field', but the cause is the parameter."}, {"c": "# the old Lab 2 test, after the refactor\nmonkeypatch.setattr(api, \"extract_client\", FakeLlmClient(reply=\"not json\"))", "q": "The variable extract_client no longer exists. What does pytest show?", "o": ["AttributeError: module has no attribute 'extract_client'", "The test passes", "502 from the route"], "a": 0, "out": "FAILED tests/test_api.py::test_extract_with_a_bad_model_reply_is_a_502 - AttributeError: <module 'my_ai_project.api' ...> has no attribute 'extract_client'\n1 failed, 4 passed", "why": "monkeypatch replaces a name inside a module. When you move the client to deps.py, the name is gone and the test fails."}, {"c": "# a test sets an override but never clears it\napp.dependency_overrides[get_llm_client] = LoudFakeClient\n# ...later tests run in the same process", "q": "What happens to the later tests?", "o": ["They fail: the swap leaks into them", "Nothing: each test starts clean", "pytest clears it for you"], "a": 0, "out": "FAILED tests/test_api.py::test_summarize_returns_a_short_summary - AssertionError ...\nFAILED tests/test_api.py::test_extract_returns_the_fields - assert 502 == 200\n2 failed, 4 passed", "why": "The overrides live on the app, and the app lives for the whole test run. Clear them after every test that sets one."}, {"c": "", "q": "On Saturday you want a real model in every route. Which file do you change?", "o": ["deps.py: make get_llm_client return the real client", "Every route in api.py", "The tests"], "a": 0, "out": "", "why": "That is the whole point of Depends(): one place decides which client the app uses."}],["Swap rookie", "Swap master", "Dependency pro"],"A route that asks for its client with Depends() lets you swap the client in one place, and in tests with dependency_overrides, as long as you clear the override afterwards.");</script>
+<p><small>Tick &ldquo;Play the Swap Master game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> one place that decides which model your API uses, thin routes, and tests that swap the model without touching the app. This is the shape of a real service.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 16 checklist.</li><li>Share one line in the comments: which error message from Step 3 surprised you?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you start data work: loading a CSV with pandas. On Saturday the real model goes in through <code>deps.py</code>.</li></ul></section>
+</main>
+<footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

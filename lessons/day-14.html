@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 14 - Project Lab 2: three endpoints</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 14 &middot; LEVEL 2: AI BACKEND &middot; PROJECT LAB</div><h1>Project Lab 2: three endpoints</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to ship three tested endpoints with a fake LLM, a README and the code on GitHub.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>A blank text gave a <code>500</code> on Day 12. What did you change to make it a <code>400</code>?</li><li>What does <code>response_model</code> do on the way out?</li></ol><details><summary>Answers</summary><ol><li>You caught the <code>ValueError</code> in the route and raised an <code>HTTPException</code> with status <code>400</code>.</li><li>It keeps only the fields of the model and drops everything else, so an internal field cannot leak.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A model is asked for JSON and answers with &ldquo;Sure! Here is your JSON:&rdquo;. Your code expected a clean object. Who is to blame, and what should your API tell its client?</strong></p><details><summary>Guess first, then open</summary><p>The model gave a bad answer, not the client, and not your code. A bad request is a <code>4xx</code>. Your server failing is a <code>500</code>. A <strong>bad answer from something you called</strong> has its own status: <code>502 Bad Gateway</code>. Today you build that.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: ask for JSON, then check it</h3>
+<p>A model returns text. When you ask for JSON, you still get <em>text that should be JSON</em>. Pydantic can read it for you: <code>Extraction.model_validate_json(reply)</code> turns good text into an object and raises an error for bad text. This is the same checking you used at the door on Day 11, now used on what comes <em>back</em>.</p>
+<h3>Piece 2: a model reply is untrusted input</h3>
+<p>Treat what a model sends like what a stranger sends: check it before you use it. If it fails the check, do not crash, and do not blame the client. Turn it into your own error (<code>ExtractionError</code>), and let the route answer <code>502</code>.</p>
+<h3>Piece 3: &ldquo;done&rdquo; is more than &ldquo;it runs&rdquo;</h3>
+<p>A project is done when a stranger can use it. For today that means three things: <strong>tests pass</strong>, a <strong>README</strong> explains how to run it, and it is <strong>pushed to GitHub</strong>.</p>
+<table><tr><th>Status</th><th>Whose fault</th><th>Example today</th></tr><tr><td><code>422</code></td><td>The client: wrong shape</td><td>No <code>text</code> field</td></tr><tr><td><code>400</code></td><td>The client: right shape, unusable value</td><td>Text with only spaces</td></tr><tr><td><code>502</code></td><td>The thing you called: a bad answer</td><td>The model did not return valid JSON</td></tr><tr><td><code>500</code></td><td>Your code: something you did not plan for</td><td>A bug</td></tr></table>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>model_validate_json</code> is like <code>JsonSerializer.Deserialize&lt;Extraction&gt;</code> plus data-annotation validation in one call, and <code>502</code> is what you would return from a controller when a downstream service gives you something you cannot use.</div>
+<div class="box cap"><strong>Capstone:</strong> the assistant will ask a real model for structured answers (answer, sources, confidence). The pattern you build today, ask for JSON then validate it, stays the same when the model is real.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>This is today&rsquo;s <strong>contract</strong>, like on Day 12. You build the new endpoint from it.</p><table><tr><th></th><th>Details</th></tr><tr><td>Address</td><td><code>POST /api/extract</code></td></tr><tr><td>The client sends</td><td><code>text</code> (required, 1 to 20000 characters)</td></tr><tr><td>The client gets back</td><td><code>error_code</code> (text or <code>null</code>), <code>severity</code> (<code>low</code>, <code>medium</code> or <code>high</code>) and <code>action</code> (text)</td></tr><tr><td>The model</td><td>A fake client that always replies with the same JSON</td></tr><tr><td>Errors</td><td><code>400</code> for blank text, <code>502</code> when the model reply is not valid JSON of that shape</td></tr></table><p>When it works, this call:</p><pre><code>curl -i -X POST http://127.0.0.1:8000/api/extract -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;text&quot;: &quot;The sensor shows E101 again.&quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>HTTP/1.1 200 OK<br>content-type: application/json<br><br>{"error_code":"E101","severity":"medium","action":"Check the sensor cable"}</div></section>
+<section><h2><span class="n">5</span> &middot; Build it <span class="t">2.5 h</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c lab-2</code>). You need the code from Day 9 to Day 12: <code>/health</code>, <code>/api/chat</code>, <code>/api/summarize</code>, <code>llm.py</code> and <code>summarizer.py</code>.</p>
+<p><strong>Done looks like:</strong> <code>uv run pytest</code> shows <strong>5 passed</strong>, <code>uv run mypy src tests</code> shows no issues, a README that a stranger could follow, and the project on GitHub.</p>
+<h3><span class="step">Part A</span> The extractor (45 min)</h3>
+<p>Create <code>src/my_ai_project/extractor.py</code> from the contract. It needs: a model <code>Extraction</code>, an error <code>ExtractionError</code>, and a function <code>extract(text, client)</code> that asks the client for JSON and checks the reply. Reuse what you know: <code>summarize</code> from Day 5 shows the same shape (blank text raises <code>ValueError</code>), and <code>Literal</code> from Day 11 gives the three severities. Then make <code>FakeLlmClient</code> able to return a fixed reply, so the same class can fake a summary and a JSON reply (see Stuck for a hint).</p>
+<p>Check it before you go on: <code>uv run mypy src</code> should say <code>Success: no issues found</code>.</p>
+<h3><span class="step">Part B</span> The route (30 min)</h3>
+<p>In <code>api.py</code>, add a request model and the route <code>POST /api/extract</code>. Turn the two errors into the right statuses: blank text into <code>400</code> and a bad model reply into <code>502</code>. Start the server and run the call from the worked example. Match the output. Then send <code>{"text": "   "}</code> and check that you get a <code>400</code>.</p>
+<h3><span class="step">Part C</span> Tests (35 min)</h3>
+<p>Write tests in <code>tests/test_api.py</code> with <code>TestClient</code>: one for <code>/api/chat</code>, one for <code>/api/summarize</code>, one for the blank text, one for <code>/api/extract</code>, and one that makes the model return <code>"not json"</code> and checks for <code>502</code>. (For the last one, swap the client with <code>monkeypatch</code>: see Stuck. It works, but it feels like a trick. On Monday you will learn a cleaner way.)</p>
+<p><strong>Mid-point check-in.</strong> You should now have: <code>uv run pytest</code> with <strong>5 passed</strong>, and mypy with no issues. If not, stop and fix it before the README: a README for code that does not work is a promise you cannot keep. Take a 10-minute break.</p>
+<h3><span class="step">Part D</span> README (20 min)</h3>
+<p>Write <code>README.md</code> so that a stranger can run the project without asking you. It needs: what it is (one sentence), how to run it, a table of the four endpoints, how to test it, and one honest note. A template is in Stuck. Then test your README: copy the &ldquo;Run it&rdquo; commands into a fresh terminal, in the project folder, and see if they work.</p>
+<h3><span class="step">Part E</span> Commit and push (15 min)</h3>
+<p>Commit everything, and check that <code>git status</code> is clean. Then create an empty repository on GitHub (no README, no license), and push:</p><pre><code>git add .
+git commit -m &quot;Ship the three endpoints with a fake LLM&quot;
+git status -sb</code></pre>
+<pre><code>git remote add origin https://github.com/YOUR-NAME/my-ai-project.git
+git push -u origin main</code></pre>
+<p>The push prints a few lines and ends with <code>branch 'main' set up to track 'origin/main'</code>. Open the repository page in your browser and check that your README is shown.</p>
+<h3><span class="step">Part F</span> Reflect (10 min)</h3>
+<p>Write three lines in your notes: what worked, what broke, and what you would do differently. Keep them for the Sunday review.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;ValidationError&rdquo; when you run <code>extract</code>, not <code>502</code></strong>: the route must catch <code>ExtractionError</code>. In <code>extract</code>, catch Pydantic&rsquo;s <code>ValidationError</code> and raise your own <code>ExtractionError</code>.</li><li><strong>Every request gives <code>502</code></strong>: print the reply from the fake client. The JSON needs double quotes and the three keys <code>error_code</code>, <code>severity</code> and <code>action</code>.</li><li><strong>The <code>monkeypatch</code> test fails with &ldquo;has no attribute&rdquo;</strong>: the first argument is the module (<code>api</code>) and the second is the name as a string. You need <code>from my_ai_project import api</code>.</li><li><strong>&ldquo;rejected&rdquo; or &ldquo;Repository not found&rdquo; on push</strong>: check the URL, and that the GitHub repository is empty. Sign in to GitHub on this computer as you did on Day 0.</li></ul><details><summary>Hint: Part A</summary><p>Give <code>FakeLlmClient</code> an <code>__init__</code> with an optional <code>reply</code>. If a reply was given, <code>complete</code> returns it. Otherwise it behaves as before.</p></details><details><summary>Solution: Part A</summary><p><code>src/my_ai_project/extractor.py</code>:</p><pre><code>from typing import Literal, Protocol
+
+from pydantic import BaseModel, ValidationError
+
+
+class LlmClient(Protocol):
+    def complete(self, prompt: str) -&gt; str: ...
+
+
+class Extraction(BaseModel):
+    error_code: str | None
+    severity: Literal[&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;]
+    action: str
+
+
+class ExtractionError(Exception):
+    &quot;&quot;&quot;Raised when the model reply is not the JSON we asked for.&quot;&quot;&quot;
+
+
+def extract(text: str, client: LlmClient) -&gt; Extraction:
+    if not text.strip():
+        raise ValueError(&quot;text must not be empty&quot;)
+    reply = client.complete(f&quot;Extract the error code, severity and action as JSON: {text}&quot;)
+    try:
+        return Extraction.model_validate_json(reply)
+    except ValidationError as err:
+        raise ExtractionError(f&quot;model reply was not valid: {err.error_count()} problem(s)&quot;) from err</code></pre><p><code>src/my_ai_project/llm.py</code>:</p><pre><code>class FakeLlmClient:
+    &quot;&quot;&quot;Stands in for the real model: no network, no cost, same answer every time.&quot;&quot;&quot;
+
+    def __init__(self, reply: str | None = None) -&gt; None:
+        self.reply = reply
+
+    def complete(self, prompt: str) -&gt; str:
+        if self.reply is not None:
+            return self.reply
+        return &quot;(fake) &quot; + prompt.removeprefix(&quot;Summarize in one sentence: &quot;)</code></pre></details><details><summary>Solution: Part B</summary><p>In <code>api.py</code>, add the imports <code>from my_ai_project.extractor import Extraction, ExtractionError, extract</code>, then at the bottom:</p><pre><code>class ExtractRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=20000)
+
+
+extract_client = FakeLlmClient(
+    reply=&#x27;{&quot;error_code&quot;: &quot;E101&quot;, &quot;severity&quot;: &quot;medium&quot;, &quot;action&quot;: &quot;Check the sensor cable&quot;}&#x27;
+)
+
+
+@app.post(&quot;/api/extract&quot;)
+def extract_fields(request: ExtractRequest) -&gt; Extraction:
+    try:
+        return extract(request.text, extract_client)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except ExtractionError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err</code></pre></details><details><summary>Solution: Part C</summary><p><code>tests/test_api.py</code>:</p><pre><code>import pytest
+from fastapi.testclient import TestClient
+
+from my_ai_project import api
+from my_ai_project.api import app
+from my_ai_project.llm import FakeLlmClient
+
+client = TestClient(app)
+
+
+def test_chat_returns_an_answer_with_sources() -&gt; None:
+    response = client.post(&quot;/api/chat&quot;, json={&quot;question&quot;: &quot;What is E101?&quot;})
+    assert response.status_code == 200
+    body = response.json()
+    assert body[&quot;answer&quot;] == &quot;(fake) You asked: What is E101?&quot;
+    assert body[&quot;sources&quot;] == [{&quot;doc_id&quot;: &quot;1&quot;, &quot;title&quot;: &quot;Error codes&quot;}]
+
+
+def test_summarize_returns_a_short_summary() -&gt; None:
+    response = client.post(
+        &quot;/api/summarize&quot;,
+        json={&quot;text&quot;: &quot;Error E101 means the sensor timed out after ten seconds.&quot;, &quot;max_words&quot;: 5},
+    )
+    assert response.status_code == 200
+    assert response.json() == {&quot;summary&quot;: &quot;(fake) Error E101 means the&quot;, &quot;words&quot;: 5}
+
+
+def test_blank_text_is_a_client_error() -&gt; None:
+    response = client.post(&quot;/api/summarize&quot;, json={&quot;text&quot;: &quot;   &quot;})
+    assert response.status_code == 400
+    assert response.json() == {&quot;detail&quot;: &quot;text must not be empty&quot;}
+
+
+def test_extract_returns_the_fields() -&gt; None:
+    response = client.post(&quot;/api/extract&quot;, json={&quot;text&quot;: &quot;The sensor shows E101 again.&quot;})
+    assert response.status_code == 200
+    assert response.json() == {
+        &quot;error_code&quot;: &quot;E101&quot;,
+        &quot;severity&quot;: &quot;medium&quot;,
+        &quot;action&quot;: &quot;Check the sensor cable&quot;,
+    }</code></pre><p>And the fifth test:</p><pre><code>def test_extract_with_a_bad_model_reply_is_a_502(monkeypatch: pytest.MonkeyPatch) -&gt; None:
+    monkeypatch.setattr(api, &quot;extract_client&quot;, FakeLlmClient(reply=&quot;not json&quot;))
+    response = client.post(&quot;/api/extract&quot;, json={&quot;text&quot;: &quot;The sensor shows E101 again.&quot;})
+    assert response.status_code == 502</code></pre></details><details><summary>Template: Part D</summary><p>Replace the project name and the notes with your own words.</p><pre><code># my-ai-project
+
+A small FastAPI service with three endpoints. It uses a fake LLM, so it runs without a key or a network.
+
+## Run it
+
+    uv sync
+    uv run uvicorn my_ai_project.api:app --reload
+
+Then open http://127.0.0.1:8000/docs
+
+## Endpoints
+
+| Endpoint | What it does |
+|---|---|
+| GET /health | Says the service is up |
+| POST /api/chat | Answers a question (fake answer, no sources yet) |
+| POST /api/summarize | Shortens a text to max_words words |
+| POST /api/extract | Pulls the error code, severity and action out of a text |
+
+## Test it
+
+    uv run pytest
+    uv run mypy src tests
+
+## Notes
+
+- The model is fake today. A real model comes in a later lab.
+- Bad input gives 422 (wrong shape) or 400 (blank text). A bad model reply gives 502.</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>The model replies <code>not json</code>. Why is <code>502</code> a better answer than <code>500</code> or <code>422</code>?</li><li>Why do the tests use a fake client, and what would a test with a real model cost you?</li><li>What three things make a project &ldquo;done&rdquo; for a stranger?</li></ol><details><summary>Answers</summary><ol><li><code>500</code> says your own code failed, and <code>422</code> says the client sent bad data. Neither is true: the thing you called gave a bad answer, which is exactly what <code>502</code> means. It also tells you where to look.</li><li>A fake is fast, free and the same every time, so a failing test means your code is wrong. A real model costs money, is slow, and gives different answers, so a test could fail for reasons you cannot control.</li><li>Tests that pass, a README that explains how to run it, and the code on GitHub.</li></ol></details></section>
+<section id="game-day14" class="game"><h2><span class="n">+</span> &middot; Game: Lab Referee <span class="t">5 min</span></h2>
+<p><p>You are the referee of Lab 2. Each round shows what a learner saw while building <code>/api/extract</code>. Decide what is going on, then check the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day14-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day14-play">Start the game</button></div>
+<div id="day14-round" hidden><div class="gtop"><span id="day14-num">Round 1</span><span id="day14-score">Score 0</span></div>
+<pre hidden><code id="day14-code"></code></pre><div class="q" id="day14-q"></div><div class="choices" id="day14-opts"></div>
+<div class="fb" id="day14-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day14-next" hidden>Next round</button></p></div>
+<div id="day14-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day14",[{"c": "POST /api/extract\n{\"text\": \"The sensor shows E101 again.\"}\n# the fake model replies with valid JSON", "q": "What does the client get?", "o": ["200 with error_code, severity and action", "502 Bad Gateway", "422"], "a": 0, "out": "HTTP/1.1 200 OK\n{\"error_code\":\"E101\",\"severity\":\"medium\",\"action\":\"Check the sensor cable\"}", "why": "The reply is valid JSON of the right shape, so Pydantic turns it into an Extraction."}, {"c": "POST /api/extract\n{\"text\": \"   \"}", "q": "Three spaces. What does the client get?", "o": ["400: text must not be empty", "502 Bad Gateway", "200 with an empty result"], "a": 0, "out": "HTTP/1.1 400 Bad Request\n{\"detail\":\"text must not be empty\"}", "why": "The client sent unusable text, so it is a client error. extract() raises ValueError and the route turns it into a 400."}, {"c": "POST /api/extract\n{}", "q": "No text field at all. What does the client get?", "o": ["422: text is required", "400: text must not be empty", "502"], "a": 0, "out": "HTTP/1.1 422 Unprocessable Entity\n{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"text\"],\"msg\":\"Field required\",\"input\":{}}]}", "why": "The shape is wrong, so the request model stops it before your function runs."}, {"c": "# the fake model replies: not json\nPOST /api/extract\n{\"text\": \"The sensor shows E101 again.\"}", "q": "The client did nothing wrong. What does it get?", "o": ["502 Bad Gateway", "500 Internal Server Error", "422 Unprocessable Entity"], "a": 0, "out": "HTTP/1.1 502 Bad Gateway\n{\"detail\":\"model reply was not valid: 1 problem(s)\"}", "why": "The thing you called gave a bad answer. 502 says that, and it points you at the model, not at your code."}, {"c": "# the fake model replies: {\"error_code\": \"E101\"}\n# (severity and action are missing)", "q": "How many problems does the check report?", "o": ["2", "1", "0, the reply is JSON so it is fine"], "a": 0, "out": "model reply was not valid: 2 problem(s)", "why": "Valid JSON is not enough. The shape must match, and two required fields are missing."}, {"c": "git add .\ngit commit -m \"Ship the three endpoints\"\ngit push -u origin main\ngit status -sb", "q": "What does the first line of git status -sb show after a good push?", "o": ["## main...origin/main", "## main", "nothing to commit"], "a": 0, "out": "## main...origin/main", "why": "It shows that your branch main follows origin/main on GitHub, with nothing waiting to be pushed."}],["Lab rookie", "Lab referee", "Lab master"],"A bad request is a 4xx (422 for the wrong shape, 400 for an unusable value), a bad answer from the model is a 502, and checking the reply is as important as checking the request.");</script>
+<p><small>Tick &ldquo;Play the Lab Referee game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> the first version of the AI service: three endpoints, all checked by tests, with a README, on GitHub. You also built the pattern that real AI apps depend on: ask for structure, then check it.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 14 checklist.</li><li>Share your repository link, or one line in the comments: what did your reflection say you would do differently?</li><li><strong>Next:</strong> Sunday is the review of week 2 and the plan for the real LLM call. On Monday you replace the <code>monkeypatch</code> trick with <code>Depends()</code>, the way FastAPI wants it done.</li></ul></section>
+</main>
+<footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

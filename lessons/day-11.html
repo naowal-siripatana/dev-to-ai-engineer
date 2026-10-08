@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 11 - Request and response models with Pydantic</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 11 &middot; LEVEL 2: AI BACKEND</div><h1>Request and response models with Pydantic</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to send a bad request, get a 422, and read the error.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>You call <code>GET /api/chat</code> in your browser and see <code>405</code>. What does that status mean?</li><li>Which tool gives you a free test page for every endpoint, and at which address?</li></ol><details><summary>Answers</summary><ol><li>Method Not Allowed: the address exists, but not for this kind of request. <code>/api/chat</code> only accepts <code>POST</code>.</li><li>FastAPI builds it for you at <code>/docs</code>.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A client sends <code>{"top_k": 99, "language": "fr"}</code> with no question at all. How many things are wrong, and how many does your API tell the client about?</strong></p><details><summary>Guess first, then open</summary><p>Three things are wrong: no question, <code>top_k</code> too big, a language you do not support. A good API reports all three at once, so the client fixes everything in one go. Today you let Pydantic do that, and you teach it one rule of your own.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: the request model is the rulebook at the door</h3>
+<p>Each field in <code>ChatRequest</code> can carry rules: <code>min_length</code> and <code>max_length</code> for text, <code>ge</code> and <code>le</code> for numbers (&ldquo;greater or equal&rdquo;, &ldquo;less or equal&rdquo;), and <code>Literal["en", "th"]</code> for a short list of allowed values. A field with a default (<code>top_k=3</code>) is optional. A field without one is required.</p>
+<h3>Piece 2: write your own rule with a validator</h3>
+<p>Some rules do not fit in a number. &ldquo;Not only spaces&rdquo; is one. A <code>@field_validator</code> is a small function that receives the value, can clean it (<code>strip()</code>) and can reject it by raising <code>ValueError</code>. FastAPI turns that into a <code>422</code> for you.</p>
+<h3>Piece 3: the response model is the rulebook at the exit</h3>
+<p><code>response_model=ChatResponse</code> says: &ldquo;send back only these fields, in this shape&rdquo;. If your function returns extra things (a debug note, an internal id, a secret), they are dropped before the client sees them. Think of it as a filter on the way out.</p>
+<table><tr><th>Part of a 422 error</th><th>What it tells you</th></tr><tr><td><code>loc</code></td><td>Where: <code>["body", "top_k"]</code> means the field <code>top_k</code> in the request body</td></tr><tr><td><code>msg</code></td><td>What went wrong, in words</td></tr><tr><td><code>type</code></td><td>The kind of problem: <code>missing</code>, <code>less_than_equal</code>, <code>literal_error</code>, <code>int_parsing</code>, <code>value_error</code></td></tr><tr><td><code>input</code></td><td>The value the client sent (when there is one)</td></tr></table>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> the request model is a DTO with data annotations (<code>[Range(1, 10)]</code>, <code>[StringLength]</code>), a validator is like <code>IValidatableObject</code> or a FluentValidation rule, and <code>response_model</code> is returning a response DTO instead of the database entity. In Java it is Bean Validation (<code>@Min</code>, <code>@Size</code>). One difference: in FastAPI the rules and the type live in the same place, and the <code>/docs</code> page shows them.</div>
+<div class="box cap"><strong>Capstone:</strong> the assistant will receive questions from real people. Strict request rules protect your model budget (no 50,000-word questions), and a strict response model protects your data (no internal fields leaking). Both are cheap to add now and painful to add later.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">3 min</span></h2><p>Read it first. Same app as Day 9, with richer models. Replace <code>src/my_ai_project/api.py</code> with this.</p><pre><code>from typing import Any, Literal
+
+from fastapi import FastAPI
+from pydantic import BaseModel, Field, field_validator
+
+app = FastAPI(title=&quot;my-ai-project&quot;)
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=3, ge=1, le=10)
+    language: Literal[&quot;en&quot;, &quot;th&quot;] = &quot;en&quot;
+
+    @field_validator(&quot;question&quot;)
+    @classmethod
+    def not_blank(cls, value: str) -&gt; str:
+        value = value.strip()
+        if not value:
+            raise ValueError(&quot;question must not be blank&quot;)
+        return value
+
+
+class Source(BaseModel):
+    doc_id: str
+    title: str
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: list[Source]
+
+
+@app.get(&quot;/health&quot;)
+def health() -&gt; dict[str, str]:
+    return {&quot;status&quot;: &quot;ok&quot;, &quot;version&quot;: &quot;0.1.0&quot;}
+
+
+@app.post(&quot;/api/chat&quot;, response_model=ChatResponse)
+def chat(request: ChatRequest) -&gt; dict[str, Any]:
+    return {
+        &quot;answer&quot;: f&quot;(fake) You asked: {request.question}&quot;,
+        &quot;sources&quot;: [{&quot;doc_id&quot;: &quot;1&quot;, &quot;title&quot;: &quot;Error codes&quot;}],
+        &quot;internal_note&quot;: &quot;never send this to a client&quot;,
+    }</code></pre><p>Start the server (<code>uv run uvicorn my_ai_project.api:app --reload</code>) and send a good question:</p><pre><code>curl -i -X POST http://127.0.0.1:8000/api/chat -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;question&quot;: &quot;What is E101?&quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>HTTP/1.1 200 OK<br>content-type: application/json<br><br>{"answer":"(fake) You asked: What is E101?","sources":[{"doc_id":"1","title":"Error codes"}]}</div><p>Look at the answer: the function returned <code>internal_note</code>, but the client never sees it. The response model removed it. Now a blank question:</p><pre><code>curl -i -X POST http://127.0.0.1:8000/api/chat -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;question&quot;: &quot;   &quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>HTTP/1.1 422 Unprocessable Entity<br><br>{"detail":[{"type":"value_error","loc":["body","question"],"msg":"Value error, question must not be blank","input":"&nbsp;&nbsp;&nbsp;", ...}]}</div><p><small>The <code>-i</code> flag shows the status line. The function <code>chat</code> returns a plain dictionary, and <code>response_model</code> checks and filters it. The <code>-&gt; dict[str, Any]</code> keeps mypy happy.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>. Use a branch if you like (<code>git switch -c models</code>), as you learned on Day 6.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Replace <code>api.py</code> with the worked example, start the server, and send the good question and the blank question from the worked example (with <code>curl</code>, or the <strong>Try it out</strong> button in <code>/docs</code>). Match the status codes: <code>200</code> and then <code>422</code>.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Change the limit <code>le=10</code> to <code>le=5</code> and save. <strong>Predict:</strong> what will <code>"top_k": 7</code> do now, and what will the <code>msg</code> say? Then send it and check. (With <code>--reload</code> you do not need to restart.)</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>First, send several mistakes at once and read the error:</p><pre><code>curl -i -X POST http://127.0.0.1:8000/api/chat -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;top_k&quot;: 99, &quot;language&quot;: &quot;fr&quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>HTTP/1.1 422 Unprocessable Entity<br>{"detail":[<br> {"type":"missing","loc":["body","question"],"msg":"Field required", ...},<br> {"type":"less_than_equal","loc":["body","top_k"],"msg":"Input should be less than or equal to 10","input":99,"ctx":{"le":10}},<br> {"type":"literal_error","loc":["body","language"],"msg":"Input should be 'en' or 'th'","input":"fr", ...}<br>]}</div>
+<p>Count the errors: there are three, one for each field. Read each <code>loc</code> and <code>msg</code> aloud. Then break it a second way: in <code>api.py</code>, delete <code>, response_model=ChatResponse</code> from the <code>@app.post</code> line, save, and send the good question again. <strong>What do you see?</strong> The <code>internal_note</code> leaks. Put the line back.</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Two changes, no step-by-step:</p>
+<ol><li>Add an optional field <code>tag</code> to <code>ChatRequest</code>. It is text or nothing, and the default is nothing.</li><li>Add <code>used_top_k</code> (an integer) to <code>ChatResponse</code>, and return the <code>top_k</code> the request used.</li></ol>
+<p>Test it three times: with a tag (<code>"tag": "errors"</code>), without a tag, and with <code>"tag": 123</code>. The first two should give <code>200</code>. The third should give <code>422</code>, and you should be able to say why before you look at the message.</p>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Add request validation and a response model"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>You sent a bad request but got <code>200</code></strong>: check that the rule is on the field in <code>ChatRequest</code>, and that you restarted the server (or used <code>--reload</code>).</li><li><strong>The validator never runs</strong>: put <code>@field_validator("question")</code> above <code>@classmethod</code>, and make sure the name in the quotes is the name of the field.</li><li><strong>&ldquo;JSON decode error&rdquo;</strong>: the body is not valid JSON. JSON needs double quotes around names and text, and no trailing comma. In a terminal, wrap the whole body in single quotes.</li><li><strong>Your <code>tag</code> test gives <code>422</code> even without a tag</strong>: the field needs a default. Write <code>tag: str | None = None</code>, with the <code>= None</code>.</li><li><strong>mypy says the return type is wrong</strong>: when you use <code>response_model</code>, annotate the function as <code>-&gt; dict[str, Any]</code>, and import <code>Any</code> from <code>typing</code>.</li></ul><details><summary>Hint for Step 4</summary><p>The request field looks like the others, but with <code>| None</code> and a default of <code>None</code>. For the response, add the field to the model <em>and</em> add the key to the dictionary your function returns. The model alone is not enough: a required field that is missing from the dictionary gives a <code>500</code>.</p></details><details><summary>Solution for Step 4</summary><p>In <code>ChatRequest</code>, add one line:</p><pre><code>    tag: str | None = None</code></pre><p>Then change the response model and the returned dictionary:</p><pre><code>class ChatResponse(BaseModel):
+    answer: str
+    used_top_k: int
+    sources: list[Source]</code></pre><pre><code>    return {
+        &quot;answer&quot;: f&quot;(fake) You asked: {request.question}&quot;,
+        &quot;used_top_k&quot;: request.top_k,
+        &quot;sources&quot;: [{&quot;doc_id&quot;: &quot;1&quot;, &quot;title&quot;: &quot;Error codes&quot;}],
+        &quot;internal_note&quot;: &quot;never send this to a client&quot;,
+    }</code></pre><p>With <code>"tag": 123</code> you get a <code>422</code> with <code>"type":"string_type"</code> and <code>"msg":"Input should be a valid string"</code>, because Pydantic does not turn a number into text.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>A client sends three bad fields in one request. How many errors come back, and which part of an error tells you which field it is?</li><li>What is the difference between a <code>422</code> that comes from <code>Field(le=10)</code> and one that comes from a <code>@field_validator</code>?</li><li>Why is it safer to return a plain dictionary through <code>response_model</code> than to send the dictionary as it is?</li></ol><details><summary>Answers</summary><ol><li>Three errors, all in one <code>422</code>. The <code>loc</code> list tells you the field, for example <code>["body", "top_k"]</code>.</li><li>For the client there is no difference: both are a <code>422</code> with <code>loc</code> and <code>msg</code>. The first uses a built-in rule (the <code>type</code> is <code>less_than_equal</code>), the second uses a rule you wrote (the <code>type</code> is <code>value_error</code>).</li><li>The response model keeps only the fields it lists. Extra fields, such as an internal note, are dropped, so a mistake in your function cannot leak them.</li></ol></details></section>
+<section id="game-day11" class="game"><h2><span class="n">+</span> &middot; Game: Validation Referee <span class="t">5 min</span></h2>
+<p><p>Your API has rules at the door (<code>ChatRequest</code>) and a filter at the exit (<code>response_model</code>). A client sends something. Is it let in, stopped, or filtered?</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day11-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day11-play">Start the game</button></div>
+<div id="day11-round" hidden><div class="gtop"><span id="day11-num">Round 1</span><span id="day11-score">Score 0</span></div>
+<pre hidden><code id="day11-code"></code></pre><div class="q" id="day11-q"></div><div class="choices" id="day11-opts"></div>
+<div class="fb" id="day11-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day11-next" hidden>Next round</button></p></div>
+<div id="day11-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day11",[{"c": "# top_k: int = Field(default=3, ge=1, le=10)\nPOST /api/chat\n{\"question\": \"What is E101?\", \"top_k\": 99}", "q": "What happens?", "o": ["422: top_k must be at most 10", "200: the value is cut down to 10", "500: the server crashes"], "a": 0, "out": "HTTP/1.1 422 Unprocessable Entity\n{\"detail\":[{\"type\":\"less_than_equal\",\"loc\":[\"body\",\"top_k\"],\"msg\":\"Input should be less than or equal to 10\",\"input\":99,\"ctx\":{\"le\":10}}]}", "why": "Pydantic does not fix the value for you. It stops the request and says which rule failed."}, {"c": "# @field_validator strips the text and rejects empty text\nPOST /api/chat\n{\"question\": \"   \"}", "q": "A question with only spaces. What happens?", "o": ["422: question must not be blank", "200: the API answers an empty question", "404 Not Found"], "a": 0, "out": "HTTP/1.1 422 Unprocessable Entity\n{\"detail\":[{\"type\":\"value_error\",\"loc\":[\"body\",\"question\"],\"msg\":\"Value error, question must not be blank\", ...}]}", "why": "min_length=1 lets three spaces pass. Your own validator catches what the built-in rule cannot."}, {"c": "POST /api/chat\n{\"top_k\": 99, \"language\": \"fr\"}", "q": "No question, top_k too big, language not allowed. How many errors come back?", "o": ["3, all in one 422", "1, only the first problem", "0, the defaults fix everything"], "a": 0, "out": "HTTP/1.1 422 Unprocessable Entity\n{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"question\"], ...}, {\"type\":\"less_than_equal\",\"loc\":[\"body\",\"top_k\"], ...}, {\"type\":\"literal_error\",\"loc\":[\"body\",\"language\"], ...}]}", "why": "Pydantic checks every field and reports all the problems, so the client can fix them in one go."}, {"c": "POST /api/chat\n{\"question\": \"hi\", \"top_k\": \"many\"}", "q": "top_k is the word many. What is the type of the error?", "o": ["int_parsing: not a valid integer", "missing", "literal_error"], "a": 0, "out": "HTTP/1.1 422 Unprocessable Entity\n{\"detail\":[{\"type\":\"int_parsing\",\"loc\":[\"body\",\"top_k\"],\"msg\":\"Input should be a valid integer, unable to parse string as an integer\",\"input\":\"many\"}]}", "why": "The type of the error names the kind of problem. Here the text could not be read as a whole number."}, {"c": "# response_model=ChatResponse (answer, sources)\n# the function returns answer, sources and internal_note\nPOST /api/chat\n{\"question\": \"What is E101?\"}", "q": "Does the client see internal_note?", "o": ["No, the response model drops it", "Yes, everything the function returns is sent", "Only when top_k is above 3"], "a": 0, "out": "HTTP/1.1 200 OK\n{\"answer\":\"(fake) You asked: What is E101?\",\"sources\":[{\"doc_id\":\"1\",\"title\":\"Error codes\"}]}", "why": "The response model is a filter on the way out. Without it, internal_note would be sent too."}, {"c": "# tag: str | None = None\nPOST /api/chat\n{\"question\": \"hi\", \"tag\": 123}", "q": "tag is optional text. The client sends a number. What happens?", "o": ["422: Input should be a valid string", "200: 123 becomes the text 123", "200: the tag is ignored"], "a": 0, "out": "HTTP/1.1 422 Unprocessable Entity\n{\"detail\":[{\"type\":\"string_type\",\"loc\":[\"body\",\"tag\"],\"msg\":\"Input should be a valid string\",\"input\":123}]}", "why": "Optional means the field may be missing. It does not mean any type is accepted."}],["Rule rookie", "Validation referee", "Gatekeeper"],"The request model checks everything on the way in and reports all the problems at once, a validator is your own rule, and the response model filters what goes out.");</script>
+<p><small>Tick &ldquo;Play the Validation Referee game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a front door and an exit for your API. Bad requests are stopped with a clear, complete <code>422</code>, one rule is your own, and the response shows only what you decided to show.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 11 checklist.</li><li>Share one line in the comments: which <code>422</code> message surprised you most?</li><li><strong>Next:</strong> Thursday is mixed practice from a blank file: you add <code>/api/summarize</code> with a fake LLM and one test. The models you wrote today are the starting point.</li></ul></section>
+</main>
+<footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

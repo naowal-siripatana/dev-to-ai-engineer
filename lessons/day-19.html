@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 19 - Mixed practice: serve the error codes</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 19 &middot; LEVEL 3: DATA AND ML &middot; MIXED PRACTICE</div><h1>Mixed practice: serve the error codes</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to serve a clean pandas table from your API with a filter, a 404 and tests, built from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>.drop_duplicates(subset=[&quot;code&quot;])</code> do?</li><li>In a test, how do you make a route use a different client than the app does?</li></ol><details><summary>Answers</summary><ol><li>It keeps only the first row for each value of <code>code</code> and removes the later repeats.</li><li>You set <code>app.dependency_overrides[get_llm_client] = ...</code> in the test, and clear the overrides afterwards.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Again no recipe. You have a clean table (Wednesday), a way to hand things to routes (Monday) and a way to test them (Thursday last week). Can you put the three together?</strong></p><details><summary>Why a blank file?</summary><p>Reading a solution feels like learning. Building from a contract, getting stuck and finding the way out is learning. If you get stuck for more than ten minutes, open the hint in Stuck.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
+<p>No new ideas today. The map of what you reuse:</p>
+<h3>Piece 1: a clean table (Day 18)</h3>
+<p><code>load_error_codes(path)</code> gives you the DataFrame. Filtering rows with <code>table[table["severity"] == "high"]</code> is the only new move, and you saw it in Step 4 of Day 18.</p>
+<h3>Piece 2: hand the table to the routes (Day 16)</h3>
+<p>The table is loaded <em>once</em>, not on every request. A function <code>get_error_table()</code> with <code>@lru_cache</code> (it remembers its first result) does that, and routes receive it with <code>Depends</code>.</p>
+<h3>Piece 3: models in and out (Day 11)</h3>
+<p>An <code>ErrorCode</code> model describes one row. A query value like <code>?severity=high</code> is checked the same way as a body field, with <code>Literal</code>.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>get_error_table</code> with a cache is a singleton service in the DI container. The query value <code>?severity=high</code> is model binding for a query-string parameter.</div>
+<div class="box cap"><strong>Capstone:</strong> the assistant will look up error codes as a <em>tool</em> in a later module. Today&rsquo;s endpoint is the same lookup, as a plain API.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">3 min</span></h2><p>No code to copy today. This is the <strong>contract</strong>: what your finished endpoints must do. It uses your clean table from Day 18.</p><table><tr><th>Endpoint</th><th>What it does</th></tr><tr><td><code>GET /api/errors</code></td><td>Returns the list of error codes. An optional <code>?severity=</code> filter (<code>low</code>, <code>medium</code> or <code>high</code>) keeps only that severity</td></tr><tr><td><code>GET /api/errors/{code}</code></td><td>Returns one error code. The code is not case sensitive (<code>e101</code> works). An unknown code gives <code>404</code> with <code>no error code E999</code></td></tr></table><p>Each item has <code>code</code>, <code>title</code>, <code>severity</code> and <code>description</code>. When it works:</p><pre><code>curl -i &#x27;http://127.0.0.1:8000/api/errors?severity=high&#x27;</code></pre><div class="out"><b>You should see</b><br>HTTP/1.1 200 OK<br>content-type: application/json<br><br>[{"code":"E103","title":"Overheat","severity":"high","description":"No description"},{"code":"E104","title":"Disk full","severity":"high","description":"Storage is above 95 percent"}]</div><pre><code>curl -i http://127.0.0.1:8000/api/errors/e101</code></pre><div class="out"><b>You should see</b><br>HTTP/1.1 200 OK<br>content-type: application/json<br><br>{"code":"E101","title":"Sensor timeout","severity":"medium","description":"Sensor did not answer within 10 seconds"}</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">25 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c errors-api</code>). You need <code>error_codes.py</code> and <code>data/error_codes.csv</code> from Day 18, and <code>deps.py</code> from Day 16.</p>
+<h3><span class="step">Step 1</span> The model and the table</h3>
+<p>In <code>error_codes.py</code>, add an <code>ErrorCode</code> model with the four fields from the contract. In <code>deps.py</code>, add <code>get_error_table()</code> that loads <code>data/error_codes.csv</code> once, and a name for the dependency, like <code>LlmDep</code>. Check with <code>uv run mypy src</code>: <code>Success: no issues found</code>.</p>
+<h3><span class="step">Step 2</span> The two routes</h3>
+<p>In <code>api.py</code>, write <code>GET /api/errors</code> (with the optional filter) and <code>GET /api/errors/{code}</code>. Start the server from the project folder and run the calls from the worked example. Then try <code>?severity=urgent</code> and <strong>predict</strong> the status before you send it.</p>
+<h3><span class="step">Step 3</span> Tests</h3>
+<p>Write <strong>two</strong> tests in <code>tests/test_errors.py</code>: the <code>high</code> filter returns the codes <code>E103</code> and <code>E104</code>, and an unknown code is a <code>404</code>. Run <code>uv run pytest</code>. Then break one on purpose: change <code>E104</code> to <code>E105</code> in the expected list, read the failure, and change it back.</p>
+<h3><span class="step">Step 4</span> Your turn: a surprise</h3>
+<p>Ask for an unknown code, <code>/api/errors/E999</code>, and look at the status. If you wrote the route the short way (take the first matching row with <code>.iloc[0]</code> and return it), you may get something you did not plan. <strong>What does the client get, and is it a good answer?</strong> Make an unknown code a clear <code>404</code> with the detail from the contract, and make sure a test proves it.</p>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Serve the error codes with pandas and Depends"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;FileNotFoundError ... error_codes.csv&rdquo;</strong>: the path in <code>get_error_table</code> is relative to the folder you start from. Start the server and run <code>pytest</code> from the project folder.</li><li><strong>The route returns <code>[]</code></strong>: check the filter. The clean table has lower-case severities, so compare with <code>&quot;high&quot;</code>, not <code>&quot;HIGH&quot;</code>.</li><li><strong>mypy says the return type is wrong</strong>: turn rows into models with <code>ErrorCode.model_validate(row)</code>, and annotate the route as <code>-&gt; list[ErrorCode]</code>.</li><li><strong>&ldquo;Invalid args for response field&rdquo;</strong>: a parameter of the route needs <code>Depends</code>. Use the named dependency, like <code>ErrorTableDep</code>.</li><li><strong>Your <code>/api/errors/E999</code> test gives an <code>IndexError</code> and not a status</strong>: <code>TestClient</code> re-raises an error the route does not handle. Fix the route, not the test.</li></ul><details><summary>Hint 1: Steps 1 and 2</summary><p>Filter first, then convert: <code>table[table[&quot;severity&quot;] == severity]</code> gives a smaller table, and <code>table.to_dict(&quot;records&quot;)</code> gives a list of dictionaries, one per row. Each dictionary can go into <code>ErrorCode.model_validate(...)</code>. For one code, compare <code>table[&quot;code&quot;]</code> with <code>code.upper()</code>.</p></details><details><summary>Solution: Steps 1 and 2</summary><p>In <code>error_codes.py</code>, add the model at the top:</p><pre><code>from typing import Literal
+
+from pydantic import BaseModel
+
+
+class ErrorCode(BaseModel):
+    code: str
+    title: str
+    severity: Literal[&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;]
+    description: str</code></pre><p>In <code>deps.py</code> (add the imports <code>lru_cache</code>, <code>Path</code>, <code>pandas</code> and <code>load_error_codes</code>):</p><pre><code>from functools import lru_cache
+from pathlib import Path
+
+import pandas as pd
+
+from my_ai_project.error_codes import load_error_codes
+
+
+@lru_cache
+def get_error_table() -&gt; pd.DataFrame:
+    return load_error_codes(Path(&quot;data/error_codes.csv&quot;))
+
+
+ErrorTableDep = Annotated[pd.DataFrame, Depends(get_error_table)]</code></pre><p>In <code>api.py</code>, change the import line and add the routes:</p><pre><code>from my_ai_project.deps import ErrorTableDep, LlmDep
+from my_ai_project.error_codes import ErrorCode</code></pre><pre><code>@app.get(&quot;/api/errors&quot;)
+def list_errors(
+    table: ErrorTableDep, severity: Literal[&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;] | None = None
+) -&gt; list[ErrorCode]:
+    if severity is not None:
+        table = table[table[&quot;severity&quot;] == severity]
+    return [ErrorCode.model_validate(row) for row in table.to_dict(&quot;records&quot;)]
+
+
+@app.get(&quot;/api/errors/{code}&quot;)
+def get_error(code: str, table: ErrorTableDep) -&gt; ErrorCode:
+    match = table[table[&quot;code&quot;] == code.upper()]
+    if match.empty:
+        raise HTTPException(status_code=404, detail=f&quot;no error code {code.upper()}&quot;)
+    return ErrorCode.model_validate(match.iloc[0].to_dict())</code></pre></details><details><summary>Solution: Step 3</summary><p><code>tests/test_errors.py</code>:</p><pre><code>from fastapi.testclient import TestClient
+
+from my_ai_project.api import app
+
+client = TestClient(app)
+
+
+def test_filter_by_severity() -&gt; None:
+    response = client.get(&quot;/api/errors&quot;, params={&quot;severity&quot;: &quot;high&quot;})
+    assert response.status_code == 200
+    assert [item[&quot;code&quot;] for item in response.json()] == [&quot;E103&quot;, &quot;E104&quot;]
+
+
+def test_unknown_code_is_a_404() -&gt; None:
+    response = client.get(&quot;/api/errors/E999&quot;)
+    assert response.status_code == 404
+    assert response.json() == {&quot;detail&quot;: &quot;no error code E999&quot;}</code></pre></details><details><summary>Hint 2: Step 4</summary><p>If you skip the check, <code>.iloc[0]</code> on an empty table fails with <code>IndexError: single positional indexer is out-of-bounds</code>, and the client gets a <code>500</code>. Check <code>match.empty</code> first and raise an <code>HTTPException</code> with status <code>404</code>. The solution above already has it, so compare it with your version.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is the table loaded once, in a function with <code>@lru_cache</code>, and not inside each route?</li><li>The unknown code gave a <code>500</code> before your fix. Whose fault is a <code>404</code>, and whose is a <code>500</code>?</li><li>Which part of today came from which earlier day?</li></ol><details><summary>Answers</summary><ol><li>Reading and cleaning a file on every request is slow and wasteful. The cache keeps the first result, and <code>Depends</code> hands the same table to every route.</li><li>A <code>404</code> says the client asked for something that does not exist, so the client can fix it. A <code>500</code> says your code failed in a way you did not plan.</li><li>The clean table is from Day 18, <code>Depends</code> and the test pattern are from Day 16, the models and the <code>Literal</code> check are from Day 11, the <code>404</code> and the error-to-status idea are from Day 12 and Day 14.</li></ol></details></section>
+<section id="game-day19" class="game"><h2><span class="n">+</span> &middot; Game: Endpoint Referee <span class="t">5 min</span></h2>
+<p><p>You serve the error-code table from <code>/api/errors</code>. A client calls it. What does it get back?</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day19-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day19-play">Start the game</button></div>
+<div id="day19-round" hidden><div class="gtop"><span id="day19-num">Round 1</span><span id="day19-score">Score 0</span></div>
+<pre hidden><code id="day19-code"></code></pre><div class="q" id="day19-q"></div><div class="choices" id="day19-opts"></div>
+<div class="fb" id="day19-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day19-next" hidden>Next round</button></p></div>
+<div id="day19-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day19",[{"c": "GET /api/errors?severity=high", "q": "Two rows in the table have severity high. What does the client get?", "o": ["200 with a list of two items", "200 with all four items", "422"], "a": 0, "out": "HTTP/1.1 200 OK\n[{\"code\":\"E103\",\"title\":\"Overheat\",\"severity\":\"high\",\"description\":\"No description\"},{\"code\":\"E104\",\"title\":\"Disk full\",\"severity\":\"high\",\"description\":\"Storage is above 95 percent\"}]", "why": "The filter keeps only the rows where severity is high. The empty description was filled with No description by the cleaning."}, {"c": "GET /api/errors/e101", "q": "The code in the table is E101. The client wrote it in lower case. What happens?", "o": ["200 with E101, the code is not case sensitive", "404: e101 does not exist", "422"], "a": 0, "out": "HTTP/1.1 200 OK\n{\"code\":\"E101\",\"title\":\"Sensor timeout\",\"severity\":\"medium\",\"description\":\"Sensor did not answer within 10 seconds\"}", "why": "The route turns the code into capitals before it looks it up, like the cleaning did for the table."}, {"c": "GET /api/errors/E999", "q": "There is no such code. What does the client get?", "o": ["404 with no error code E999", "500 Internal Server Error", "200 with an empty object"], "a": 0, "out": "HTTP/1.1 404 Not Found\n{\"detail\":\"no error code E999\"}", "why": "The address is fine but the thing it points to does not exist. That is what 404 means."}, {"c": "# the route has no check\nmatch = table[table[\"code\"] == code.upper()]\nreturn ErrorCode.model_validate(match.iloc[0].to_dict())\nGET /api/errors/E999", "q": "The same request, but the route skips the empty check. What happens?", "o": ["IndexError, and the client sees a 500", "A clean 404 anyway", "200 with the first row"], "a": 0, "out": "IndexError: single positional indexer is out-of-bounds", "why": "iloc[0] on an empty table fails. Nothing catches it, so it is your code failing: a 500. Check match.empty first."}, {"c": "GET /api/errors?severity=urgent", "q": "severity must be low, medium or high. What does the client get?", "o": ["422: Input should be 'low', 'medium' or 'high'", "200 with an empty list", "404"], "a": 0, "out": "HTTP/1.1 422 Unprocessable Entity\n{\"detail\":[{\"type\":\"literal_error\",\"loc\":[\"query\",\"severity\"],\"msg\":\"Input should be 'low', 'medium' or 'high'\",\"input\":\"urgent\", ...}]}", "why": "A query value is checked like a body field. loc says query this time, not body."}, {"c": "@lru_cache\ndef get_error_table() -> pd.DataFrame:\n    return load_error_codes(Path(\"data/error_codes.csv\"))", "q": "What does @lru_cache do here?", "o": ["Loads and cleans the file once, then reuses the table", "Loads the file again on every request", "Makes the table read only"], "a": 0, "out": "", "why": "The function remembers its first result, so every route gets the same cleaned table without reading the file again."}],["Endpoint rookie", "Endpoint referee", "Endpoint pro"],"A filter keeps rows, a missing item is a 404, a bad query value is a 422, and a check you skip (like match.empty) turns into a 500.");</script>
+<p><small>Tick &ldquo;Play the Endpoint Referee game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> an API that serves a clean table, with a filter, a clear <code>404</code> and tests, built from a blank file with ideas from three different days.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 19 checklist.</li><li>Share one line in the comments: where did you get stuck, and what unstuck you?</li><li><strong>Next:</strong> Friday is a teach-back: explain <code>Depends()</code> and constructor injection in your own words. Saturday is the M2 checkpoint, with a real model call.</li></ul></section>
+</main>
+<footer><div class="byline"><span>Made by <b>Naowal</b>, a learning designer and software developer, learning AI engineering in public.</span> <a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal &rarr;</a></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
