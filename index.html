@@ -334,8 +334,8 @@ try {
     const l=el("button",{class:"lbl",type:"button","aria-label":"Module "+m.num+": "+m.title},[el("b",{text:m.num}),el("span",{text:m.title})]);
     l.addEventListener("click",()=>select(i)); stage.append(l); labels.push(l);
   });
-  /* Keep the labels out of the way: they hide when they would cover the title, the buttons, the panel or the controls,
-     and when a module is open only that module and its two neighbours keep a label. */
+  /* Keep the labels out of the way: a label that would cover the title, the buttons, the panel or the controls moves instead of
+     disappearing: first under its island, then just past the thing it would cover. It only hides when there is no free spot. */
   let uiRects = [];
   const refreshUi = () => {
     const sr = stage.getBoundingClientRect();
@@ -344,6 +344,14 @@ try {
     }).filter(r=>r.r>r.l&&r.b>r.t);
   };
   const lblSize = labels.map(()=>({w:90,h:24,k:""}));
+  const v2 = new THREE.Vector3(), below = new THREE.Vector3(0,-5.2,0);
+  const hitsAny = (x,t,w,h,more) => uiRects.concat(more).some(r=>x+w/2>r.l&&x-w/2<r.r&&t+h>r.t&&t<r.b);
+  const place = (sx,sy,sy2,w,h,W,H,more) => {
+    const cand = [[sx,sy-h],[sx,sy2+4]];
+    uiRects.concat(more).forEach(r=>{ cand.push([sx,r.b+4],[sx,r.t-h-4],[r.r+4+w/2,sy-h],[r.l-4-w/2,sy-h]); });
+    for (const [x,t] of cand) if (x-w/2>=4&&x+w/2<=W-4&&t>=4&&t+h<=H-4&&!hitsAny(x,t,w,h,more)) return [x,t];
+    return null;
+  };
   refreshUi();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(refreshUi);
   setTimeout(refreshUi,700);
@@ -463,19 +471,28 @@ try {
     const ph = sel<0 ? 2 : MODULES[sel].phase;
     costume.forEach((c,ci)=>c.visible = ci===ph);
 
-    labels.forEach((l,i)=>{
+    // Work out where every label wants to be, then place them nearest-first (the open module first),
+    // so a far label moves out of the way of a near one instead of piling on top of it.
+    const lblWant = labels.map((l,i)=>{
       v.copy(pos[i]).add(up).project(camera);
       const d=camera.position.distanceTo(pos[i]);
       const vis=v.z<1&&Math.abs(v.x)<1.05&&Math.abs(v.y)<1.05;
-      let op=!vis?0:sel<0?1:Math.max(0,Math.min(1,1-(d-22)/26));
-      if (sel>=0 && Math.abs(i-sel)>1) op=0;
-      const sx=(v.x*0.5+0.5)*W, sy=(-v.y*0.5+0.5)*H;
+      const op=!vis?0:sel<0?1:Math.max(0,Math.min(1,1-(d-22)/26));
+      v2.copy(pos[i]).add(below).project(camera);
       l.classList.toggle("compact",sel<0); l.classList.toggle("on",i===sel);
       const z=lblSize[i], k=(sel<0?"c":"f")+(i===sel?"on":"");
       if (z.k!==k) { z.k=k; z.w=l.offsetWidth; z.h=l.offsetHeight; }
-      if (op>0 && uiRects.some(r=>sx+z.w/2>r.l&&sx-z.w/2<r.r&&sy>r.t&&sy-z.h<r.b)) op=0;
-      l.style.opacity=op; l.style.pointerEvents=op<0.2?"none":"auto";
-      l.style.transform="translate("+sx+"px,"+sy+"px) translate(-50%,-100%)";
+      return {i,l,d,op,sx:(v.x*0.5+0.5)*W,sy:(-v.y*0.5+0.5)*H,sy2:(-v2.y*0.5+0.5)*H,w:z.w,h:z.h};
+    });
+    const placed = [];
+    lblWant.slice().sort((a,b)=>(b.i===sel)-(a.i===sel)||a.d-b.d).forEach(f=>{
+      let px=f.sx, pt=f.sy-f.h, op=f.op;
+      if (op>0) {
+        const spot=place(f.sx,f.sy,f.sy2,f.w,f.h,W,H,placed);
+        if (spot) { px=spot[0]; pt=spot[1]; placed.push({l:px-f.w/2-3,t:pt-3,r:px+f.w/2+3,b:pt+f.h+3}); } else op=0;
+      }
+      f.l.style.opacity=op; f.l.style.pointerEvents=op<0.2?"none":"auto";
+      f.l.style.transform="translate("+px+"px,"+pt+"px) translate(-50%,0)";
     });
     renderer.render(scene,camera);
     requestAnimationFrame(frame);
