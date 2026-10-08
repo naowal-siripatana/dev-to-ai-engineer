@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 23 - Data engineering basics: files, JSON, cleaning</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 23 &middot; LEVEL 3: DATA AND ML</div><h1>Data engineering basics: files, JSON, cleaning</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to turn a folder of messy files into one clean, typed list of documents.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Name two things you check about a table <em>before</em> you clean it.</li><li>Why does the log line for a model call show sizes and not the prompt?</li></ol><details><summary>Answers</summary><ol><li>For example <code>shape</code>, <code>head</code>, <code>isna().sum()</code> or <code>value_counts()</code>.</li><li>A prompt can hold private data, and logs are copied and kept. Sizes and token counts are enough to see cost and speed.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You are given a folder with Markdown, text and JSON files, one empty file, one broken file, and the same FAQ saved twice. Your assistant must read all of it. What is the first thing that goes wrong if you just open every file and hope?</strong></p><details><summary>Guess first, then open</summary><p>Usually the <em>first</em> bad file stops everything, with an error from the middle of your code. The fix is a loader that expects bad files: it reads what it can, skips the rest with a clear log line, and always gives you the same clean shape. Today you build it.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: many formats in, one shape out</h3>
+<p>Files come as <code>.md</code>, <code>.txt</code>, <code>.json</code> and more. Your assistant should not care. You write one small <strong>reader</strong> per format, and every reader returns the same typed thing: a list of <code>Document</code> (<code>doc_id</code>, <code>title</code>, <code>body</code>). Everything after the loader can trust that shape.</p>
+<h3>Piece 2: cleaning is a few boring rules</h3>
+<p>Windows line endings (<code>\r\n</code>), spaces at the end of lines, five blank lines in a row, and an invisible <strong>byte order mark</strong> (BOM) at the start of a file are all normal. Rules like &ldquo;strip the line ends&rdquo; and &ldquo;read with <code>utf-8-sig</code>&rdquo; fix them in one place.</p>
+<h3>Piece 3: expect bad input, skip it loudly</h3>
+<p>An empty file, a broken JSON file or an unknown file type must not crash the whole load. Catch the <em>specific</em> errors you expect, write a <code>warning</code> with the file name, and go on. Then remove <strong>duplicates</strong>: the same text twice would show up twice in an answer.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> the dictionary of readers (<code>{".md": read_text_file, ...}</code>) is the strategy pattern, and <code>load_folder</code> is a small ETL step: extract, transform, load. <code>utf-8-sig</code> is the <code>Encoding.UTF8</code> that skips the BOM, like <code>StreamReader</code> does by default.</div>
+<div class="box cap"><strong>Capstone:</strong> this loader is the first stage of the knowledge base for the assistant. On Saturday you use the same idea on 20 documents, and in module 6 the output goes into the retrieval pipeline.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. <code>src/my_ai_project/documents.py</code>: a typed <code>Document</code>, a cleaner, three readers and one loader.</p><pre><code>import json
+import logging
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, Field, ValidationError
+
+logger = logging.getLogger(&quot;documents&quot;)
+
+
+class Document(BaseModel):
+    doc_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+
+
+def clean_text(text: str) -&gt; str:
+    text = text.replace(&quot;\r\n&quot;, &quot;\n&quot;)
+    text = &quot;\n&quot;.join(line.rstrip() for line in text.split(&quot;\n&quot;)).strip()
+    while &quot;\n\n\n&quot; in text:
+        text = text.replace(&quot;\n\n\n&quot;, &quot;\n\n&quot;)
+    return text
+
+
+def read_text_file(path: Path) -&gt; list[Document]:
+    lines = clean_text(path.read_text(encoding=&quot;utf-8-sig&quot;)).split(&quot;\n&quot;)
+    if lines and lines[0].startswith(&quot;# &quot;):
+        title, body = lines[0].removeprefix(&quot;# &quot;).strip(), &quot;\n&quot;.join(lines[1:])
+    else:
+        title, body = lines[0], &quot;\n&quot;.join(lines[1:])
+    return [Document(doc_id=path.stem, title=title, body=clean_text(body))]
+
+
+def read_json_file(path: Path) -&gt; list[Document]:
+    data: Any = json.loads(path.read_text(encoding=&quot;utf-8-sig&quot;))
+    items = data if isinstance(data, list) else [data]
+    documents = []
+    for position, item in enumerate(items):
+        suffix = f&quot;-{item.get(&#x27;id&#x27;, position)}&quot; if isinstance(data, list) else &quot;&quot;
+        documents.append(
+            Document(
+                doc_id=path.stem + suffix,
+                title=clean_text(item[&quot;title&quot;]),
+                body=clean_text(item.get(&quot;body&quot;, item.get(&quot;text&quot;, &quot;&quot;))),
+            )
+        )
+    return documents
+
+
+READERS = {&quot;.md&quot;: read_text_file, &quot;.txt&quot;: read_text_file, &quot;.json&quot;: read_json_file}
+
+
+def load_folder(folder: Path) -&gt; list[Document]:
+    documents: list[Document] = []
+    seen: set[str] = set()
+    for path in sorted(folder.iterdir()):
+        reader = READERS.get(path.suffix)
+        if reader is None:
+            logger.warning(&quot;skipped %s: unsupported file type&quot;, path.name)
+            continue
+        try:
+            found = reader(path)
+        except (json.JSONDecodeError, ValidationError, KeyError, IndexError) as err:
+            logger.warning(&quot;skipped %s: %s&quot;, path.name, type(err).__name__)
+            continue
+        for document in found:
+            fingerprint = &quot; &quot;.join(document.body.lower().split())
+            if fingerprint in seen:
+                logger.warning(&quot;skipped %s: same text as an earlier file&quot;, path.name)
+                continue
+            seen.add(fingerprint)
+            documents.append(document)
+    logger.info(&quot;loaded %d documents from %s&quot;, len(documents), folder)
+    return documents</code></pre><p>And a small script to run it. <code>run_load.py</code>:</p><pre><code>import logging
+from pathlib import Path
+
+from my_ai_project.documents import load_folder
+
+logging.basicConfig(level=logging.INFO, format=&quot;%(levelname)s %(message)s&quot;)
+documents = load_folder(Path(&quot;data/messy&quot;))
+for document in documents:
+    print(document.doc_id, &quot;|&quot;, document.title, &quot;|&quot;, document.body[:40].replace(&quot;\n&quot;, &quot; / &quot;))</code></pre><p>With the messy folder from Step 1, it prints (the folder has 9 files; 6 become documents):</p><div class="out"><b>You should see</b><br>WARNING skipped broken.json: JSONDecodeError<br>WARNING skipped empty.txt: ValidationError<br>WARNING skipped faq-battery2.txt: same text as an earlier file<br>WARNING skipped notes.xlsx: unsupported file type<br>INFO loaded 6 documents from data/messy<br>bom | Warranty | The device has a two year warranty.<br>error-e101 | E101 Sensor timeout | The sensor did not answer within 10 seco<br>faq-battery | How long does the battery last? | About 8 hours on a full charge. /  / Charge<br>faq-reset | How do I reset the device? | Hold the power button for 5 seconds unti<br>manuals-install | Installation guide | Mount the unit on a flat wall. Connect t<br>manuals-calibrate | Calibration guide | Run the calibration from the menu once a</div><p><small>Read the warnings: the broken JSON, the empty file, the duplicate FAQ and the unknown file type were all skipped, and the program still finished. <code>faq-battery2.txt</code> is the duplicate, because files are read in alphabetical order and the first copy wins.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c data-loader</code>). If you have no <code>pandas</code> yet, run <code>uv add pandas</code> (Step 4 needs it).</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Create the messy folder with this script (save it as <code>make_messy.py</code>, run it with <code>uv run python make_messy.py</code>), then save <code>documents.py</code> and <code>run_load.py</code> from the worked example, and run <code>uv run python run_load.py</code>. Match the output.</p><pre><code>from pathlib import Path
+
+folder = Path(&quot;data/messy&quot;)
+folder.mkdir(parents=True, exist_ok=True)
+
+(folder / &quot;error-e101.md&quot;).write_text(
+    &quot;# E101 Sensor timeout\n\nThe sensor did not answer within 10 seconds.   \n\n\n\nCheck the cable and restart the device.\n&quot;,
+    encoding=&quot;utf-8&quot;,
+)
+battery = b&quot;How long does the battery last?\r\nAbout 8 hours on a full charge.  \r\n\r\n\r\n\r\nCharge it overnight for best results.\r\n&quot;
+(folder / &quot;faq-battery.txt&quot;).write_bytes(battery)
+(folder / &quot;faq-battery2.txt&quot;).write_bytes(battery)
+(folder / &quot;faq-reset.json&quot;).write_text(
+    &#x27;{&quot;title&quot;: &quot;How do I reset the device?&quot;, &quot;body&quot;: &quot;Hold the power button for 5 seconds until the light blinks.&quot;}&#x27;,
+    encoding=&quot;utf-8&quot;,
+)
+(folder / &quot;manuals.json&quot;).write_text(
+    &#x27;[{&quot;id&quot;: &quot;install&quot;, &quot;title&quot;: &quot;Installation guide&quot;, &quot;text&quot;: &quot;Mount the unit on a flat wall. Connect the power cable last.&quot;},&#x27;
+    &#x27; {&quot;id&quot;: &quot;calibrate&quot;, &quot;title&quot;: &quot;Calibration guide&quot;, &quot;text&quot;: &quot;Run the calibration from the menu once a month.&quot;}]&#x27;,
+    encoding=&quot;utf-8&quot;,
+)
+(folder / &quot;empty.txt&quot;).write_text(&quot;&quot;, encoding=&quot;utf-8&quot;)
+(folder / &quot;broken.json&quot;).write_text(&#x27;{&quot;title&quot;: &quot;Oops&quot;,&#x27;, encoding=&quot;utf-8&quot;)
+(folder / &quot;bom.txt&quot;).write_bytes(&quot;﻿Warranty\nThe device has a two year warranty.&quot;.encode(&quot;utf-8&quot;))
+(folder / &quot;notes.xlsx&quot;).write_bytes(b&quot;PK\x03\x04binary&quot;)
+print(&quot;wrote&quot;, len(list(folder.iterdir())), &quot;files&quot;)</code></pre>
+<p>Open two of the files in your editor. Find the odd things before you read on: which file has Windows line endings, and which one has something invisible at the start?</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>In <code>read_text_file</code>, change <code>encoding="utf-8-sig"</code> to <code>encoding="utf-8"</code>. <strong>Predict:</strong> what changes for the document <code>bom</code>? You cannot see it when you print the title, so print <code>repr(...)</code> of it in a small script and look closely. Then put <code>utf-8-sig</code> back.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Call a reader on the broken file <em>directly</em>, without the <code>try</code> in <code>load_folder</code>:</p><pre><code>from pathlib import Path
+
+from my_ai_project.documents import read_json_file
+
+read_json_file(Path(&quot;data/messy/broken.json&quot;))</code></pre>
+<p>Read the last line of the error. Then break it a second way: save a text file in the Latin-1 encoding (for example the word <code>Caf&eacute;</code> typed in an old editor, or with <code>"Caf\xe9".encode("latin-1")</code>) and try to read it with <code>utf-8-sig</code>. Which error do you get, and which of the exceptions in <code>load_folder</code> would catch it? (Hint: none. Add it.)</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Add a reader for <code>.csv</code> files with the columns <code>title</code> and <code>body</code>, where <strong>each row is one document</strong>, with <code>doc_id</code> like <code>faq-more-0</code>. Use pandas from Day 18. Put this file in the messy folder as <code>faq-more.csv</code>:</p><pre><code>title,body
+How do I update the firmware?,Open Settings and press Update.
+Where is the serial number?,On the label under the device.</code></pre>
+<p>Your goal: <code>run_load.py</code> now loads <strong>8</strong> documents. Write a test with <code>tmp_path</code> that proves it, and add a second test for <code>clean_text</code>. Check the types with <code>uv run mypy src</code> (you need <code>uv add --dev pandas-stubs</code>). Finally, commit: <code>git add .</code> and <code>git commit -m "Load a folder of messy files into clean documents"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;FileNotFoundError: ... data/messy&rdquo;</strong>: run the script from the project folder, after <code>make_messy.py</code> created the folder.</li><li><strong>&ldquo;ValidationError&rdquo; on a good file</strong>: a <code>Document</code> needs a non-empty <code>doc_id</code>, <code>title</code> and <code>body</code>. A file with only a title and no body fails on purpose.</li><li><strong>A duplicate is not skipped</strong>: the check compares the lower-cased body with the spaces squeezed. Print the two bodies and look for a difference.</li><li><strong>&ldquo;KeyError: 'title'&rdquo;</strong> from a JSON file: the file has no <code>title</code> key. The loader already catches <code>KeyError</code>, so such a file is skipped with a warning. If you see the error, check that <code>KeyError</code> is in the tuple in <code>load_folder</code>.</li><li><strong>The CSV gives <code>nan</code> in a body</strong>: an empty cell. <code>str(float('nan'))</code> is <code>nan</code>. Fill or skip empty cells before you build the <code>Document</code>.</li></ul><details><summary>Hint: Step 4</summary><p>A reader is a function <code>(path) -&gt; list[Document]</code>. Read the file with <code>pd.read_csv(path)</code>, loop over <code>table.to_dict(&quot;records&quot;)</code> with <code>enumerate</code>, and build one <code>Document</code> per row. Then add <code>&quot;.csv&quot;: read_csv_file</code> to the <code>READERS</code> dictionary. Nothing else in <code>load_folder</code> changes.</p></details><details><summary>Solution: Step 4</summary><p>In <code>documents.py</code>, add <code>import pandas as pd</code> at the top, this function above <code>READERS</code>, and the new entry in <code>READERS</code>:</p><pre><code>def read_csv_file(path: Path) -&gt; list[Document]:
+    table = pd.read_csv(path)
+    return [
+        Document(doc_id=f&quot;{path.stem}-{position}&quot;, title=clean_text(str(row[&quot;title&quot;])), body=clean_text(str(row[&quot;body&quot;])))
+        for position, row in enumerate(table.to_dict(&quot;records&quot;))
+    ]</code></pre><p><code>READERS = {&quot;.csv&quot;: read_csv_file, &quot;.md&quot;: read_text_file, ...}</code></p><div class="out"><b>You should see</b><br>INFO loaded 8 documents from data/messy<br>bom | Warranty | The device has a two year warranty.<br>error-e101 | E101 Sensor timeout | The sensor did not answer within 10 seco<br>faq-battery | How long does the battery last? | About 8 hours on a full charge. /  / Charge<br>faq-more-0 | How do I update the firmware? | Open Settings and press Update.<br>faq-more-1 | Where is the serial number? | On the label under the device.<br>faq-reset | How do I reset the device? | Hold the power button for 5 seconds unti<br>manuals-install | Installation guide | Mount the unit on a flat wall. Connect t<br>manuals-calibrate | Calibration guide | Run the calibration from the menu once a</div><p>Tests in <code>tests/test_documents.py</code> (the first two are in the template below, the third is the CSV one):</p><pre><code>from pathlib import Path
+
+from my_ai_project.documents import clean_text, load_folder
+
+
+def test_clean_text_fixes_spaces_and_blank_lines() -&gt; None:
+    assert clean_text(&quot;a  \r\n\r\n\r\n\r\nb  \r\n&quot;) == &quot;a\n\nb&quot;
+
+
+def test_load_folder_keeps_good_files_and_skips_bad_ones(tmp_path: Path) -&gt; None:
+    (tmp_path / &quot;a.txt&quot;).write_text(&quot;Title A\nBody A&quot;, encoding=&quot;utf-8&quot;)
+    (tmp_path / &quot;b.txt&quot;).write_text(&quot;Title B\nbody  a&quot;, encoding=&quot;utf-8&quot;)
+    (tmp_path / &quot;bad.json&quot;).write_text(&quot;{&quot;, encoding=&quot;utf-8&quot;)
+    (tmp_path / &quot;empty.txt&quot;).write_text(&quot;&quot;, encoding=&quot;utf-8&quot;)
+    documents = load_folder(tmp_path)
+    assert [d.doc_id for d in documents] == [&quot;a&quot;]</code></pre><pre><code>def test_csv_rows_become_documents(tmp_path: Path) -&gt; None:
+    (tmp_path / &quot;faq.csv&quot;).write_text(&quot;title,body\nQ1,A1\nQ2,A2\n&quot;, encoding=&quot;utf-8&quot;)
+    documents = load_folder(tmp_path)
+    assert [d.doc_id for d in documents] == [&quot;faq-0&quot;, &quot;faq-1&quot;]</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does every reader return the same typed <code>Document</code>?</li><li>The loader catches <code>json.JSONDecodeError</code> and <code>ValidationError</code> but not every exception. Why is catching <em>specific</em> errors better than <code>except Exception</code>?</li><li>What does <code>utf-8-sig</code> do, and what happens without it?</li></ol><details><summary>Answers</summary><ol><li>So everything after the loader (chunking, search, answers) can trust one shape, and a new file type only needs a new reader.</li><li>A specific error is one you expected and know how to handle. A bare <code>except Exception</code> would also hide real bugs, like a typo in your code, as a harmless &ldquo;skipped file&rdquo;.</li><li>It reads the file as UTF-8 and removes the invisible byte order mark at the start. Without it the mark stays in the first word, for example <code>'\ufeffWarranty'</code>, and a search for <code>Warranty</code> would not match.</li></ol></details></section>
+<section id="game-day23" class="game"><h2><span class="n">+</span> &middot; Game: Loader Detective <span class="t">5 min</span></h2>
+<p><p>Your loader reads a folder of messy files. Read what happens, pick the cause, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day23-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day23-play">Start the game</button></div>
+<div id="day23-round" hidden><div class="gtop"><span id="day23-num">Round 1</span><span id="day23-score">Score 0</span></div>
+<pre hidden><code id="day23-code"></code></pre><div class="q" id="day23-q"></div><div class="choices" id="day23-opts"></div>
+<div class="fb" id="day23-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day23-next" hidden>Next round</button></p></div>
+<div id="day23-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day23",[{"c": "uv run python run_load.py   # the folder has 9 files", "q": "How many documents does the loader return, and why not 9?", "o": ["6: the others are bad, empty, duplicate or unsupported", "9: every file is a document", "3: only the .md files count"], "a": 0, "out": "WARNING skipped broken.json: JSONDecodeError\nWARNING skipped empty.txt: ValidationError\nWARNING skipped faq-battery2.txt: same text as an earlier file\nWARNING skipped notes.xlsx: unsupported file type\nINFO loaded 6 documents from data/messy", "why": "Four files were skipped, each with a warning that names the file and the reason."}, {"c": "faq-battery.txt and faq-battery2.txt have the same text\n# files are read in alphabetical order", "q": "Which one is skipped as a duplicate?", "o": ["faq-battery2.txt: the first copy wins", "faq-battery.txt", "Both are kept"], "a": 0, "out": "WARNING skipped faq-battery2.txt: same text as an earlier file", "why": "The loader keeps the first copy it meets and skips the rest. The order is alphabetical."}, {"c": "read_json_file(Path(\"data/messy/broken.json\"))   # no try/except", "q": "The file contains {\"title\": \"Oops\", and nothing else. What happens?", "o": ["JSONDecodeError and the program stops", "An empty Document", "A silent skip"], "a": 0, "out": "json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 18 (char 17)", "why": "Without the try, one broken file stops everything. That is why load_folder catches the errors it expects."}, {"c": "# read_text_file with encoding=\"utf-8\" (not utf-8-sig)\nprint(repr(documents[\"bom\"].title))", "q": "The file bom.txt starts with an invisible byte order mark. What do you see?", "o": ["'\\ufeffWarranty': the mark stays in the title", "'Warranty'", "A UnicodeDecodeError"], "a": 0, "out": "'\\ufeffWarranty'", "why": "utf-8-sig reads the file as UTF-8 and drops the mark. Without it a search for Warranty would not match."}, {"c": "# empty.txt has no text\nlines = clean_text(path.read_text(...)).split(\"\\n\")   # [\"\"]", "q": "What does the loader do with the empty file?", "o": ["Skips it: the empty title fails the Document check", "Returns a Document with an empty body", "Crashes with an IndexError"], "a": 0, "out": "WARNING skipped empty.txt: ValidationError", "why": "A Document needs a non-empty doc_id, title and body, so the check at the door rejects it and the loader moves on."}, {"c": "Path(\"/tmp/latin.txt\").read_text(encoding=\"utf-8-sig\")   # saved as Latin-1: \"Caf\\xe9 guide\"", "q": "What happens?", "o": ["UnicodeDecodeError", "It reads Café guide", "An empty string"], "a": 0, "out": "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xe9 in position 3: invalid continuation byte", "why": "The byte 0xe9 is a Latin-1 letter, not valid UTF-8. The loader does not catch this error yet: it is one more file problem to expect."}],["Loader rookie", "Loader detective", "Data cleaner"],"Many file types become one typed Document, expected bad files are skipped with a clear warning, and a duplicate or an invisible mark is easier to catch when you print what you really have.");</script>
+<p><small>Tick &ldquo;Play the Loader Detective game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a loader that turns a folder of messy files into one clean, typed list of documents, and that keeps going when a file is bad. Each skipped file leaves a clear line in the log.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 23 checklist.</li><li>Share one line in the comments: what was the oddest thing in the messy folder?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you meet the basic rule of machine learning: never judge a model on the data it learned from. On Saturday you use this loader on a 20-document knowledge base.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

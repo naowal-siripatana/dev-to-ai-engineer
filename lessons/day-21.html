@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 21 - Project Lab 3: a real LLM call</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 21 &middot; LEVEL 3: DATA AND ML &middot; PROJECT LAB &middot; M2 CHECKPOINT</div><h1>Project Lab 3: a real LLM call</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to call a real model from /api/chat with the key in an environment variable, log every call, and test it without a key.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Where does your app decide which LLM client every route uses?</li><li>Why do your tests use a fake client, and what would break if they called a real model?</li></ol><details><summary>Answers</summary><ol><li>In <code>deps.py</code>, in <code>get_llm_client</code>.</li><li>A fake is fast, free and the same every time. A real model costs money, is slow, needs a key, and gives different answers, so a test could fail for reasons you cannot control.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You are about to put a secret in your project. It will sit next to code that you push to GitHub every week. What is the one mistake that must never happen, and what stops it?</strong></p><details><summary>Guess first, then open</summary><p>The key must never reach Git. Things that stop it: the key lives in an <strong>environment variable</strong> (loaded from a <code>.env</code> file), and <code>.env</code> is listed in <code>.gitignore</code> <em>before</em> the file exists. Today you build that, plus a log line for every call so you can see what the model costs you.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: a real client is just another client</h3>
+<p>On Day 16 you made one place, <code>get_llm_client</code>, decide which client the app uses. A real client is one more class with the same <code>complete(prompt)</code> method. The routes do not change. A setting, <code>LLM_MODE</code>, picks fake (the default) or real.</p>
+<h3>Piece 2: secrets live in the environment, not in code</h3>
+<p>An <strong>environment variable</strong> is a named value that the operating system gives to a program when it starts. You put the key in a <code>.env</code> file, <code>uv run --env-file .env</code> loads it, and the code reads it with <code>os.environ</code>. The file is ignored by Git, so the key stays on your machine.</p>
+<h3>Piece 3: log every call, but not the secrets</h3>
+<p>One line per call: which model, how big the prompt and the reply were, how many tokens, how many milliseconds. Tokens are what you pay for, so this line is your cost meter. Do <strong>not</strong> log the key. Log the <em>size</em> of the prompt, not the text: a user&rsquo;s question may contain private data.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>os.environ</code> plays the role of <code>IConfiguration</code> reading environment variables, and <code>.env</code> is like <em>user secrets</em> in development. The log line is what you would write with <code>ILogger</code> and structured fields.</div>
+<div class="box cap"><strong>Capstone:</strong> this is the M2 checkpoint: the assistant answers with a real model for the first time. The answers will be plain for now (no sources yet), but the plumbing (key, client, logs, errors, tests) is the part you keep.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. This is the real client. The example uses the Anthropic SDK; if you chose another provider, only this class changes (the method name <code>complete</code>, the <code>LlmError</code> and the log line stay). <code>src/my_ai_project/llm.py</code>:</p><pre><code>import logging
+import time
+
+import anthropic
+
+logger = logging.getLogger(&quot;llm&quot;)
+
+
+class LlmError(Exception):
+    &quot;&quot;&quot;Raised when a model call fails.&quot;&quot;&quot;
+
+
+class AnthropicClient:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = &quot;claude-haiku-4-5-20251001&quot;,
+        max_tokens: int = 300,
+        http_client: anthropic.DefaultHttpxClient | None = None,
+    ) -&gt; None:
+        self.client = anthropic.Anthropic(api_key=api_key, http_client=http_client)
+        self.model = model
+        self.max_tokens = max_tokens
+
+    def complete(self, prompt: str) -&gt; str:
+        started = time.perf_counter()
+        try:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: prompt}],
+            )
+        except anthropic.APIError as err:
+            logger.error(&quot;llm call failed model=%s error=%s&quot;, self.model, type(err).__name__)
+            raise LlmError(&quot;the model call failed&quot;) from err
+        text = &quot;&quot;.join(block.text for block in message.content if block.type == &quot;text&quot;)
+        logger.info(
+            &quot;llm call ok model=%s prompt_chars=%d reply_chars=%d input_tokens=%d output_tokens=%d ms=%d&quot;,
+            self.model,
+            len(prompt),
+            len(text),
+            message.usage.input_tokens,
+            message.usage.output_tokens,
+            round((time.perf_counter() - started) * 1000),
+        )
+        return text</code></pre><p>The switch in <code>deps.py</code>. Fake is the default, so nothing changes until you ask for <code>real</code>:</p><pre><code>import os
+
+from my_ai_project.llm import AnthropicClient, FakeLlmClient
+
+
+def get_llm_client() -&gt; LlmClient:
+    if os.environ.get(&quot;LLM_MODE&quot;, &quot;fake&quot;) == &quot;real&quot;:
+        api_key = os.environ.get(&quot;ANTHROPIC_API_KEY&quot;)
+        if not api_key:
+            raise RuntimeError(&quot;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&quot;)
+        return AnthropicClient(api_key=api_key)
+    return FakeLlmClient()</code></pre><p>And <code>/api/chat</code> now asks the client, and turns a failed call into a <code>502</code> (the same idea as Lab 2):</p><pre><code>@app.post(&quot;/api/chat&quot;, response_model=ChatResponse)
+def chat(request: ChatRequest, client: LlmDep) -&gt; dict[str, Any]:
+    try:
+        answer = client.complete(f&quot;Answer briefly: {request.question}&quot;)
+    except LlmError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    return {
+        &quot;answer&quot;: answer,
+        &quot;used_top_k&quot;: request.top_k,
+        &quot;sources&quot;: [{&quot;doc_id&quot;: &quot;1&quot;, &quot;title&quot;: &quot;Error codes&quot;}],
+        &quot;internal_note&quot;: &quot;never send this to a client&quot;,
+    }</code></pre><p>When it runs for real, each call leaves one line like this. The numbers will be yours, not these:</p><div class="out"><b>You should see</b><br>2026-10-08 16:24:56,888 INFO llm llm call ok model=claude-haiku-4-5-20251001 prompt_chars=29 reply_chars=32 input_tokens=12 output_tokens=9 ms=9</div><p>The line was produced by the code above against a fake network. Your answer text will be different from run to run, because a real model is not deterministic.</p></section>
+<section><h2><span class="n">5</span> &middot; Build it <span class="t">2.5 h</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch (<code>git switch -c lab-3</code>). You need the code from Day 16 (<code>deps.py</code>, <code>FakeLlmClient</code>) and Lab 2.</p>
+<p><strong>Done looks like:</strong> <code>uv run pytest</code> and <code>uv run mypy src tests</code> pass <strong>with no key set</strong>, one real call works from your machine, every call leaves a log line, <code>.env</code> is not in Git, the README explains how to run with a real model, and it is pushed.</p>
+<h3><span class="step">Part A</span> Safety first (10 min)</h3>
+<p>Before you create any key file, open <code>.gitignore</code> and make sure it lists <code>.env</code> (you added it on Day 15):</p><pre><code>.env
+.venv/</code></pre>
+<p>Now make a provider account if you have not, create an API key, and <strong>set a spending limit</strong> if the provider offers one. Keep the key out of chat, screenshots and code. Put it in <code>.env</code> (see Part E).</p>
+<h3><span class="step">Part B</span> The real client (35 min)</h3>
+<p>Run <code>uv add anthropic</code> (or your provider&rsquo;s library). Write <code>AnthropicClient</code> in <code>llm.py</code> with the same <code>complete(prompt)</code> method as the fake, plus an <code>LlmError</code> for failures. It must log one line on success and one on failure, without the key and without the prompt text. Also set up logging once, at the top of <code>api.py</code>:</p><pre><code>import logging
+
+logging.basicConfig(level=logging.INFO, format=&quot;%(asctime)s %(levelname)s %(name)s %(message)s&quot;)</code></pre>
+<h3><span class="step">Part C</span> The switch and the route (25 min)</h3>
+<p>In <code>deps.py</code>, make <code>get_llm_client</code> return the real client when <code>LLM_MODE</code> is <code>real</code>, and fail with a clear message if the key is missing. In <code>api.py</code>, make <code>/api/chat</code> ask the client (<code>client.complete(...)</code>), and answer <code>502</code> on <code>LlmError</code>. Teach the fake to handle the new prompt, so tests stay deterministic: it must strip the <code>Answer briefly: </code> prefix, and the chat test now expects <code>(fake) What is E101?</code>.</p>
+<h3><span class="step">Part D</span> Tests without a key (35 min)</h3>
+<p>Test the real client <em>without the network</em>. <code>httpx2.MockTransport</code> lets you give the client a pretend server: a function that returns the answer you choose. Write two tests: a good reply (check the text, that the prompt was sent, that a log line was written and that the key is <em>not</em> in the log) and a <code>401</code> reply (check that you get an <code>LlmError</code> and an error log line).</p>
+<p><strong>Mid-point check-in.</strong> Run <code>uv run pytest</code> and <code>uv run mypy src tests</code> with no key in your environment. Everything must pass. If not, fix it before you spend any money: your tests are your safety net. Take a 10-minute break.</p>
+<h3><span class="step">Part E</span> One real call (20 min)</h3>
+<p>Create <code>.env</code>, start the server so it loads the file, and ask a question:</p><pre><code>LLM_MODE=real
+ANTHROPIC_API_KEY=paste-your-key-here</code></pre><pre><code>uv add anthropic
+uv run --env-file .env uvicorn my_ai_project.api:app --reload</code></pre><pre><code>curl -s -X POST http://127.0.0.1:8000/api/chat -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;question&quot;: &quot;What is E101?&quot;}&#x27;</code></pre>
+<p>You should see an answer, and in the server terminal a log line like the one in the worked example. Read it: how many tokens did your question use? Then break it on purpose: put a wrong key in <code>.env</code>, restart, and ask again. The client should get a <code>502</code>, and the log should say <code>AuthenticationError</code>. Put the right key back. Then remove <code>LLM_MODE</code> and ask again to see the fake answer.</p>
+<h3><span class="step">Part F</span> Check, README, push (20 min)</h3>
+<p>Check that Git does not see your key file, and that the ignore rule is the reason:</p><pre><code>git status --short
+git check-ignore -v .env</code></pre><div class="out"><b>You should see</b><br>.gitignore:5:.env	.env</div>
+<p>The first command must <strong>not</strong> list <code>.env</code>. In the second, the number after <code>.gitignore:</code> is the line of your rule, so yours may differ. Add the &ldquo;Run with a real model&rdquo; section to your README (template in Stuck), commit, and push. If you ever see <code>.env</code> in <code>git status</code>, stop and fix <code>.gitignore</code> before you commit.</p>
+<h3><span class="step">Part G</span> Reflect (10 min)</h3>
+<p>Write three lines: what worked, what broke, and one thing you now check before you run a command that costs money. Keep them for the Sunday retrospective.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&rdquo;</strong> and a <code>500</code>: the server did not load your <code>.env</code>. Start it with <code>uv run --env-file .env ...</code>, from the folder that has the file.</li><li><strong>Every call gives <code>502</code> and the log says <code>AuthenticationError</code></strong>: the key is wrong, expired, or has a space or a quote around it. Create a new key.</li><li><strong>The log shows another error name</strong> (for example <code>RateLimitError</code> or <code>NotFoundError</code>): the name tells you what happened. <code>NotFoundError</code> often means the model name is wrong.</li><li><strong>No log lines appear</strong>: <code>logging.basicConfig(level=logging.INFO, ...)</code> must run once, at import time of <code>api.py</code>.</li><li><strong>The chat test fails with <code>(fake) You asked: ...</code></strong>: the route still has the old inline answer, or the fake does not strip <code>Answer briefly: </code>.</li><li><strong><code>.env</code> shows in <code>git status</code></strong>: the ignore rule is missing or misspelled. Fix <code>.gitignore</code>. If you already committed the key, delete it at the provider and make a new one: removing it from Git is not enough, because the history keeps it.</li></ul><details><summary>Hint: Part B</summary><p>The fake and the real client share the method <code>complete(self, prompt: str) -> str</code>. The SDK call is <code>client.messages.create(model=..., max_tokens=..., messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: prompt}])</code>. The reply has a list <code>content</code> of blocks, and a text block has <code>.text</code>. Token counts are in <code>message.usage</code>.</p></details><details><summary>Solution: Parts B and C</summary><p><code>src/my_ai_project/llm.py</code>:</p><pre><code>import logging
+import time
+
+import anthropic
+
+logger = logging.getLogger(&quot;llm&quot;)
+
+
+class LlmError(Exception):
+    &quot;&quot;&quot;Raised when a model call fails.&quot;&quot;&quot;
+
+
+class AnthropicClient:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = &quot;claude-haiku-4-5-20251001&quot;,
+        max_tokens: int = 300,
+        http_client: anthropic.DefaultHttpxClient | None = None,
+    ) -&gt; None:
+        self.client = anthropic.Anthropic(api_key=api_key, http_client=http_client)
+        self.model = model
+        self.max_tokens = max_tokens
+
+    def complete(self, prompt: str) -&gt; str:
+        started = time.perf_counter()
+        try:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: prompt}],
+            )
+        except anthropic.APIError as err:
+            logger.error(&quot;llm call failed model=%s error=%s&quot;, self.model, type(err).__name__)
+            raise LlmError(&quot;the model call failed&quot;) from err
+        text = &quot;&quot;.join(block.text for block in message.content if block.type == &quot;text&quot;)
+        logger.info(
+            &quot;llm call ok model=%s prompt_chars=%d reply_chars=%d input_tokens=%d output_tokens=%d ms=%d&quot;,
+            self.model,
+            len(prompt),
+            len(text),
+            message.usage.input_tokens,
+            message.usage.output_tokens,
+            round((time.perf_counter() - started) * 1000),
+        )
+        return text</code></pre><p>The fake&rsquo;s <code>complete</code> in the same file now handles the chat prompt:</p><pre><code>    def complete(self, prompt: str) -&gt; str:
+        if self.reply is not None:
+            return self.reply
+        if prompt.startswith(&quot;Extract&quot;):
+            return EXTRACT_REPLY
+        prompt = prompt.removeprefix(&quot;Summarize in one sentence: &quot;)
+        return &quot;(fake) &quot; + prompt.removeprefix(&quot;Answer briefly: &quot;)</code></pre><p><code>deps.py</code> (the other imports stay as they are):</p><pre><code>import os
+
+from my_ai_project.llm import AnthropicClient, FakeLlmClient
+
+
+def get_llm_client() -&gt; LlmClient:
+    if os.environ.get(&quot;LLM_MODE&quot;, &quot;fake&quot;) == &quot;real&quot;:
+        api_key = os.environ.get(&quot;ANTHROPIC_API_KEY&quot;)
+        if not api_key:
+            raise RuntimeError(&quot;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&quot;)
+        return AnthropicClient(api_key=api_key)
+    return FakeLlmClient()</code></pre><p><code>api.py</code>: import <code>LlmError</code> from <code>my_ai_project.llm</code>, then:</p><pre><code>@app.post(&quot;/api/chat&quot;, response_model=ChatResponse)
+def chat(request: ChatRequest, client: LlmDep) -&gt; dict[str, Any]:
+    try:
+        answer = client.complete(f&quot;Answer briefly: {request.question}&quot;)
+    except LlmError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    return {
+        &quot;answer&quot;: answer,
+        &quot;used_top_k&quot;: request.top_k,
+        &quot;sources&quot;: [{&quot;doc_id&quot;: &quot;1&quot;, &quot;title&quot;: &quot;Error codes&quot;}],
+        &quot;internal_note&quot;: &quot;never send this to a client&quot;,
+    }</code></pre></details><details><summary>Solution: Part D</summary><p>The chat test in <code>tests/test_api.py</code> changes one line:</p><pre><code>    assert body[&quot;answer&quot;] == &quot;(fake) What is E101?&quot;</code></pre><p><code>tests/test_llm.py</code>:</p><pre><code>import json
+from typing import Any
+
+import httpx2
+import pytest
+
+from my_ai_project.llm import AnthropicClient, LlmError
+
+
+def make_client(transport: httpx2.MockTransport) -&gt; AnthropicClient:
+    return AnthropicClient(api_key=&quot;test-key&quot;, http_client=httpx2.Client(transport=transport))
+
+
+def test_complete_sends_the_prompt_and_returns_the_text(caplog: pytest.LogCaptureFixture) -&gt; None:
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx2.Request) -&gt; httpx2.Response:
+        seen[&quot;body&quot;] = json.loads(request.content)
+        return httpx2.Response(
+            200,
+            json={
+                &quot;id&quot;: &quot;msg_1&quot;,
+                &quot;type&quot;: &quot;message&quot;,
+                &quot;role&quot;: &quot;assistant&quot;,
+                &quot;model&quot;: &quot;claude-haiku-4-5-20251001&quot;,
+                &quot;content&quot;: [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;E101 means the sensor timed out.&quot;}],
+                &quot;stop_reason&quot;: &quot;end_turn&quot;,
+                &quot;stop_sequence&quot;: None,
+                &quot;usage&quot;: {&quot;input_tokens&quot;: 12, &quot;output_tokens&quot;: 9},
+            },
+        )
+
+    client = make_client(httpx2.MockTransport(handler))
+    with caplog.at_level(&quot;INFO&quot;, logger=&quot;llm&quot;):
+        assert client.complete(&quot;What is E101?&quot;) == &quot;E101 means the sensor timed out.&quot;
+    assert seen[&quot;body&quot;][&quot;messages&quot;] == [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is E101?&quot;}]
+    assert &quot;llm call ok&quot; in caplog.text
+    assert &quot;test-key&quot; not in caplog.text
+
+
+def test_a_failed_call_becomes_an_llm_error(caplog: pytest.LogCaptureFixture) -&gt; None:
+    def handler(request: httpx2.Request) -&gt; httpx2.Response:
+        error = {&quot;type&quot;: &quot;authentication_error&quot;, &quot;message&quot;: &quot;invalid x-api-key&quot;}
+        return httpx2.Response(401, json={&quot;type&quot;: &quot;error&quot;, &quot;error&quot;: error})
+
+    client = make_client(httpx2.MockTransport(handler))
+    with caplog.at_level(&quot;ERROR&quot;, logger=&quot;llm&quot;), pytest.raises(LlmError):
+        client.complete(&quot;What is E101?&quot;)
+    assert &quot;AuthenticationError&quot; in caplog.text</code></pre></details><details><summary>Template: Part F</summary><pre><code>## Run with a real model
+
+1. Create a `.env` file (it is in `.gitignore`, never commit it):
+
+       LLM_MODE=real
+       ANTHROPIC_API_KEY=your-key
+
+2. Start the server:
+
+       uv run --env-file .env uvicorn my_ai_project.api:app --reload
+
+Without `LLM_MODE=real` the app uses a fake model, so tests and demos need no key.
+Every model call writes one log line (model, sizes, tokens, time). The key and the prompt text are never logged.</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is the key read from an environment variable, and what must you do <em>before</em> you create the <code>.env</code> file?</li><li>Why does the log line contain the <em>size</em> of the prompt and not the prompt?</li><li>The model call fails with a wrong key. Which status does the client get, and why not <code>500</code>?</li></ol><details><summary>Answers</summary><ol><li>So the secret stays out of code and out of Git. Before creating the file, add <code>.env</code> to <code>.gitignore</code>, so Git ignores it from the first second.</li><li>A question can contain private data, and logs are copied, shared and kept. The size and the token counts are enough to see cost and speed.</li><li><code>502</code> Bad Gateway: the thing you called failed, and it is not a bug in your code or a mistake by the client. It is the same reasoning as for a bad model reply in Lab 2.</li></ol></details></section>
+<section id="game-day21" class="game"><h2><span class="n">+</span> &middot; Game: Key Keeper <span class="t">5 min</span></h2>
+<p><p>Your API can call a real model, with the key in an environment variable. Something happens. What is the result, and why?</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day21-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day21-play">Start the game</button></div>
+<div id="day21-round" hidden><div class="gtop"><span id="day21-num">Round 1</span><span id="day21-score">Score 0</span></div>
+<pre hidden><code id="day21-code"></code></pre><div class="q" id="day21-q"></div><div class="choices" id="day21-opts"></div>
+<div class="fb" id="day21-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day21-next" hidden>Next round</button></p></div>
+<div id="day21-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day21",[{"c": "# the server was started with LLM_MODE=real, but no key is set\nPOST /api/chat\n{\"question\": \"What is E101?\"}", "q": "What does the client get?", "o": ["500: the server cannot build the client", "502: the model call failed", "200 with a fake answer"], "a": 0, "out": "HTTP/1.1 500 Internal Server Error\nRuntimeError: LLM_MODE is real, but ANTHROPIC_API_KEY is not set", "why": "This is a setup mistake in your own server, not a bad model call, so it is a 500 with a clear message in the server log."}, {"c": "# LLM_MODE=real and the key is wrong\nPOST /api/chat\n{\"question\": \"What is E101?\"}", "q": "The model provider says the key is invalid. What does your API return?", "o": ["502: the thing you called failed", "500: your code has a bug", "401: the client is not allowed"], "a": 0, "out": "HTTP/1.1 502 Bad Gateway\n{\"detail\":\"the model call failed\"}\nERROR llm llm call failed model=claude-haiku-4-5-20251001 error=AuthenticationError", "why": "The failure is in the service you called. 502 says so, and the log line names the real cause."}, {"c": "# .gitignore contains .env, and the folder has a .env file\ngit status --short\ngit check-ignore -v .env", "q": "What do you expect to see?", "o": ["Nothing for .env in status, and the rule that ignores it", "?? .env in status", "An error: .env does not exist"], "a": 0, "out": ".gitignore:5:.env\t.env", "why": "git check-ignore names the rule that hides the file, and git status does not list it, so git add . cannot pick it up."}, {"c": "INFO llm llm call ok model=claude-haiku-4-5-20251001 prompt_chars=29 reply_chars=32 input_tokens=12 output_tokens=9 ms=9", "q": "Which of these is NOT in the log line, on purpose?", "o": ["The API key and the prompt text", "The number of tokens", "How long the call took"], "a": 0, "out": "", "why": "Sizes, tokens and time show cost and speed. The key is a secret and a prompt may hold private data, and logs are copied and kept."}, {"c": "# tests/test_llm.py uses httpx2.MockTransport\nuv run pytest   # no key is set, and no internet is needed", "q": "Do these tests need a real key or a network?", "o": ["No: the transport gives the client a pretend server", "Yes, a real key but no network", "Yes, both"], "a": 0, "out": "9 passed in 1.04s", "why": "MockTransport returns the replies you choose, so the real client is tested for free, in milliseconds, with no secret."}, {"c": "# you committed .env with the key by mistake\n# the next commit deletes the file", "q": "Is the key safe now?", "o": ["No: Git history keeps it. Delete the key at the provider and make a new one", "Yes, the file is gone from the project", "Yes, if the repository is private"], "a": 0, "out": "", "why": "Every old commit still holds the file. Treat the key as lost and replace it."}],["Key rookie", "Key keeper", "Secret guardian"],"A key lives in an environment variable and never in Git, a failed model call is a 502 with a log line that names the cause, and tests use a pretend network so they need no key.");</script>
+<p><small>Tick &ldquo;Play the Key Keeper game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> the M2 checkpoint: an API that can call a real model, with the key kept out of Git, one log line per call, clear errors, and tests that need no key and cost nothing.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 21 checklist.</li><li>Share one line in the comments: what did your first real token count look like? (Do not share your key.)</li><li><strong>Next:</strong> Sunday is the M2 retrospective: what broke, what to change. Then module 3 starts with data: turning messy files into clean documents.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

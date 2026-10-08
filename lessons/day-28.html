@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 28 - Project Lab 4: the mock knowledge base</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 28 &middot; LEVEL 3: DATA AND ML &middot; PROJECT LAB</div><h1>Project Lab 4: the mock knowledge base</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to build a 20-document knowledge base and a loader that returns typed Documents, with a test.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does the loader from Day 23 skip a broken file instead of stopping?</li><li>Why do you look at the test pile only once?</li></ol><details><summary>Answers</summary><ol><li>One bad file must not stop the whole load. It writes a warning with the file name and goes on, so you keep every good document and know what was skipped.</li><li>If you look, change something and look again, the test pile starts to teach you, and the score gets too optimistic.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your loader finds the wrong folder and returns an empty list. No error, no warning, just zero documents. How long until someone notices, and who finds out first: you or your user?</strong></p><details><summary>Guess first, then open</summary><p>Probably the user, much later, when the assistant answers every question with &ldquo;I do not know&rdquo;. A silent empty result is one of the nastiest bugs in data work, because everything <em>looks</em> fine. Today you build the knowledge base, and you make that failure loud.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: one knowledge base, three kinds of document</h3>
+<p>The assistant answers from <strong>manuals</strong> (how to do things), <strong>FAQs</strong> (short questions with short answers) and <strong>error codes</strong> (what a code means and what to do). A typed <code>kind</code> on each <code>Document</code> lets you filter, show the right label, and later rank them differently.</p>
+<h3>Piece 2: a clear convention beats clever code</h3>
+<p>The loader is simple because the files follow a rule: one folder per kind, one file per document, and a <code>#&nbsp;Title</code> line first. The <code>doc_id</code> is built from the kind and the file name (<code>error-e101</code>), so it is unique and readable. A file that breaks the rule is rejected with a clear message.</p>
+<h3>Piece 3: make failure loud, and test the promise</h3>
+<p>The promise of today is a number: <strong>20 documents</strong>. One test holds you to it, so a missing file or a wrong folder can never pass quietly. A missing folder must be an <em>error</em>, not <code>0</code>.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>Literal["manual", "faq", "error"]</code> is the lightweight cousin of an <code>enum</code>, and <code>Document</code> is a record with validation attributes. The folder convention is like a naming convention in a plugin system: simple and checked by tests.</div>
+<div class="box cap"><strong>Capstone:</strong> this is the real input of <code>ai-knowledge-assistant</code>. In module 6 you will chunk these 20 documents, embed them and retrieve from them, so what you build today is used for months.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. This is the layout (20 files in all). The content is made up, about a fictional pump monitor, so nothing real or private is in it:</p><pre><code>data/kb/
+  manuals/    6 files: install, calibration, maintenance, firmware-update, network-setup, safety
+  faqs/       7 files: battery-life, reset, warranty, serial-number, wifi, alarm-sound, data-export
+  errors/     7 files: e101 ... e107</code></pre><p>Each file starts with a title line, like this one:</p><pre><code># E101 Sensor timeout
+
+The sensor did not answer within 10 seconds. Check that the sensor cable is firmly connected and not damaged. Restart the monitor. If the error comes back, replace the sensor cable. Severity: medium.</code></pre><p>And the loader. <code>src/my_ai_project/knowledge_base.py</code>:</p><pre><code>import logging
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(&quot;knowledge_base&quot;)
+
+Kind = Literal[&quot;manual&quot;, &quot;faq&quot;, &quot;error&quot;]
+FOLDERS: dict[str, Kind] = {&quot;manuals&quot;: &quot;manual&quot;, &quot;faqs&quot;: &quot;faq&quot;, &quot;errors&quot;: &quot;error&quot;}
+
+
+class Document(BaseModel):
+    doc_id: str = Field(min_length=1)
+    kind: Kind
+    title: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+
+
+def load_document(path: Path, kind: Kind) -&gt; Document:
+    lines = path.read_text(encoding=&quot;utf-8&quot;).splitlines()
+    if not lines or not lines[0].startswith(&quot;# &quot;):
+        raise ValueError(f&quot;{path.name} must start with a &#x27;# Title&#x27; line&quot;)
+    title = lines[0].removeprefix(&quot;# &quot;).strip()
+    body = &quot;\n&quot;.join(lines[1:]).strip()
+    return Document(doc_id=f&quot;{kind}-{path.stem}&quot;, kind=kind, title=title, body=body)
+
+
+def load_knowledge_base(root: Path) -&gt; list[Document]:
+    documents = []
+    for folder, kind in FOLDERS.items():
+        for path in sorted((root / folder).glob(&quot;*.md&quot;)):
+            documents.append(load_document(path, kind))
+    logger.info(&quot;loaded %d documents from %s&quot;, len(documents), root)
+    return documents</code></pre><p>A small script to see the result. <code>run_kb.py</code>:</p><pre><code>import logging
+from collections import Counter
+from pathlib import Path
+
+from my_ai_project.knowledge_base import load_knowledge_base
+
+logging.basicConfig(level=logging.INFO, format=&quot;%(levelname)s %(message)s&quot;)
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+print(len(documents), dict(Counter(d.kind for d in documents)))
+print(documents[0])
+print(documents[-1].doc_id, &quot;|&quot;, documents[-1].title)</code></pre><div class="out"><b>You should see</b><br>INFO loaded 20 documents from data/kb<br>20 {'manual': 6, 'faq': 7, 'error': 7}<br>doc_id='manual-calibration' kind='manual' title='Calibration guide' body='Calibrate the sensor once a month. Open the menu, choose Calibrate, and keep the pump running at normal speed for two minutes. The monitor stores the new values and shows the date of the last calibration on the home screen.'<br>error-e107 | E107 Calibration expired</div></section>
+<section><h2><span class="n">5</span> &middot; Build it <span class="t">2.5 h</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch (<code>git switch -c lab-4</code>). You need the <code>pydantic</code> library from Day 3 (it is already in your project).</p>
+<p><strong>Done looks like:</strong> the loader returns <strong>20 typed <code>Document</code> objects</strong> (6 manuals, 7 FAQs, 7 error codes), at least <strong>one test</strong> proves it, a missing folder is an error, the README explains it, and it is pushed.</p>
+<h3><span class="step">Part A</span> Design first (15 min)</h3>
+<p>On paper, write down: the three folders, the fields of a <code>Document</code> (<code>doc_id</code>, <code>kind</code>, <code>title</code>, <code>body</code>), and what a <code>doc_id</code> looks like. Check it against the worked example. If your design differs, that is fine, but write why.</p>
+<h3><span class="step">Part B</span> The 20 documents (50 min)</h3>
+<p>You need 6 manuals, 7 FAQs and 7 error-code pages as Markdown files in <code>data/kb/</code>. Two ways:</p>
+<ul><li><strong>Use the starter pack</strong> (fastest): <a href="../assets/kb-starter.zip">download kb-starter.zip</a> (7 KB), unzip it into <code>data/</code>, and you get the 20 files. Read each file once and fix anything that looks wrong or odd.</li><li><strong>Write your own</strong> about a product you know: same counts, 3 to 5 sentences each. You may draft with an AI assistant, but <em>you read and correct every file</em>: wrong facts in a knowledge base become wrong answers later. Do not paste anything private or from an employer.</li></ul>
+<p>Every file starts with <code>#&nbsp;Title</code> and an empty line. Keep the names lower case with dashes.</p>
+<h3><span class="step">Part C</span> The loader (35 min)</h3>
+<p>Write <code>knowledge_base.py</code>: a typed <code>Document</code> (with <code>kind</code> as a <code>Literal</code>), a function that loads one file and rejects a file without a title line, and a function that loads the whole knowledge base. Log one line with the count. Run <code>run_kb.py</code> and match <code>20 {'manual': 6, 'faq': 7, 'error': 7}</code>.</p>
+<h3><span class="step">Part D</span> One test (25 min)</h3>
+<p>Write <code>tests/test_knowledge_base.py</code> with a test that loads the real <code>data/kb</code> and checks: 20 documents, 20 different <code>doc_id</code> values, and all three kinds present. Add a second test that a file without a title line is rejected (use <code>tmp_path</code>).</p>
+<p><strong>Mid-point check-in.</strong> <code>uv run pytest</code> shows <strong>2 passed</strong> and <code>uv run mypy src tests</code> has no issues. If not, stop and fix it before Part E. Take a 10-minute break.</p>
+<h3><span class="step">Part E</span> Break it on purpose (15 min)</h3>
+<p>Point the loader at a folder that does not exist and print the number of documents:</p><pre><code>from pathlib import Path
+
+from my_ai_project.knowledge_base import load_knowledge_base
+
+print(len(load_knowledge_base(Path(&quot;data/knowledge&quot;))))</code></pre>
+<p><strong>Predict:</strong> an error, or something else? Run it. If you get <code>0</code> and no error, you have just seen the bug from the hook. Fix <code>load_knowledge_base</code> so that a missing folder raises <code>FileNotFoundError</code> with a clear message, and write a third test that proves it.</p>
+<h3><span class="step">Part F</span> README, commit, push (15 min)</h3>
+<p>Add a &ldquo;Knowledge base&rdquo; section to your README (template in Stuck). Commit, and push: <code>git add .</code>, <code>git commit -m "Add the mock knowledge base and a typed loader"</code>, <code>git push</code>.</p>
+<h3><span class="step">Part G</span> Reflect (10 min)</h3>
+<p>Write three lines: what worked, what broke, and what you would check <em>first</em> next time you load data. Keep them for the Sunday review.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;ValueError: ... must start with a '# Title' line&rdquo;</strong>: a file has no title line, or it starts with a blank line or a space. The first line must be <code>#&nbsp;Something</code> with a space after the hash.</li><li><strong>You get 19 or 21 documents</strong>: count the files in each folder. <code>glob(&quot;*.md&quot;)</code> only finds files that end in <code>.md</code>, and not in sub-folders.</li><li><strong>A <code>ValidationError</code> about <code>body</code></strong>: a file has a title but no text.</li><li><strong>The test cannot find <code>data/kb</code></strong>: run <code>pytest</code> from the project folder, so the relative path works.</li><li><strong>mypy complains about <code>kind</code></strong>: give the dictionary an explicit type, <code>FOLDERS: dict[str, Kind]</code>.</li></ul><details><summary>Hint: Part C</summary><p>Make the list of folders a small dictionary: <code>{&quot;manuals&quot;: &quot;manual&quot;, ...}</code>. Loop over it, then over <code>sorted((root / folder).glob(&quot;*.md&quot;))</code>, and call your one-file function with the file and the kind. Build <code>doc_id</code> as <code>f&quot;{kind}-{path.stem}&quot;</code>.</p></details><details><summary>Solution: Part C</summary><pre><code>import logging
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(&quot;knowledge_base&quot;)
+
+Kind = Literal[&quot;manual&quot;, &quot;faq&quot;, &quot;error&quot;]
+FOLDERS: dict[str, Kind] = {&quot;manuals&quot;: &quot;manual&quot;, &quot;faqs&quot;: &quot;faq&quot;, &quot;errors&quot;: &quot;error&quot;}
+
+
+class Document(BaseModel):
+    doc_id: str = Field(min_length=1)
+    kind: Kind
+    title: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+
+
+def load_document(path: Path, kind: Kind) -&gt; Document:
+    lines = path.read_text(encoding=&quot;utf-8&quot;).splitlines()
+    if not lines or not lines[0].startswith(&quot;# &quot;):
+        raise ValueError(f&quot;{path.name} must start with a &#x27;# Title&#x27; line&quot;)
+    title = lines[0].removeprefix(&quot;# &quot;).strip()
+    body = &quot;\n&quot;.join(lines[1:]).strip()
+    return Document(doc_id=f&quot;{kind}-{path.stem}&quot;, kind=kind, title=title, body=body)
+
+
+def load_knowledge_base(root: Path) -&gt; list[Document]:
+    documents = []
+    for folder, kind in FOLDERS.items():
+        for path in sorted((root / folder).glob(&quot;*.md&quot;)):
+            documents.append(load_document(path, kind))
+    logger.info(&quot;loaded %d documents from %s&quot;, len(documents), root)
+    return documents</code></pre></details><details><summary>Solution: Part D</summary><pre><code>from pathlib import Path
+
+import pytest
+
+from my_ai_project.knowledge_base import load_document, load_knowledge_base
+
+
+def test_the_knowledge_base_has_20_typed_documents() -&gt; None:
+    documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+    assert len(documents) == 20
+    assert len({d.doc_id for d in documents}) == 20
+    assert {d.kind for d in documents} == {&quot;manual&quot;, &quot;faq&quot;, &quot;error&quot;}
+
+
+def test_a_file_without_a_title_line_is_rejected(tmp_path: Path) -&gt; None:
+    (tmp_path / &quot;bad.md&quot;).write_text(&quot;no title here&quot;, encoding=&quot;utf-8&quot;)
+    with pytest.raises(ValueError, match=&quot;must start with&quot;):
+        load_document(tmp_path / &quot;bad.md&quot;, &quot;faq&quot;)</code></pre></details><details><summary>Solution: Part E</summary><p>Add the check at the top of <code>load_knowledge_base</code>:</p><pre><code>import logging
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(&quot;knowledge_base&quot;)
+
+Kind = Literal[&quot;manual&quot;, &quot;faq&quot;, &quot;error&quot;]
+FOLDERS: dict[str, Kind] = {&quot;manuals&quot;: &quot;manual&quot;, &quot;faqs&quot;: &quot;faq&quot;, &quot;errors&quot;: &quot;error&quot;}
+
+
+class Document(BaseModel):
+    doc_id: str = Field(min_length=1)
+    kind: Kind
+    title: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+
+
+def load_document(path: Path, kind: Kind) -&gt; Document:
+    lines = path.read_text(encoding=&quot;utf-8&quot;).splitlines()
+    if not lines or not lines[0].startswith(&quot;# &quot;):
+        raise ValueError(f&quot;{path.name} must start with a &#x27;# Title&#x27; line&quot;)
+    title = lines[0].removeprefix(&quot;# &quot;).strip()
+    body = &quot;\n&quot;.join(lines[1:]).strip()
+    return Document(doc_id=f&quot;{kind}-{path.stem}&quot;, kind=kind, title=title, body=body)
+
+
+def load_knowledge_base(root: Path) -&gt; list[Document]:
+    if not root.is_dir():
+        raise FileNotFoundError(f&quot;knowledge base folder not found: {root}&quot;)
+    documents = []
+    for folder, kind in FOLDERS.items():
+        for path in sorted((root / folder).glob(&quot;*.md&quot;)):
+            documents.append(load_document(path, kind))
+    logger.info(&quot;loaded %d documents from %s&quot;, len(documents), root)
+    return documents</code></pre><div class="out"><b>You should see</b><br>FileNotFoundError: knowledge base folder not found: data/knowledge</div><p>And the third test:</p><pre><code>def test_a_missing_folder_is_an_error_not_zero_documents(tmp_path: Path) -&gt; None:
+    with pytest.raises(FileNotFoundError, match=&quot;not found&quot;):
+        load_knowledge_base(tmp_path / &quot;nope&quot;)</code></pre><p>Run <code>uv run pytest</code> and expect <code>3 passed</code>.</p></details><details><summary>Template: Part F</summary><pre><code>## Knowledge base
+
+`data/kb/` holds a made-up knowledge base for a fictional pump monitor:
+6 manuals, 7 FAQs and 7 error-code pages, one Markdown file each.
+Each file starts with a `# Title` line.
+
+    uv run python run_kb.py      # loads the 20 documents and prints a summary
+    uv run pytest                # includes the knowledge base test</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is a <code>Literal</code> kind better than a plain string?</li><li>Why must a missing folder raise an error and not return an empty list?</li><li>What does the test with <code>20</code> protect you from?</li></ol><details><summary>Answers</summary><ol><li>Your editor and mypy know the only allowed values, and Pydantic rejects anything else, so a typo like <code>&quot;faqs&quot;</code> cannot sneak in.</li><li>An empty list looks like a normal result, and the problem would show up much later, far from its cause. An error stops you at the real problem.</li><li>From a document that is deleted, renamed or broken by accident. The count changes, the test fails, and you notice the same minute.</li></ol></details></section>
+<section id="game-day28" class="game"><h2><span class="n">+</span> &middot; Game: Knowledge Base Check <span class="t">5 min</span></h2>
+<p><p>You built a knowledge base of 20 typed documents and a loader. Something happens. What do you expect, and what is the right fix?</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day28-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day28-play">Start the game</button></div>
+<div id="day28-round" hidden><div class="gtop"><span id="day28-num">Round 1</span><span id="day28-score">Score 0</span></div>
+<pre hidden><code id="day28-code"></code></pre><div class="q" id="day28-q"></div><div class="choices" id="day28-opts"></div>
+<div class="fb" id="day28-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day28-next" hidden>Next round</button></p></div>
+<div id="day28-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day28",[{"c": "documents = load_knowledge_base(Path(\"data/kb\"))\nprint(len(documents), dict(Counter(d.kind for d in documents)))", "q": "6 manuals, 7 FAQs and 7 error pages. What is printed?", "o": ["20 {'manual': 6, 'faq': 7, 'error': 7}", "20 {'manual': 7, 'faq': 7, 'error': 6}", "3 {'manual': 1, 'faq': 1, 'error': 1}"], "a": 0, "out": "INFO loaded 20 documents from data/kb\n20 {'manual': 6, 'faq': 7, 'error': 7}", "why": "One document per file, and the kind comes from the folder name."}, {"c": "# data/kb/errors/e107.md starts with: # E107 Calibration expired\nprint(documents[-1].doc_id, \"|\", documents[-1].title)", "q": "What is the doc_id of that file?", "o": ["error-e107", "e107", "errors/e107.md"], "a": 0, "out": "error-e107 | E107 Calibration expired", "why": "The doc_id is the kind plus the file name without .md, so it is unique and readable."}, {"c": "len(load_knowledge_base(Path(\"data/knowledge\")))   # the folder is called data/kb", "q": "Wrong folder, and the loader has no check. What is printed?", "o": ["0, with no error", "An error", "20"], "a": 0, "out": "0", "why": "glob on a missing folder returns nothing, so the loader quietly returns an empty list. This is the silent bug from the hook."}, {"c": "# after the fix\nload_knowledge_base(Path(\"data/knowledge\"))", "q": "What happens now?", "o": ["FileNotFoundError with a clear message", "0, with a warning", "20"], "a": 0, "out": "FileNotFoundError: knowledge base folder not found: data/knowledge", "why": "A missing folder is a real problem, so the loader stops and says what is wrong."}, {"c": "# bad.md contains: no title here\nload_document(Path(\"bad.md\"), \"faq\")", "q": "A file without a title line. What happens?", "o": ["ValueError: bad.md must start with a '# Title' line", "A Document with an empty title", "The first words become the title"], "a": 0, "out": "ValueError: bad.md must start with a '# Title' line", "why": "The convention is checked at the door, and the message says which file and what rule."}, {"c": "uv run pytest", "q": "You have the three tests from the lab. What do you expect?", "o": ["3 passed", "20 passed", "1 passed"], "a": 0, "out": "3 passed in 0.12s", "why": "One test for the 20 documents, one for the title line, one for the missing folder."}],["KB rookie", "KB checker", "Knowledge builder"],"A folder convention keeps the loader simple, the count is a promise held by a test, and a missing folder must be an error and never an empty list.");</script>
+<p><small>Tick &ldquo;Play the Knowledge Base Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> the knowledge base your assistant will answer from: 20 typed documents, one loader that fails loudly, and a test that holds the promise.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 28 checklist.</li><li>Share one line in the comments: which of the three kinds was the hardest to write well?</li><li><strong>Next:</strong> Sunday is the review of data and machine learning words, in your own words. Then module 3 continues with how language models work.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

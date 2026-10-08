@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 30 - Neural networks and transformers, 10 minutes</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 30 &middot; LEVEL 3: DATA AND ML</div><h1>Neural networks and transformers, 10 minutes</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to draw the flow from text to tokens to a model to the next token, and run a toy model that follows it.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is the test set looked at only once?</li><li>What is overfitting, in one line?</li></ol><details><summary>Answers</summary><ol><li>Once you tune on it, it stops being new data, and the score becomes too optimistic.</li><li>The model memorises its practice rows and does worse on new ones.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You type &ldquo;The sensor timed&rdquo; into a chat window and the model finishes it with &ldquo;out&rdquo;. It has never seen your sentence. How can it know what comes next?</strong></p><details><summary>Guess first, then open</summary><p>It does not &ldquo;know&rdquo;. It has seen a huge amount of text and learned which pieces tend to follow which. For your words it gives a score to every possible next piece, picks one, and repeats. Today you build a tiny version of that, so the big version stops being magic.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: a neural network is a pile of adjustable numbers</h3>
+<p>A <strong>neural network</strong> is many small calculation steps in a row. Each step multiplies its input by numbers called <strong>weights</strong>. Think of a huge mixing desk with billions of knobs. <strong>Training</strong> means turning the knobs a tiny bit, again and again, so the output gets closer to the right answer on many examples. After training the knobs stay fixed, and using the network is called <strong>inference</strong>.</p>
+<h3>Piece 2: a language model predicts the next token</h3>
+<p>Text is first cut into pieces called <strong>tokens</strong> (often a word or part of a word), and each token has a number, its <strong>id</strong>. A language model takes the ids so far and gives a <strong>score for every possible next token</strong>. To write a sentence it repeats: predict, pick one, add it, predict again. The model itself does not &ldquo;write&rdquo;: it only ever answers &ldquo;what comes next?&rdquo;.</p>
+<h3>Piece 3: a transformer decides which words matter</h3>
+<p>A <strong>transformer</strong> is the design behind today&rsquo;s big models. Its key part is <strong>attention</strong>: when it works on one token, it can look back at all the other tokens and weigh how much each one matters. In &ldquo;The cable is loose, so <em>it</em> must be replaced&rdquo;, attention is how &ldquo;it&rdquo; can point to &ldquo;cable&rdquo;. (You explain attention in your own words on Day 34.)</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> inference is like calling a pure function: the same input gives the same scores, and the weights are a huge, fixed lookup of constants. Training is the build step that produced those constants, and you do not run it yourself.</div>
+<div class="box cap"><strong>Capstone:</strong> your assistant will call a model that works exactly like this. The next three days show where it limits you: tokens decide how much text fits in one call, and what a call costs.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. This is a <strong>toy</strong> model with the same flow as a real one: text, tokens, ids, a model that scores the next token, and a loop. It is not a neural network: it just counts which token followed which in one short text. <code>toy_model.py</code>:</p><pre><code>from collections import Counter, defaultdict
+
+text = &quot;the sensor timed out . the sensor did not answer . the cable is loose .&quot;
+
+# 1. text -&gt; tokens -&gt; ids
+tokens = text.split()
+vocab = sorted(set(tokens))
+ids = {token: number for number, token in enumerate(vocab)}
+print(&quot;tokens:&quot;, tokens[:7])
+print(&quot;ids:   &quot;, [ids[token] for token in tokens[:7]])
+
+# 2. the &quot;model&quot;: for every token, count which token came next
+following: dict[str, Counter[str]] = defaultdict(Counter)
+for current, nxt in zip(tokens, tokens[1:]):
+    following[current][nxt] += 1
+
+
+def next_token(token: str) -&gt; str:
+    return following[token].most_common(1)[0][0]
+
+
+# 3. generate: predict one token, add it, predict again
+output = [&quot;the&quot;]
+for _ in range(6):
+    output.append(next_token(output[-1]))
+print(&quot;generated:&quot;, &quot; &quot;.join(output))</code></pre><div class="out"><b>You should see</b><br>tokens: ['the', 'sensor', 'timed', 'out', '.', 'the', 'sensor']<br>ids:&nbsp;&nbsp;&nbsp;&nbsp;[9, 8, 10, 7, 0, 9, 8]<br>generated: the sensor timed out . the sensor</div><p><small>The ids come from the sorted list of different tokens, so <code>.</code> is <code>0</code> and <code>the</code> is <code>9</code>. After <code>the</code> the text had <code>sensor</code> twice and <code>cable</code> once, so the toy picks <code>sensor</code>.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>You need no installs: this is plain Python. You can work in <code>my-ai-project</code> or in any folder, with <code>uv run python toy_model.py</code> (or <code>python3 toy_model.py</code>).</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Save the toy model, run it, and match the three lines. Then find in the code the three stages: <em>tokens and ids</em>, <em>the model</em> (the <code>following</code> counts), and <em>the loop</em> that generates.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Change the start of the generated text: <code>output = ["the"]</code> to <code>output = ["sensor"]</code>. <strong>Predict:</strong> what will the <code>generated:</code> line say? (After <code>sensor</code> the text had <code>timed</code> once and <code>did</code> once, and the toy picks the first of a tie.) Run it and check. Put <code>"the"</code> back.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Two experiments. First, ask for the next token after a word that the toy has never seen: add <code>print(next_token("battery"))</code> at the end, and read the error. Then change <code>range(6)</code> to <code>range(12)</code> and read what comes out. Which problem does it show?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>The toy always picks the most common next token, so it repeats itself forever. Real models <strong>sample</strong>: they pick at random, but a more likely token is picked more often. Add a function <code>sample_next</code> that uses <code>random.choices</code> with the counts as weights, and a fixed <code>random.Random(7)</code> so you can compare results. Generate 8 tokens starting from <code>the</code> and print them.</p>
+<p>Then do the outcome of the day: <strong>draw the flow on paper</strong>, from the text you give a model to the next token and back again. Use boxes and arrows, and write the example <code>the sensor timed</code> in it. Compare your drawing with the one in Stuck.</p>
+<p>Commit if you worked in your project: <code>git add .</code> and <code>git commit -m "Add a toy next-token model"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>Your ids differ</strong>: the ids come from the <em>sorted</em> list of different tokens, so they change if you change the text. That is normal.</li><li><strong>&ldquo;IndexError: list index out of range&rdquo;</strong>: the token has no known follower (the toy has never seen it, or it only appeared at the very end of the text). A real model avoids this by cutting unknown words into smaller known pieces.</li><li><strong>The sampled text differs from the lesson</strong>: use <code>random.Random(7)</code>, create it once, and pass the <em>same</em> object to every call.</li><li><strong>Everything is the same every time</strong>: <code>most_common</code> is deterministic. Only the sampling version changes with the seed.</li></ul><details><summary>Hint: Step 4</summary><p><code>random.choices(population, weights=...)</code> returns a list with one item (when <code>k</code> is 1), so take <code>[0]</code>. The population is <code>list(counts)</code>, the weights are <code>list(counts.values())</code>, and <code>counts</code> is <code>following[token]</code>.</p></details><details><summary>Solution: Step 4</summary><pre><code>import random
+
+
+def sample_next(token: str, rng: random.Random) -&gt; str:
+    counts = following[token]
+    return rng.choices(list(counts), weights=list(counts.values()))[0]
+
+
+rng = random.Random(7)
+output = [&quot;the&quot;]
+for _ in range(8):
+    output.append(sample_next(output[-1], rng))
+print(&quot;sampled:  &quot;, &quot; &quot;.join(output))</code></pre><div class="out"><b>You should see</b><br>sampled:   the sensor timed out . the sensor timed out</div><p>Try the seeds <code>1</code>, <code>2</code> and <code>3</code> too. Some runs go through <code>did not answer</code> and some through <code>cable is loose</code>, because after <code>the</code> the toy now picks <code>cable</code> about a third of the time. The probabilities it used:</p><pre><code>after &quot;the&quot;:   sensor 2 times, cable 1 time   -&gt;  sensor 0.67, cable 0.33
+after &quot;sensor&quot;: timed 1 time, did 1 time      -&gt;  timed 0.50, did 0.50</code></pre></details><details><summary>Model drawing: the flow</summary><pre><code>text:   &quot;the sensor timed&quot;
+   |  split into pieces
+tokens: [the] [sensor] [timed]
+   |  look each piece up in a table
+ids:    [9] [8] [10]
+   |  the model: numbers in, numbers out
+scores for every possible next token:  out 0.9  did 0.05  ...
+   |  pick one (the best, or a weighted draw)
+next token: &quot;out&quot;
+   |  add it to the text and go back to the top
+text:   &quot;the sensor timed out&quot;</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>In one sentence each: what is a weight, what is training, and what is inference?</li><li>What is the only question a language model answers, and how does it write a whole sentence?</li><li>Why did the toy repeat itself, and what do real models do about it?</li></ol><details><summary>Answers</summary><ol><li>A weight is one adjustable number inside the network. Training adjusts the weights, a little at a time, to get closer to the right answers on many examples. Inference is using the network with the weights fixed.</li><li>&ldquo;Which token comes next?&rdquo; It writes a sentence by repeating: predict the scores, pick one token, add it to the text, predict again.</li><li>It always picked the most common next token, so it fell into a loop (<code>the sensor timed out . the sensor timed out ...</code>). Real models sample: they pick randomly, with more likely tokens picked more often, and many other tricks on top.</li></ol></details></section>
+<section id="game-day30" class="game"><h2><span class="n">+</span> &middot; Game: Token Path <span class="t">5 min</span></h2>
+<p><p>A tiny language model counts which token follows which. Follow the path from text to the next token, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day30-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day30-play">Start the game</button></div>
+<div id="day30-round" hidden><div class="gtop"><span id="day30-num">Round 1</span><span id="day30-score">Score 0</span></div>
+<pre hidden><code id="day30-code"></code></pre><div class="q" id="day30-q"></div><div class="choices" id="day30-opts"></div>
+<div class="fb" id="day30-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day30-next" hidden>Next round</button></p></div>
+<div id="day30-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day30",[{"c": "text = \"the sensor timed out . the sensor did not answer . the cable is loose .\"\ntokens = text.split()\nprint(tokens[:7])\nprint([ids[token] for token in tokens[:7]])", "q": "Where do the ids (9, 8, 10, ...) come from?", "o": ["From the sorted list of different tokens: each token gets its position", "From the model's weights", "From the alphabet only"], "a": 0, "out": "tokens: ['the', 'sensor', 'timed', 'out', '.', 'the', 'sensor']\nids:    [9, 8, 10, 7, 0, 9, 8]", "why": "The same token always gets the same id, and the ids come from the table of known tokens."}, {"c": "output = [\"the\"]\nfor _ in range(6):\n    output.append(next_token(output[-1]))", "q": "After 'the', the text had 'sensor' twice and 'cable' once. What comes after 'the'?", "o": ["sensor, the most common follower", "cable", "A random token every time"], "a": 0, "out": "generated: the sensor timed out . the sensor", "why": "The toy always picks the most common next token. That is one prediction per loop."}, {"c": "output = [\"sensor\"]   # the text had 'timed' once and 'did' once after 'sensor'", "q": "What does the generated line start with now?", "o": ["sensor timed ...: the first of a tie wins", "sensor did ...", "An error"], "a": 0, "out": "generated: sensor timed out . the sensor timed", "why": "most_common keeps the first token it counted when two have the same count."}, {"c": "print(next_token(\"battery\"))   # 'battery' was never in the text", "q": "What happens?", "o": ["IndexError: the toy has no follower for it", "It prints a random token", "It prints ."], "a": 0, "out": "IndexError: list index out of range", "why": "The toy only knows what it has seen. Real models cut unknown words into smaller known pieces, so they rarely hit this."}, {"c": "for _ in range(12):\n    output.append(next_token(output[-1]))", "q": "What does a longer generation look like?", "o": ["It repeats the same sentence in a loop", "It writes new sentences", "It stops at the first full stop"], "a": 0, "out": "the sensor timed out . the sensor timed out . the sensor timed", "why": "Always picking the most common token falls into a loop. Real models sample instead."}, {"c": "rng = random.Random(7)\noutput = [\"the\"]\nfor _ in range(8):\n    output.append(sample_next(output[-1], rng))", "q": "With sampling and a fixed seed, how does the text compare with the greedy one?", "o": ["It can differ, but a fixed seed makes it repeatable", "It is always identical to the greedy text", "It is different every run, even with the seed"], "a": 0, "out": "sampled:   the sensor timed out . the sensor timed out", "why": "Sampling picks more likely tokens more often, but not always. The seed makes the random choices the same each run."}],["Token rookie", "Token tracer", "Next-token fan"],"Text becomes tokens and ids, a model scores the next token, one is picked and added, and the loop repeats: a toy and a giant model follow the same path.");</script>
+<p><small>Tick &ldquo;Play the Token Path game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a tiny language model, and a drawing of the path from text to tokens to a model to the next token and back. A real model is much bigger and learns numbers instead of counting, but the flow is the same.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 30 checklist.</li><li>Share one line in the comments: where does your drawing differ from the model drawing?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you count the tokens of a real document in code, and see why tokens, not characters or words, are the unit of cost and limits.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
