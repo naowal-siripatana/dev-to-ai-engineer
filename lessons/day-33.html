@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 33 - Mixed practice: tokens and cost</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 33 &middot; LEVEL 3: DATA AND ML &middot; MIXED PRACTICE</div><h1>Mixed practice: tokens and cost</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to count the tokens of every document, estimate the cost of sending them, and explain why pasting everything breaks at real size, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What shares the context window in one call?</li><li>The same Thai sentence was 6 tokens with one encoding and 18 with another. What does that tell you?</li></ol><details><summary>Answers</summary><ol><li>The prompt (question, instructions, documents) and the model&rsquo;s answer.</li><li>Each tokenizer has its own table of pieces, so a token count only makes sense for the model it was counted for. Count with a tokenizer that matches your model.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your assistant works with 20 documents today. Your boss says: &ldquo;Why not just paste all of them into every prompt?&rdquo; You have two minutes and one script. What do you show?</strong></p><details><summary>Guess first, then open</summary><p>You show numbers, not opinions: how many tokens the knowledge base has, what that costs for a thousand questions, and what happens when the knowledge base is as big as a real one. Today you build that script from a blank file.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
+<p>No new ideas today. The map of what you reuse:</p>
+<h3>Piece 1: a token counter (Day 32)</h3>
+<p><code>count_tokens(text)</code> with tiktoken gives the number of tokens of a text.</p>
+<h3>Piece 2: the knowledge base (Day 28)</h3>
+<p><code>load_knowledge_base</code> gives the 20 typed <code>Document</code> objects.</p>
+<h3>Piece 3: a price per million tokens (new, but small)</h3>
+<p>Cost is <code>tokens / 1,000,000 * price</code>. The price in this lesson is an <strong>example</strong> of one dollar per million input tokens. Real prices differ by provider and model, and change: put the real number from your provider&rsquo;s pricing page into one named constant, so you can change it in one place.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>PRICE_PER_MILLION_INPUT_TOKENS</code> is a named constant, like a <code>const decimal</code>, and <code>estimate_cost</code> is a small pure function that is easy to test. Money in real systems would use <code>Decimal</code>, but for an estimate a <code>float</code> is fine.</div>
+<div class="box cap"><strong>Capstone:</strong> this script is the numeric core of the first note of your M3 checkpoint, &ldquo;how tokens limit my assistant&rdquo;. On Saturday you write it, with your own numbers.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">3 min</span></h2><p>No code to copy today. This is the <strong>contract</strong>: what your finished script must do.</p><table><tr><th>Part</th><th>What it does</th></tr><tr><td><code>cost.py</code></td><td>A constant <code>PRICE_PER_MILLION_INPUT_TOKENS = 1.00</code> (an example), a function <code>estimate_cost(tokens, price_per_million)</code>, and a function <code>total_tokens(documents)</code></td></tr><tr><td><code>cost_report.py</code></td><td>Loads the knowledge base, then prints: the number of documents, the total tokens, the biggest document and its tokens, and the cost of putting the whole knowledge base in the prompt of <strong>1,000 questions</strong></td></tr><tr><td><code>tests/test_cost.py</code></td><td>Two tests of <code>estimate_cost</code> with easy numbers</td></tr></table><p>When it works, <code>cost_report.py</code> prints this (with your own knowledge base the numbers are the same if you used the starter pack):</p><div class="out"><b>You should see</b><br>documents: 20<br>total tokens: 756<br>biggest: manual-network-setup 54 tokens<br>whole knowledge base in every prompt, 1000 questions: $0.756</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">25 min</span></h2>
+<p>Work in <code>my-ai-project</code> (you need <code>tokens.py</code> from Day 32 and the loader from Day 28), on a branch if you like (<code>git switch -c cost-report</code>).</p>
+<h3><span class="step">Step 1</span> The cost function</h3>
+<p>Write <code>src/my_ai_project/cost.py</code> from the contract. Check it with <code>uv run mypy src</code>: <code>Success: no issues found</code>.</p>
+<h3><span class="step">Step 2</span> The report</h3>
+<p>Write <code>cost_report.py</code>. Run it and match the four lines. Then <strong>predict</strong>: if you change the number of questions from <code>1000</code> to <code>10000</code>, what will the last line say? Check.</p>
+<h3><span class="step">Step 3</span> Tests, then break one</h3>
+<p>Write the two tests in <code>tests/test_cost.py</code> and run <code>uv run pytest</code>: <code>2 passed</code>. Then break the function on purpose: call <code>estimate_cost("756")</code> with a string and read the error. Which tool would have caught that before you ran it? (Try <code>uv run mypy</code> on a file that makes the call.)</p>
+<h3><span class="step">Step 4</span> Your turn: scale it up</h3>
+<p>Your knowledge base is tiny. A real one is about <strong>1,000 times</strong> bigger. Work out: how many tokens would be in a prompt that holds all of it, what one question would cost, what a thousand questions would cost, and whether it fits in an 8,000-token window or in a 200,000-token window (an example of a large window). Then compare with sending only the <strong>3 documents</strong> that matter for a question (use the average size of a document). <strong>What do you tell your boss?</strong></p>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Estimate the cost of the knowledge base"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>Your total is not 756</strong>: you may have a different knowledge base. That is fine. Check the number against the sum of your own per-document counts.</li><li><strong>&ldquo;ModuleNotFoundError: my_ai_project.tokens&rdquo;</strong>: <code>tokens.py</code> must be in <code>src/my_ai_project/</code>, and you run with <code>uv run</code>.</li><li><strong>The cost looks 1,000 times too small or too big</strong>: <code>1_000_000</code> is a million. Check the division, and whether you multiplied by the number of questions.</li><li><strong>mypy says the constant is <code>int</code></strong>: write <code>1.00</code>, with a decimal point, for a float.</li></ul><details><summary>Hint: Steps 1 and 2</summary><p><code>total_tokens</code> is one line: sum <code>count_tokens(document.body)</code> over the documents. <code>estimate_cost</code> is <code>tokens / 1_000_000 * price_per_million</code>. For the biggest document use <code>max(documents, key=lambda d: count_tokens(d.body))</code>.</p></details><details><summary>Solution: Steps 1 to 3</summary><p><code>src/my_ai_project/cost.py</code>:</p><pre><code>from my_ai_project.knowledge_base import Document
+from my_ai_project.tokens import count_tokens
+
+# An EXAMPLE price in US dollars per million input tokens. Check your provider&#x27;s pricing page for the real one.
+PRICE_PER_MILLION_INPUT_TOKENS = 1.00
+
+
+def estimate_cost(tokens: int, price_per_million: float = PRICE_PER_MILLION_INPUT_TOKENS) -&gt; float:
+    return tokens / 1_000_000 * price_per_million
+
+
+def total_tokens(documents: list[Document]) -&gt; int:
+    return sum(count_tokens(document.body) for document in documents)</code></pre><p><code>cost_report.py</code>:</p><pre><code>from pathlib import Path
+
+from my_ai_project.cost import estimate_cost, total_tokens
+from my_ai_project.knowledge_base import load_knowledge_base
+from my_ai_project.tokens import count_tokens
+
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+biggest = max(documents, key=lambda d: count_tokens(d.body))
+total = total_tokens(documents)
+questions = 1000
+
+print(&quot;documents:&quot;, len(documents))
+print(&quot;total tokens:&quot;, total)
+print(&quot;biggest:&quot;, biggest.doc_id, count_tokens(biggest.body), &quot;tokens&quot;)
+print(f&quot;whole knowledge base in every prompt, {questions} questions: ${estimate_cost(total * questions):.3f}&quot;)</code></pre><div class="out"><b>You should see</b><br>documents: 20<br>total tokens: 756<br>biggest: manual-network-setup 54 tokens<br>whole knowledge base in every prompt, 1000 questions: $0.756</div><p><code>tests/test_cost.py</code>:</p><pre><code>from my_ai_project.cost import estimate_cost
+
+
+def test_a_million_tokens_cost_the_price() -&gt; None:
+    assert estimate_cost(1_000_000, 1.0) == 1.0
+
+
+def test_half_a_million_tokens_cost_half() -&gt; None:
+    assert estimate_cost(500_000, 2.0) == 1.0</code></pre><p>The string call fails like this (mypy would have told you first):</p><div class="out"><b>You should see</b><br>TypeError: unsupported operand type(s) for /: 'str' and 'int'</div></details><details><summary>Solution: Step 4</summary><pre><code>from my_ai_project.cost import estimate_cost
+
+total = 756
+real_size = total * 1000          # a knowledge base 1000 times bigger
+print(&quot;tokens per prompt:&quot;, real_size, &quot;cost per question: $%.3f&quot; % estimate_cost(real_size))
+print(&quot;1000 questions: $%.0f&quot; % estimate_cost(real_size * 1000))
+top3 = round(total / 20 * 3)       # only 3 documents of the average size
+print(&quot;top 3 documents:&quot;, top3, &quot;tokens, 1000 questions: $%.3f&quot; % estimate_cost(top3 * 1000))</code></pre><div class="out"><b>You should see</b><br>tokens per prompt: 756000 cost per question: $0.756<br>1000 questions: $756<br>top 3 documents: 113 tokens, 1000 questions: $0.113</div><p>What you tell your boss: &ldquo;Today the whole knowledge base is 756 tokens and costs under a dollar for a thousand questions, so it is fine. A real one would be about 756,000 tokens per prompt: it does not fit in an 8,000-token window, it does not fit in a 200,000-token window, and it would cost about 75 cents <em>per question</em>, which is $756 for a thousand. Sending only the 3 relevant documents is about 113 tokens: it fits, and a thousand questions cost about 11 cents. So we should not paste everything. We should find the right documents first.&rdquo; That &ldquo;find the right documents&rdquo; step is retrieval, and it is what the next modules build. (The price is an example. Redo the sums with your provider&rsquo;s real price.)</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is the price kept in one named constant?</li><li>Why does a bigger knowledge base cost more <em>per question</em> if you paste all of it every time?</li><li>What problem, other than cost, does pasting everything run into?</li></ol><details><summary>Answers</summary><ol><li>Prices change and differ by provider. One named constant means one place to update, and the reader can see what the number is.</li><li>Every question sends the whole text again, so you pay for all its tokens each time, not once.</li><li>The context window: at some size it simply does not fit, and the model also gets slower. Even when it fits, a lot of irrelevant text can make answers worse.</li></ol></details></section>
+<section id="game-day33" class="game"><h2><span class="n">+</span> &middot; Game: Cost Check <span class="t">5 min</span></h2>
+<p><p>You estimate what a knowledge base costs in tokens. Read the numbers, pick what follows, then see the real output. (The price is an example, one dollar per million input tokens.)</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day33-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day33-play">Start the game</button></div>
+<div id="day33-round" hidden><div class="gtop"><span id="day33-num">Round 1</span><span id="day33-score">Score 0</span></div>
+<pre hidden><code id="day33-code"></code></pre><div class="q" id="day33-q"></div><div class="choices" id="day33-opts"></div>
+<div class="fb" id="day33-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day33-next" hidden>Next round</button></p></div>
+<div id="day33-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day33",[{"c": "uv run python cost_report.py   # 20 documents", "q": "The whole knowledge base is 756 tokens. What does it cost to put it in the prompt of 1,000 questions?", "o": ["About $0.756", "About $756", "About $0.0008"], "a": 0, "out": "documents: 20\ntotal tokens: 756\nbiggest: manual-network-setup 54 tokens\nwhole knowledge base in every prompt, 1000 questions: $0.756", "why": "756 tokens times 1,000 questions is 756,000 tokens, which is 0.756 million, so 0.756 dollars at one dollar per million."}, {"c": "estimate_cost(1_000_000, 1.0)", "q": "What does a million tokens cost at a price of 1.0 per million?", "o": ["1.0", "1000000.0", "0.000001"], "a": 0, "out": "2 passed in 0.27s", "why": "Cost is tokens divided by a million, times the price per million."}, {"c": "total = 756\nreal_size = total * 1000   # a knowledge base 1000 times bigger", "q": "How many tokens are in a prompt that holds all of it, and what does one question cost?", "o": ["756,000 tokens, about $0.756 per question", "7,560 tokens, about $0.008 per question", "756 tokens, about $0.0008 per question"], "a": 0, "out": "tokens per prompt: 756000 cost per question: $0.756", "why": "A thousand times more text is a thousand times more tokens, and you pay for all of them every time."}, {"c": "real_size = 756000\n# an 8,000-token window, and a 200,000-token window (an example of a large one)", "q": "Does the whole knowledge base fit in either window?", "o": ["No, in neither", "Yes, in the large one", "Yes, in both"], "a": 0, "out": "fits in 8,000? False fits in 200,000? False", "why": "756,000 tokens is far above both limits, so pasting everything cannot work at real size."}, {"c": "top3 = round(756 / 20 * 3)   # three documents of the average size", "q": "What do 1,000 questions cost if you send only the 3 best documents each time?", "o": ["About $0.113", "About $756", "About $0.756"], "a": 0, "out": "top 3 documents: 113 tokens, 1000 questions: $0.113", "why": "Sending only what matters is both cheaper and small enough to fit. Finding the right documents is retrieval."}, {"c": "estimate_cost(\"756\")   # a string instead of a number", "q": "What happens?", "o": ["TypeError: a string cannot be divided", "It returns 0.000756", "It returns 0"], "a": 0, "out": "TypeError: unsupported operand type(s) for /: 'str' and 'int'", "why": "Python only checks at run time. mypy would have flagged the call before you ran it."}],["Cost rookie", "Cost checker", "Budget keeper"],"Cost is tokens divided by a million times the price, pasting everything multiplies it by every question and stops fitting at real size, and sending only the right documents fixes both.");</script>
+<p><small>Tick &ldquo;Play the Cost Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a cost report built from a blank file, and a sum you can show anyone: why &ldquo;paste everything&rdquo; works for 20 documents and breaks at real size.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 33 checklist.</li><li>Share one line in the comments: what was the cost of a thousand questions at real size, with your numbers?</li><li><strong>Next:</strong> Friday is a teach-back: explain attention with an analogy. Saturday you split documents by a token budget.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

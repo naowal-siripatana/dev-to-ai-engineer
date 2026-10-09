@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 35 - Project Lab 5: split by a token budget</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 35 &middot; LEVEL 3: DATA AND ML &middot; PROJECT LAB</div><h1>Project Lab 5: split by a token budget</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to split documents into chunks that fit a token budget, prove it with tests, and write note 1 of your module 3 checkpoint.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is &ldquo;paste the whole knowledge base into every prompt&rdquo; a problem at real size?</li><li>In attention, what do the weights add up to, and what does that mean?</li></ol><details><summary>Answers</summary><ol><li>It does not fit in the context window, it costs the full price of all the tokens for every single question, and it makes every call slower.</li><li>They add up to 1, like a share of attention spread over the words: a bigger weight means the word listens more to that other word.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You cut a long document into pieces of 100 tokens by counting tokens and slicing. One piece ends in the middle of a word, and another ends in the middle of a sentence about safety. What goes wrong when the assistant reads only that piece?</strong></p><details><summary>Guess first, then open</summary><p>The piece can say half of what it meant: &ldquo;Do not open the casing while the pump is&rdquo;. A model that reads only that piece may answer with confidence and be wrong. So a good splitter respects the budget <em>and</em> keeps sentences whole, and cuts inside a sentence only as a last resort.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: a chunk is a piece that fits a budget</h3>
+<p>A <strong>chunk</strong> is a piece of a document that is small enough to send to a model together with a question. The <strong>token budget</strong> is the maximum size of a chunk. Chunks let you send only the pieces that matter, instead of the whole document.</p>
+<h3>Piece 2: split at sentences first, at tokens last</h3>
+<p>The splitter cuts the text into sentences, then packs sentences into a chunk until the next one would not fit. A sentence that is longer than the whole budget is cut by tokens (a <strong>hard split</strong>), and that can cut inside a word. Hard split is the safety net, not the plan.</p>
+<h3>Piece 3: make the promises testable</h3>
+<p>Two promises matter: <strong>every chunk fits the budget</strong>, and <strong>no text is lost</strong>. Both can be checked by a test in a few lines. A splitter that silently drops a sentence is worse than one that does not run.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> this is like paginating a big result set so each page fits a size limit: the page size is the budget, and the invariants (no item lost, none duplicated, no page too big) are what you test. <code>re.split</code> with a look-behind plays the role of <code>Regex.Split</code>.</div>
+<div class="box cap"><strong>Capstone:</strong> in module 6 these chunks are what you embed and retrieve. A chunk that is too small loses context, and one that is too large wastes tokens and blurs the meaning, so the budget is a real design decision. Today you write the note that explains yours.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. <code>src/my_ai_project/chunking.py</code>: a <code>Chunk</code> model, a sentence splitter that packs sentences into a budget, a hard split for oversized sentences, and a function for a list of documents. It uses <code>count_tokens</code> and <code>ENCODING</code> from <code>tokens.py</code> (Day 32).</p><pre><code>import re
+
+from pydantic import BaseModel
+
+from my_ai_project.knowledge_base import Document
+from my_ai_project.tokens import ENCODING, count_tokens
+
+SENTENCE_END = re.compile(r&quot;(?&lt;=[.!?])\s+&quot;)
+
+
+class Chunk(BaseModel):
+    doc_id: str
+    index: int
+    text: str
+    tokens: int
+
+
+def hard_split(text: str, max_tokens: int) -&gt; list[str]:
+    ids = ENCODING.encode(text)
+    return [ENCODING.decode(ids[start : start + max_tokens]) for start in range(0, len(ids), max_tokens)]
+
+
+def split_text(text: str, max_tokens: int) -&gt; list[str]:
+    if max_tokens &lt; 1:
+        raise ValueError(&quot;max_tokens must be at least 1&quot;)
+    pieces: list[str] = []
+    current: list[str] = []
+    for sentence in SENTENCE_END.split(text.strip()):
+        if count_tokens(sentence) &gt; max_tokens:
+            if current:
+                pieces.append(&quot; &quot;.join(current))
+                current = []
+            pieces.extend(hard_split(sentence, max_tokens))
+            continue
+        if current and count_tokens(&quot; &quot;.join([*current, sentence])) &gt; max_tokens:
+            pieces.append(&quot; &quot;.join(current))
+            current = []
+        current.append(sentence)
+    if current:
+        pieces.append(&quot; &quot;.join(current))
+    return pieces
+
+
+def chunk_documents(documents: list[Document], max_tokens: int) -&gt; list[Chunk]:
+    chunks = []
+    for document in documents:
+        for index, text in enumerate(split_text(document.body, max_tokens)):
+            chunks.append(Chunk(doc_id=document.doc_id, index=index, text=text, tokens=count_tokens(text)))
+    return chunks</code></pre><p>A script to see it work. <code>chunk_report.py</code>:</p><pre><code>from pathlib import Path
+
+from my_ai_project.chunking import chunk_documents
+from my_ai_project.knowledge_base import load_knowledge_base
+
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+for budget in (60, 40, 25):
+    chunks = chunk_documents(documents, budget)
+    biggest = max(chunk.tokens for chunk in chunks)
+    print(f&quot;budget {budget:&gt;2}: {len(chunks):&gt;2} chunks from {len(documents)} documents, biggest chunk {biggest} tokens&quot;)
+chunks = chunk_documents(documents, 25)
+for chunk in chunks[:3]:
+    print(chunk.doc_id, chunk.index, chunk.tokens, &quot;|&quot;, chunk.text)</code></pre><div class="out"><b>You should see</b><br>budget 60: 20 chunks from 20 documents, biggest chunk 54 tokens<br>budget 40: 26 chunks from 20 documents, biggest chunk 40 tokens<br>budget 25: 43 chunks from 20 documents, biggest chunk 25 tokens<br>manual-calibration 0 8 | Calibrate the sensor once a month.<br>manual-calibration 1 20 | Open the menu, choose Calibrate, and keep the pump running at normal speed for two minutes.<br>manual-calibration 2 19 | The monitor stores the new values and shows the date of the last calibration on the home screen.</div><p><small>With a budget of 60 tokens no document is split (the biggest has 54). With 25, long documents become several chunks, and no chunk is above 25.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Build it <span class="t">2.5 h</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch (<code>git switch -c lab-5</code>). You need <code>tokens.py</code> (Day 32), the knowledge base and the loader (Day 28), and <code>tiktoken</code>.</p>
+<p><strong>Done looks like:</strong> <code>chunk_documents</code> returns typed chunks that all fit the budget, <strong>three tests</strong> prove the promises, a short <strong>note 1</strong> explains how tokens limit your assistant, the README is updated, and it is pushed.</p>
+<h3><span class="step">Part A</span> Design first (15 min)</h3>
+<p>On paper: what is a <code>Chunk</code> (which fields), what are the two promises of the splitter, and what should happen when one sentence is longer than the budget? Compare with the worked example.</p>
+<h3><span class="step">Part B</span> The splitter (45 min)</h3>
+<p>Write <code>split_text(text, max_tokens)</code> in <code>chunking.py</code>. It splits into sentences, packs them into chunks that fit, and hard-splits a sentence that is too long. It rejects a budget below 1 with a <code>ValueError</code>.</p>
+<h3><span class="step">Part C</span> Chunks from documents (25 min)</h3>
+<p>Add the <code>Chunk</code> model (<code>doc_id</code>, <code>index</code>, <code>text</code>, <code>tokens</code>) and <code>chunk_documents(documents, max_tokens)</code>. Write <code>chunk_report.py</code>, run it and match the three budget lines of the worked example.</p>
+<h3><span class="step">Part D</span> Three tests (30 min)</h3>
+<p>Write <code>tests/test_chunking.py</code>: every piece fits the budget (and there is more than one piece), no sentence is lost (joining the pieces gives back the text), and a budget of 0 is rejected.</p>
+<p><strong>Mid-point check-in.</strong> <code>uv run pytest</code> passes (3 new tests) and <code>uv run mypy src tests</code> has no issues. If not, fix it before Part E. Take a 10-minute break.</p>
+<h3><span class="step">Part E</span> Break it on purpose (15 min)</h3>
+<p>Force the hard split on text that is not English, and look at where it cuts:</p><pre><code>from my_ai_project.chunking import hard_split
+
+print(hard_split(&quot;ตรวจสอบสายเซ็นเซอร์ให้แน่น&quot;, 2))
+print(hard_split(&quot;internationalization is a long word&quot;, 2))</code></pre>
+<p><strong>Predict:</strong> will the Thai text be cut between words or inside a word? Run it. Then try a budget of <code>0</code> and read the error. What does the output tell you about when hard split is acceptable?</p>
+<h3><span class="step">Part F</span> Note 1 of the checkpoint (25 min)</h3>
+<p>Write <code>notes/tokens-and-my-assistant.md</code> (a short note for yourself, from the template in Stuck). Use <strong>your own numbers</strong> from <code>count_kb.py</code>, <code>cost_report.py</code> and <code>chunk_report.py</code>. Write what you chose for the budget and why.</p>
+<h3><span class="step">Part G</span> README, commit, push, reflect (15 min)</h3>
+<p>Add a &ldquo;Tokens and chunks&rdquo; section to your README (template in Stuck). Commit and push: <code>git add .</code>, <code>git commit -m "Split documents by a token budget"</code>, <code>git push</code>. Write three lines in your notes: what worked, what broke, and what you would change about the splitter.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>A piece is over the budget</strong>: you probably counted the sentences separately but joined them with a space. Count the <em>joined</em> text, as the solution does.</li><li><strong>The joined pieces do not equal the text</strong>: the splitter strips the text first and joins with one space. Use a text with single spaces between sentences in the test, or compare the words.</li><li><strong>Many tiny chunks</strong>: the budget is smaller than most sentences, so each sentence stands alone. Try a bigger budget.</li><li><strong>An abbreviation such as &ldquo;e.g.&rdquo; splits a sentence</strong>: a simple regex cuts at every full stop followed by a space. It is good enough for today, and you can improve it later.</li><li><strong>&ldquo;ModuleNotFoundError ... knowledge_base&rdquo;</strong>: the loader from Day 28 must be in <code>src/my_ai_project/</code>.</li></ul><details><summary>Hint: Part B</summary><p>Keep a list <code>current</code> of the sentences in the chunk you are building. For each sentence: if it is too long alone, flush <code>current</code> and hard-split the sentence. Otherwise, if adding it would exceed the budget, flush <code>current</code> first. Then add the sentence. At the end, flush what is left. Sentences come from <code>re.split(r&quot;(?&lt;=[.!?])\s+&quot;, text)</code>.</p></details><details><summary>Solution: Parts B and C</summary><pre><code>import re
+
+from pydantic import BaseModel
+
+from my_ai_project.knowledge_base import Document
+from my_ai_project.tokens import ENCODING, count_tokens
+
+SENTENCE_END = re.compile(r&quot;(?&lt;=[.!?])\s+&quot;)
+
+
+class Chunk(BaseModel):
+    doc_id: str
+    index: int
+    text: str
+    tokens: int
+
+
+def hard_split(text: str, max_tokens: int) -&gt; list[str]:
+    ids = ENCODING.encode(text)
+    return [ENCODING.decode(ids[start : start + max_tokens]) for start in range(0, len(ids), max_tokens)]
+
+
+def split_text(text: str, max_tokens: int) -&gt; list[str]:
+    if max_tokens &lt; 1:
+        raise ValueError(&quot;max_tokens must be at least 1&quot;)
+    pieces: list[str] = []
+    current: list[str] = []
+    for sentence in SENTENCE_END.split(text.strip()):
+        if count_tokens(sentence) &gt; max_tokens:
+            if current:
+                pieces.append(&quot; &quot;.join(current))
+                current = []
+            pieces.extend(hard_split(sentence, max_tokens))
+            continue
+        if current and count_tokens(&quot; &quot;.join([*current, sentence])) &gt; max_tokens:
+            pieces.append(&quot; &quot;.join(current))
+            current = []
+        current.append(sentence)
+    if current:
+        pieces.append(&quot; &quot;.join(current))
+    return pieces
+
+
+def chunk_documents(documents: list[Document], max_tokens: int) -&gt; list[Chunk]:
+    chunks = []
+    for document in documents:
+        for index, text in enumerate(split_text(document.body, max_tokens)):
+            chunks.append(Chunk(doc_id=document.doc_id, index=index, text=text, tokens=count_tokens(text)))
+    return chunks</code></pre></details><details><summary>Solution: Parts C and D</summary><pre><code>from pathlib import Path
+
+from my_ai_project.chunking import chunk_documents
+from my_ai_project.knowledge_base import load_knowledge_base
+
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+for budget in (60, 40, 25):
+    chunks = chunk_documents(documents, budget)
+    biggest = max(chunk.tokens for chunk in chunks)
+    print(f&quot;budget {budget:&gt;2}: {len(chunks):&gt;2} chunks from {len(documents)} documents, biggest chunk {biggest} tokens&quot;)
+chunks = chunk_documents(documents, 25)
+for chunk in chunks[:3]:
+    print(chunk.doc_id, chunk.index, chunk.tokens, &quot;|&quot;, chunk.text)</code></pre><div class="out"><b>You should see</b><br>budget 60: 20 chunks from 20 documents, biggest chunk 54 tokens<br>budget 40: 26 chunks from 20 documents, biggest chunk 40 tokens<br>budget 25: 43 chunks from 20 documents, biggest chunk 25 tokens<br>manual-calibration 0 8 | Calibrate the sensor once a month.<br>manual-calibration 1 20 | Open the menu, choose Calibrate, and keep the pump running at normal speed for two minutes.<br>manual-calibration 2 19 | The monitor stores the new values and shows the date of the last calibration on the home screen.</div><p><code>tests/test_chunking.py</code>:</p><pre><code>import pytest
+
+from my_ai_project.chunking import split_text
+from my_ai_project.tokens import count_tokens
+
+TEXT = &quot;Check the cable. Restart the monitor. If the error comes back, replace the sensor cable. Call support.&quot;
+
+
+def test_every_piece_fits_the_budget() -&gt; None:
+    pieces = split_text(TEXT, 12)
+    assert len(pieces) &gt; 1
+    assert all(count_tokens(piece) &lt;= 12 for piece in pieces)
+
+
+def test_no_sentence_is_lost() -&gt; None:
+    pieces = split_text(TEXT, 12)
+    assert &quot; &quot;.join(pieces) == TEXT
+
+
+def test_a_budget_below_one_is_rejected() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;at least 1&quot;):
+        split_text(TEXT, 0)</code></pre></details><details><summary>Solution: Part E</summary><pre><code>from my_ai_project.chunking import hard_split
+
+print(hard_split(&quot;ตรวจสอบสายเซ็นเซอร์ให้แน่น&quot;, 2))
+print(hard_split(&quot;internationalization is a long word&quot;, 2))</code></pre><div class="out"><b>You should see</b><br>['ตรวจสอบ', 'สายเซ', '็นเซ', 'อร์ให้', 'แน่น']
+['internationalization', ' is a', ' long word']</div><div class="out"><b>You should see</b><br>ValueError: max_tokens must be at least 1</div><p>The Thai piece is cut <em>inside</em> a word (<code>สายเซ</code> and <code>็นเซ</code> are halves of <code>เซ็นเซอร์</code>), because tokens are not words. A hard split is acceptable only for a sentence that is longer than the whole budget. Everything else should be split at sentence boundaries.</p></details><details><summary>Template: Part F (note 1)</summary><pre><code># Note 1: how tokens limit my assistant
+
+1. My knowledge base today has ... tokens in ... documents. A real one would have about ... tokens.
+2. The context window of my model is ... tokens. I keep ... for the answer, so I have ... for the prompt.
+3. Pasting everything into every prompt would cost ... for 1,000 questions (example price: ...). Sending the 3 best documents would cost ... .
+4. I split documents into chunks of at most ... tokens, because ... If the chunks are too small, ... If they are too large, ... .
+5. Because of these limits, one thing I will do is ... .</code></pre></details><details><summary>Template: Part G (README)</summary><pre><code>## Tokens and chunks
+
+    uv run python count_kb.py       # tokens per document and in total
+    uv run python cost_report.py    # example cost of pasting everything into every prompt
+    uv run python chunk_report.py   # split documents into chunks of at most N tokens
+
+Token counts use tiktoken (o200k_base). Other models count differently, so treat them as estimates.
+The price in `cost.py` is an example: put your provider&#x27;s real price there.</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What are the two promises of the splitter, and how do you test each one?</li><li>Why split at sentences first and cut by tokens only as a last resort?</li><li>What goes wrong if chunks are too small, and what if they are too large?</li></ol><details><summary>Answers</summary><ol><li>Every chunk fits the budget (check <code>count_tokens</code> of each piece), and no text is lost (join the pieces and compare with the original).</li><li>A sentence is a unit of meaning. A cut in the middle can leave half an instruction, and a hard token cut can even split a word.</li><li>Too small: a chunk loses the context around it and may not make sense alone. Too large: you waste tokens on text that is not needed, it costs more, and the meaning of the chunk gets blurry for search.</li></ol></details></section>
+<section id="game-day35" class="game"><h2><span class="n">+</span> &middot; Game: Chunk Referee <span class="t">5 min</span></h2>
+<p><p>You split documents by a token budget. Read what you run, pick what you expect, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day35-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day35-play">Start the game</button></div>
+<div id="day35-round" hidden><div class="gtop"><span id="day35-num">Round 1</span><span id="day35-score">Score 0</span></div>
+<pre hidden><code id="day35-code"></code></pre><div class="q" id="day35-q"></div><div class="choices" id="day35-opts"></div>
+<div class="fb" id="day35-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day35-next" hidden>Next round</button></p></div>
+<div id="day35-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day35",[{"c": "for budget in (60, 40, 25):\n    chunks = chunk_documents(documents, budget)", "q": "20 documents, the biggest has 54 tokens. How many chunks with a budget of 60?", "o": ["20: nothing needs to be split", "40", "60"], "a": 0, "out": "budget 60: 20 chunks from 20 documents, biggest chunk 54 tokens", "why": "Every document already fits in the budget, so each one stays a single chunk."}, {"c": "chunks = chunk_documents(documents, 25)", "q": "With a smaller budget, what happens to the number of chunks and to the biggest chunk?", "o": ["More chunks (43), and none is above 25 tokens", "Fewer chunks", "The same number of chunks"], "a": 0, "out": "budget 25: 43 chunks from 20 documents, biggest chunk 25 tokens", "why": "A smaller budget means more pieces, and the promise is that no piece is above the budget."}, {"c": "manual-calibration 0 8 | Calibrate the sensor once a month.\nmanual-calibration 1 20 | Open the menu, choose Calibrate, ...", "q": "Why are the first two sentences in different chunks with a budget of 25?", "o": ["8 + 20 tokens would be above the budget, so the next sentence starts a new chunk", "A chunk may hold only one sentence", "A full stop always starts a new chunk"], "a": 0, "out": "manual-calibration 0 8 | Calibrate the sensor once a month.\nmanual-calibration 1 20 | Open the menu, choose Calibrate, and keep the pump running at normal speed for two minutes.", "why": "The splitter packs whole sentences until the next one would not fit."}, {"c": "hard_split(\"ตรวจสอบสายเซ็นเซอร์ให้แน่น\", 2)", "q": "Cutting by tokens. Where does it cut the Thai text?", "o": ["Inside a word: สายเซ and ็นเซ are halves of เซ็นเซอร์", "Exactly between words", "It does not cut"], "a": 0, "out": "['ตรวจสอบ', 'สายเซ', '็นเซ', 'อร์ให้', 'แน่น']", "why": "Tokens are not words. A hard split is only a safety net, for a sentence longer than the whole budget."}, {"c": "split_text(text, 0)", "q": "A budget of zero. What happens?", "o": ["ValueError: max_tokens must be at least 1", "An empty list", "One chunk with the whole text"], "a": 0, "out": "ValueError: max_tokens must be at least 1", "why": "An impossible budget is a mistake, so reject it loudly instead of returning something strange."}, {"c": "assert \" \".join(pieces) == TEXT\nassert all(count_tokens(p) <= 12 for p in pieces)", "q": "Which two promises do these two tests hold?", "o": ["No text is lost, and every piece fits the budget", "The text is shorter, and the pieces are equal", "The tokens are unique, and the pieces are sorted"], "a": 0, "out": "5 passed in 0.29s", "why": "A splitter that drops text, or lets a piece go over the budget, breaks the assistant quietly."}],["Chunk rookie", "Chunk referee", "Chunk builder"],"A chunk fits the token budget, whole sentences are packed first and a hard cut is the last resort, and two small tests hold the promises: nothing lost, nothing too big.");</script>
+<p><small>Tick &ldquo;Play the Chunk Referee game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a token-aware splitter with two promises held by tests, and the first note of your module 3 checkpoint, written with your own numbers.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 35 checklist.</li><li>Share one line in the comments: what budget did you choose, and why?</li><li><strong>Next:</strong> Sunday is the self-test on tokens, context and attention. Then module 3 ends with embeddings, meaning as numbers.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
