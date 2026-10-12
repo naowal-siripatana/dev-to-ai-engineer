@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 41 - Teach-back: embeddings vs keyword search</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 41 &middot; LEVEL 4: LLM APPS &middot; TEACH-BACK</div><h1>Teach-back: embeddings vs keyword search</h1>
+<div class="meta"><span>30 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to explain in 5 sentences when embeddings beat keywords and when they do not, with an example for each side.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. Imagine a customer types <em>&ldquo;the unit is getting very warm&rdquo;</em> and another types <em>&ldquo;error E105&rdquo;</em>. For each one, write which kind of search you would trust more to find the right page, keywords or embeddings, and <em>why</em>. Then write one thing you are not sure about.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p></section>
+<section><h2><span class="n">2</span> &middot; Explain it <span class="t">10 min</span></h2><p><strong>Your task:</strong> explain the difference between <strong>embeddings and keyword search</strong> and when each one is the better tool, in <strong>5 sentences</strong> or a <strong>60-second voice note</strong>.</p><ul><li><strong>Who you are talking to:</strong> a teammate who thinks &ldquo;vector search&rdquo; is always better than the search box they already have.</li><li><strong>Use these words:</strong> meaning, exact, words, question, example.</li><li><strong>Rules:</strong> no notes, and give <em>one example for each side</em>.</li></ul><p>Write it or record it now. A rough first try is exactly right.</p><details><summary>Stuck? Sentence starters</summary><p>Use these if you freeze:</p><pre><code>1. Keyword search finds documents that contain ...
+2. Embeddings find documents that ...
+3. A question like ... works well with embeddings, because ...
+4. A question like ... works better with keywords, because ...
+5. So a good system ... (my conclusion)</code></pre></details></section>
+<section><h2><span class="n">3</span> &middot; Check it against the key points <span class="t">8 min</span></h2><p>Read the six key points and tick each one that <strong>your explanation said clearly</strong>. Be strict.</p><ol><li><strong>Keyword search</strong> finds documents that contain the words you typed. <strong>Embeddings</strong> find documents with a similar <strong>meaning</strong>, even with no shared word.</li><li>Embeddings win when the question is a <strong>paraphrase</strong> (&ldquo;getting very warm&rdquo; and &ldquo;too hot&rdquo;), or uses different words from the document.</li><li>Keywords win for <strong>exact strings</strong>: error codes, names, numbers, part numbers. Embeddings are fuzzy there and can mix up <code>E105</code> and <code>E101</code>.</li><li>Embeddings <strong>always return a nearest document</strong>, even for an unrelated question, so you need a minimum score. Keyword search returns nothing when nothing matches, which is a clear signal.</li><li>Embeddings need a <strong>model and stored vectors</strong>. Keyword search is cheap and simple.</li><li>Real systems often <strong>combine both</strong> (you will meet this as hybrid search), so you are not forced to choose.</li></ol><details><summary>A model answer in 5 sentences</summary><p>Keyword search finds documents that contain the words I typed, and embeddings find documents with a similar meaning, even with no shared word. A question like &ldquo;the unit is getting very warm&rdquo; works well with embeddings, because the manual says &ldquo;too hot&rdquo;. A question like &ldquo;error E105&rdquo; works better with keywords, because it is an exact string, and embeddings can mix it up with E101. Embeddings always return a nearest document, even for a question about something else, so I need a minimum score, while keyword search just returns nothing. So a good system uses both: keywords for exact things, embeddings for meaning.</p></details><p>Count your ticks. <strong>6</strong>: very clear. <strong>3 to 5</strong>: good, you found your gaps. <strong>0 to 2</strong>: also fine, the next step fills them in.</p></section>
+<section><h2><span class="n">4</span> &middot; Look at the evidence <span class="t">5 min</span></h2><p>Do not trust the argument. Run both searches on the same questions. This script scores each sentence by the number of shared words (without small words like &ldquo;the&rdquo;) and by embeddings. Save it as <code>keyword_vs_embedding.py</code>:</p><pre><code>import re
+
+from my_ai_project.embeddings import cosine, embed
+
+STOP_WORDS = {&quot;the&quot;, &quot;is&quot;, &quot;a&quot;, &quot;to&quot;, &quot;it&quot;, &quot;my&quot;, &quot;i&quot;, &quot;do&quot;, &quot;how&quot;, &quot;of&quot;, &quot;and&quot;, &quot;in&quot;, &quot;your&quot;, &quot;for&quot;, &quot;very&quot;, &quot;too&quot;}
+
+sentences = [
+    &quot;The sensor did not answer within ten seconds.&quot;,
+    &quot;The battery is almost empty.&quot;,
+    &quot;Hold the power button for five seconds to restart.&quot;,
+    &quot;The device is too hot, let it cool down.&quot;,
+    &quot;Storage is nearly full, export your readings.&quot;,
+]
+
+
+def words(text: str) -&gt; set[str]:
+    return set(re.findall(r&quot;[a-z0-9]+&quot;, text.lower())) - STOP_WORDS
+
+
+def keyword_score(question: str, sentence: str) -&gt; int:
+    return len(words(question) &amp; words(sentence))
+
+
+vectors = embed(sentences)
+for question in [&quot;The unit is getting very warm&quot;, &quot;Hold the power button&quot;]:
+    query = embed([question])[0]
+    print(question)
+    keyword = max(sentences, key=lambda s: keyword_score(question, s))
+    print(&quot;  keywords:   &quot;, keyword_score(question, keyword), &quot;shared words -&gt;&quot;, keyword)
+    best = max(zip((cosine(query, v) for v in vectors), sentences))
+    print(f&quot;  embeddings: {best[0]:.2f} similarity   -&gt;&quot;, best[1])</code></pre><p><strong>Predict first:</strong> for each of the two questions, which search finds the right sentence?</p><div class="out"><b>You should see</b><br>The unit is getting very warm<br>&nbsp;&nbsp;keywords:&nbsp;&nbsp;&nbsp;&nbsp;0 shared words -> The sensor did not answer within ten seconds.<br>&nbsp;&nbsp;embeddings: 0.78 similarity&nbsp;&nbsp; -> The device is too hot, let it cool down.<br>Hold the power button<br>&nbsp;&nbsp;keywords:&nbsp;&nbsp;&nbsp;&nbsp;3 shared words -> Hold the power button for five seconds to restart.<br>&nbsp;&nbsp;embeddings: 0.86 similarity&nbsp;&nbsp; -> Hold the power button for five seconds to restart.</div><p>For &ldquo;getting very warm&rdquo; the keyword search finds <strong>0</strong> shared words in every sentence, so its &ldquo;best&rdquo; is just the first one: it has nothing to say. Embeddings find the right one. For &ldquo;Hold the power button&rdquo; both agree. Now the other side of the story, on your 20 documents. Save this as <code>exact_codes.py</code> and run it:</p><pre><code>from pathlib import Path
+
+from my_ai_project.embeddings import cosine, embed
+from my_ai_project.knowledge_base import load_knowledge_base
+
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+vectors = embed([f&quot;{d.title}. {d.body}&quot; for d in documents])
+
+for question in [&quot;E105&quot;, &quot;What does error E105 mean?&quot;, &quot;network lost&quot;]:
+    query = embed([question])[0]
+    ranked = sorted(((cosine(query, v), d.doc_id) for v, d in zip(vectors, documents)), reverse=True)[:3]
+    print(question, &quot;-&gt;&quot;, [(round(score, 2), doc_id) for score, doc_id in ranked])</code></pre><div class="out"><b>You should see</b><br>E105 -> [(0.63, 'error-e105'), (0.6, 'error-e104'), (0.58, 'error-e101')]<br>What does error E105 mean? -> [(0.67, 'error-e101'), (0.67, 'error-e105'), (0.64, 'error-e106')]<br>network lost -> [(0.75, 'error-e105'), (0.62, 'faq-wifi'), (0.61, 'manual-network-setup')]</div><p>For <code>What does error E105 mean?</code> embeddings give a <strong>tie</strong> (0.67) between <code>error-e101</code> and <code>error-e105</code>, and the wrong one comes first. A plain keyword match on the code finds exactly one page (<code>keyword_codes.py</code>):</p><pre><code>import re
+from pathlib import Path
+
+from my_ai_project.knowledge_base import load_knowledge_base
+
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+
+
+def words(text: str) -&gt; set[str]:
+    return set(re.findall(r&quot;[a-z0-9]+&quot;, text.lower()))
+
+
+question = &quot;What does error E105 mean?&quot;
+question_words = words(question) - {&quot;what&quot;, &quot;does&quot;, &quot;error&quot;, &quot;mean&quot;}
+hits = [d.doc_id for d in documents if question_words &amp; words(d.title + &quot; &quot; + d.body)]
+print(question, &quot;-&gt;&quot;, hits)</code></pre><div class="out"><b>You should see</b><br>What does error E105 mean? -> ['error-e105']</div><p>Embeddings are strong at meaning (<code>network lost</code> finds the E105 page without the code) and weak at exact identifiers. Neither is better everywhere.</p></section>
+<section><h2><span class="n">5</span> &middot; Fix the biggest gap <span class="t">3 min</span></h2><p>Look at the key points you did not tick. Pick the <strong>one</strong> that matters most and write a better sentence for it, using the numbers above. Is there one example for each side in your explanation? Add what is missing, and save your five sentences next to your earlier teach-backs.</p></section>
+<section id="game-day41" class="game"><h2><span class="n">+</span> &middot; Game: Search Showdown <span class="t">5 min</span></h2>
+<p><p>Keywords against embeddings, on the same questions. Read what you run, pick the winner, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day41-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day41-play">Start the game</button></div>
+<div id="day41-round" hidden><div class="gtop"><span id="day41-num">Round 1</span><span id="day41-score">Score 0</span></div>
+<pre hidden><code id="day41-code"></code></pre><div class="q" id="day41-q"></div><div class="choices" id="day41-opts"></div>
+<div class="fb" id="day41-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day41-next" hidden>Next round</button></p></div>
+<div id="day41-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day41",[{"c": "question = \"The unit is getting very warm\"\n# keyword search: words in common after removing small words", "q": "How many shared words does the best keyword match have?", "o": ["0: nothing matches", "3", "1"], "a": 0, "out": "The unit is getting very warm\n  keywords:    0 shared words -> The sensor did not answer within ten seconds.\n  embeddings: 0.78 similarity   -> The device is too hot, let it cool down.", "why": "With 0 shared words keyword search has nothing to say, and its best is just the first sentence. Embeddings find too hot."}, {"c": "question = \"Hold the power button\"", "q": "Who finds the right sentence?", "o": ["Both do", "Only keywords", "Only embeddings"], "a": 0, "out": "Hold the power button\n  keywords:    3 shared words -> Hold the power button for five seconds to restart.\n  embeddings: 0.86 similarity   -> Hold the power button for five seconds to restart.", "why": "When the question uses the same words as the document, both work."}, {"c": "question = \"What does error E105 mean?\"   # embeddings on the 20 documents", "q": "What do the embeddings say about error-e101 and error-e105?", "o": ["A tie at 0.67, and e101 comes first", "e105 wins clearly", "e101 is not in the top 3"], "a": 0, "out": "What does error E105 mean? -> [(0.67, 'error-e101'), (0.67, 'error-e105'), (0.64, 'error-e106')]", "why": "Embeddings are fuzzy with exact identifiers: E101 and E105 look alike to them."}, {"c": "question_words = words(question) - {\"what\", \"does\", \"error\", \"mean\"}   # keyword match on the code", "q": "What does the keyword match find?", "o": ["Exactly one page: error-e105", "Five pages", "Nothing"], "a": 0, "out": "What does error E105 mean? -> ['error-e105']", "why": "For an exact string, a plain word match is precise."}, {"c": "question = \"network lost\"   # no error code in the question", "q": "Does the embedding search find the E105 page when the question has no code?", "o": ["Yes, it is first (0.75)", "No", "Only with the code"], "a": 0, "out": "network lost -> [(0.75, 'error-e105'), (0.62, 'faq-wifi'), (0.61, 'manual-network-setup')]", "why": "A question about the meaning finds the page even without its code."}, {"c": "", "q": "Which sentence is the best summary?", "o": ["Embeddings for meaning, keywords for exact strings, and real systems combine both", "Embeddings are always better", "Keywords are always better"], "a": 0, "out": "", "why": "Neither is better everywhere. A hybrid uses both."}],["Search rookie", "Search judge", "Retrieval thinker"],"Embeddings win on meaning and paraphrases, keywords win on exact strings such as error codes, embeddings always return a nearest result, and good systems combine both.");</script>
+<p><small>Tick &ldquo;Play the Search Showdown game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">6</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a balanced explanation of two kinds of search, backed by two experiments: one where embeddings win, and one where plain keywords win.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 41 checklist.</li><li>Share one line in the comments: which example would you use to explain it to a friend?</li><li><strong>Next:</strong> Saturday is Project Lab 6: a mini retrieval prototype in memory. You embed the knowledge base, take the top 3 for a question, and answer it with a source name.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 42 - Project Lab 6: a mini retrieval prototype</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 42 &middot; LEVEL 4: LLM APPS &middot; PROJECT LAB</div><h1>Project Lab 6: a mini retrieval prototype</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to embed the knowledge base, take the top 3 for a question, answer with a source name, and say when you do not know.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Embeddings or keywords: which one is better for the question &ldquo;error E105&rdquo;, and why?</li><li>Why do you embed the documents once and the question each time?</li></ol><details><summary>Answers</summary><ol><li>Keywords. An error code is an exact string, and embeddings are fuzzy there: in the lesson, <code>error-e101</code> and <code>error-e105</code> tied. Embeddings are better for meaning, such as &ldquo;network lost&rdquo;.</li><li>The documents do not change between questions, so embedding them again wastes time. The question is new each time.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A user asks the assistant something that is not in your knowledge base at all. Retrieval always finds a &ldquo;closest&rdquo; document. What should the assistant say, and who decides: the search or the model?</strong></p><details><summary>Guess first, then open</summary><p>Both can, and you should not rely on only one. The search can say &ldquo;nothing is close enough&rdquo; with a minimum score. The model can say &ldquo;the sources do not contain the answer&rdquo; if you tell it to. Today you build both guards, so the assistant admits it does not know.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: retrieve, then generate</h3>
+<p>A small <strong>retrieval-augmented</strong> flow has two steps. <strong>Retrieve</strong>: embed the question and take the closest documents. <strong>Generate</strong>: put those documents in the prompt and ask the model to answer <em>using only them</em>. The model reads your text instead of guessing from memory.</p>
+<h3>Piece 2: put the sources in the prompt, and label them</h3>
+<p>Each retrieved document goes into the prompt with its id in square brackets, such as <code>[error-e101]</code>. The prompt tells the model to name the source in its answer. Now the answer carries a <strong>citation</strong> that a person can check. You also return the list of source ids from your code, so you never depend only on the model to cite.</p>
+<h3>Piece 3: two guards against &ldquo;I do not know&rdquo;</h3>
+<p>Guard 1 is a <strong>minimum score</strong>: if the best match is below it, you skip the model and say you could not find an answer. This also saves money. Guard 2 is the <strong>instruction</strong> in the prompt: &ldquo;if the sources do not contain the answer, say exactly this sentence&rdquo;. The score is specific to your embedding model, so you find a good value by trying real questions.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>InMemoryIndex</code> is a repository that you query by meaning instead of by key. The <code>Embedder</code> and the <code>LlmClient</code> are interfaces (<code>Protocol</code> classes), so the tests can plug in fakes, exactly like Depends and fakes in Lab 3.</div>
+<div class="box cap"><strong>Capstone:</strong> this is the first working version of <code>ai-knowledge-assistant</code>'s core. In module 6 you replace the in-memory index with PostgreSQL and pgvector, and improve the chunking, but the shape (embed, retrieve, prompt, cite, admit) stays the same.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. Four small files. First the embedder: a real one that runs on your computer, and a fake one for tests (it counts words into 64 buckets, so it needs no download). <code>src/my_ai_project/embedder.py</code>:</p><pre><code>import re
+import zlib
+from typing import Protocol
+
+import numpy as np
+
+
+class Embedder(Protocol):
+    def embed(self, texts: list[str]) -&gt; np.ndarray: ...
+
+
+class FastEmbedder:
+    &quot;&quot;&quot;A small model that runs on your computer: no key, no cost.&quot;&quot;&quot;
+
+    def __init__(self, model_name: str = &quot;BAAI/bge-small-en-v1.5&quot;) -&gt; None:
+        from fastembed import TextEmbedding
+
+        self._model = TextEmbedding(model_name)
+
+    def embed(self, texts: list[str]) -&gt; np.ndarray:
+        return np.array(list(self._model.embed(texts)))
+
+
+class FakeEmbedder:
+    &quot;&quot;&quot;For tests: counts words into 64 buckets. Same text, same vector, no download.&quot;&quot;&quot;
+
+    def embed(self, texts: list[str]) -&gt; np.ndarray:
+        vectors = np.zeros((len(texts), 64))
+        for row, text in enumerate(texts):
+            for word in re.findall(r&quot;[a-z0-9]+&quot;, text.lower()):
+                vectors[row, zlib.crc32(word.encode()) % 64] += 1
+        return vectors</code></pre><p>The index: it embeds the documents once, and <code>search</code> returns the closest ones as typed <code>Hit</code> objects. <code>src/my_ai_project/retrieval.py</code>:</p><pre><code>import numpy as np
+from pydantic import BaseModel
+
+from my_ai_project.embedder import Embedder
+from my_ai_project.knowledge_base import Document
+
+
+class Hit(BaseModel):
+    doc_id: str
+    title: str
+    score: float
+
+
+def normalize(vectors: np.ndarray) -&gt; np.ndarray:
+    lengths = np.linalg.norm(vectors, axis=1, keepdims=True)
+    lengths[lengths == 0] = 1.0
+    return vectors / lengths
+
+
+class InMemoryIndex:
+    def __init__(self, embedder: Embedder, documents: list[Document]) -&gt; None:
+        self.embedder = embedder
+        self.documents = documents
+        self.vectors = normalize(embedder.embed([f&quot;{d.title}. {d.body}&quot; for d in documents]))
+
+    def search(self, question: str, top_k: int = 3) -&gt; list[Hit]:
+        query = normalize(self.embedder.embed([question]))[0]
+        scores = self.vectors @ query
+        best = np.argsort(scores)[::-1][:top_k]
+        return [
+            Hit(doc_id=self.documents[i].doc_id, title=self.documents[i].title, score=round(float(scores[i]), 2))
+            for i in best
+        ]</code></pre><p>The answer step, with the prompt and the minimum score. <code>src/my_ai_project/answering.py</code>:</p><pre><code>from typing import Protocol
+
+from pydantic import BaseModel
+
+from my_ai_project.retrieval import InMemoryIndex
+
+NO_ANSWER = &quot;I could not find that in the knowledge base.&quot;
+
+
+class LlmClient(Protocol):
+    def complete(self, prompt: str) -&gt; str: ...
+
+
+class Answer(BaseModel):
+    text: str
+    sources: list[str]
+
+
+def build_prompt(question: str, index: InMemoryIndex, doc_ids: list[str]) -&gt; str:
+    by_id = {document.doc_id: document for document in index.documents}
+    context = &quot;\n\n&quot;.join(f&quot;[{doc_id}] {by_id[doc_id].title}\n{by_id[doc_id].body}&quot; for doc_id in doc_ids)
+    return (
+        &quot;Answer the question using only the sources below. Name the source in square brackets. &quot;
+        f&#x27;If the sources do not contain the answer, say exactly: &quot;{NO_ANSWER}&quot;\n\n&#x27;
+        f&quot;Sources:\n{context}\n\nQuestion: {question}&quot;
+    )
+
+
+def answer_question(
+    question: str, index: InMemoryIndex, client: LlmClient, top_k: int = 3, min_score: float = 0.55
+) -&gt; Answer:
+    hits = index.search(question, top_k)
+    if not hits or hits[0].score &lt; min_score:
+        return Answer(text=NO_ANSWER, sources=[])
+    doc_ids = [hit.doc_id for hit in hits]
+    return Answer(text=client.complete(build_prompt(question, index, doc_ids)), sources=doc_ids)</code></pre><p>And a script to ask a question from the terminal. <code>ask.py</code>:</p><pre><code>import logging
+import os
+import sys
+from pathlib import Path
+
+from my_ai_project.answering import answer_question
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.knowledge_base import load_knowledge_base
+from my_ai_project.llm import AnthropicClient, FakeLlmClient
+from my_ai_project.retrieval import InMemoryIndex
+
+logging.basicConfig(level=logging.WARNING)
+question = &quot; &quot;.join(sys.argv[1:]) or &quot;My monitor stopped responding&quot;
+
+index = InMemoryIndex(FastEmbedder(), load_knowledge_base(Path(&quot;data/kb&quot;)))
+print(&quot;top 3:&quot;, [(hit.doc_id, hit.score) for hit in index.search(question)])
+
+if os.environ.get(&quot;LLM_MODE&quot;) == &quot;real&quot;:
+    client = AnthropicClient(api_key=os.environ[&quot;ANTHROPIC_API_KEY&quot;])
+else:
+    client = FakeLlmClient(reply=&quot;(fake) I would answer from the sources listed below.&quot;)
+
+answer = answer_question(question, index, client)
+print(&quot;answer: &quot;, answer.text)
+print(&quot;sources:&quot;, &quot;, &quot;.join(answer.sources) or &quot;none&quot;)</code></pre><p>It runs like this (the model is fake unless <code>LLM_MODE=real</code>, so you see the retrieval and the sources):</p><div class="out"><b>You should see</b><br>top 3: [('error-e101', 0.74), ('faq-reset', 0.7), ('error-e103', 0.68)]<br>answer:  (fake) I would answer from the sources listed below.<br>sources: error-e101, faq-reset, error-e103</div></section>
+<section><h2><span class="n">5</span> &middot; Build it <span class="t">2.5 h</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch (<code>git switch -c lab-6</code>). You need the knowledge base and loader (Day 28), <code>fastembed</code> and <code>numpy</code> (Day 37), and <code>llm.py</code> from Lab 3.</p>
+<p><strong>Done looks like:</strong> <code>ask.py</code> answers a question and <strong>names its sources</strong>, a question about something else gets &ldquo;I could not find that&rdquo; without calling the model, <strong>three tests</strong> pass with no download and no key, a short note is written, and it is pushed.</p>
+<h3><span class="step">Part A</span> Design first (15 min)</h3>
+<p>On paper: the four parts (embedder, index, answering, script), what each one takes in and gives back, and which two parts need a fake in tests. Compare with the worked example.</p>
+<h3><span class="step">Part B</span> Embedder and index (45 min)</h3>
+<p>Write the <code>Embedder</code> interface, <code>FastEmbedder</code> and <code>FakeEmbedder</code>, then <code>InMemoryIndex</code> with <code>search(question, top_k)</code>. Normalise the vectors once (divide each by its length), so a plain dot product is the cosine. Check it: run a tiny script that prints the top 3 for <code>My monitor stopped responding</code>. You should see <code>error-e101</code> first.</p>
+<h3><span class="step">Part C</span> Answering (35 min)</h3>
+<p>Write <code>build_prompt</code> (sources with ids in brackets, the rule to use only them, the exact &ldquo;not found&rdquo; sentence) and <code>answer_question</code> with <code>top_k</code> and <code>min_score</code>. Return an <code>Answer</code> with the text and the list of source ids.</p>
+<h3><span class="step">Part D</span> Three tests with fakes (30 min)</h3>
+<p>Write <code>tests/test_retrieval.py</code>, using <code>FakeEmbedder</code> and a small fake client that records the prompts: the best document comes first, the answer names its sources and the prompt contains the source text, and a weak match gives the &ldquo;not found&rdquo; text, no sources, and <strong>no model call</strong>.</p>
+<p><strong>Mid-point check-in.</strong> <code>uv run pytest</code> passes with no key and no model download, and <code>uv run mypy src tests</code> has no issues. If not, fix it before Part E. Take a 10-minute break.</p>
+<h3><span class="step">Part E</span> Ask three questions (15 min)</h3>
+<p>Write <code>ask.py</code> and run it with three questions: <code>My monitor stopped responding</code>, <code>How long will it run on battery?</code> and <code>Where can I buy a coffee?</code>. Match the three outputs of the worked example. Notice what the third one does.</p>
+<h3><span class="step">Part F</span> Break it on purpose (10 min)</h3>
+<p>Set <code>min_score</code> to <code>0.0</code> and ask the coffee question again. <strong>Predict</strong> what happens, then run it. What do you learn about the minimum score?</p>
+<h3><span class="step">Part G</span> One real answer (10 min)</h3>
+<p>With your key from Lab 3 in <code>.env</code>, run the script in real mode and read the answer: does it name a source in square brackets, and does it match the document?</p><pre><code>uv run --env-file .env python ask.py &quot;My monitor stopped responding&quot;
+# with LLM_MODE=real and your key in .env</code></pre>
+<h3><span class="step">Part H</span> Note, README, push, reflect (20 min)</h3>
+<p>Write a short note <code>notes/retrieval-prototype.md</code> (template in Stuck) and add a README section. Commit and push: <code>git add .</code>, <code>git commit -m "Add an in-memory retrieval prototype"</code>, <code>git push</code>. Write three lines: what worked, what broke, and which part you would test with more questions.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The first run is slow</strong>: the embedding model is downloaded once (about 64 MB) and then cached.</li><li><strong>Your best match is not the one in the lesson</strong>: check that you embed <code>title. body</code> and that the knowledge base has all 20 documents. A different text or a smaller index changes the ranking.</li><li><strong>&ldquo;I could not find that&rdquo; for a good question</strong>: the best score is below <code>min_score</code>. Print the top score and lower the threshold a little. The right value depends on the model.</li><li><strong>A test fails because the best document is wrong</strong>: <code>FakeEmbedder</code> only counts words, so use test questions that share words with the right document.</li><li><strong>The real answer does not name a source</strong>: the model did not follow the instruction. Make the instruction clearer in the prompt, and remember that your code returns the sources anyway.</li></ul><details><summary>Hint: Part B</summary><p>Embed the document texts in <em>one</em> call, then divide each row by its length (guard against a length of zero). For a question, embed <code>[question]</code>, normalise, and compute <code>self.vectors @ query</code>. <code>np.argsort(scores)[::-1][:top_k]</code> gives the best positions.</p></details><details><summary>Solution: Parts B and C</summary><p>The code is in the worked example above. These are the three outputs for Part E:</p><div class="out"><b>You should see</b><br>top 3: [('error-e101', 0.74), ('faq-reset', 0.7), ('error-e103', 0.68)]<br>answer:  (fake) I would answer from the sources listed below.<br>sources: error-e101, faq-reset, error-e103</div><div class="out"><b>You should see</b><br>top 3: [('faq-battery-life', 0.71), ('manual-safety', 0.68), ('error-e102', 0.64)]<br>answer:  (fake) I would answer from the sources listed below.<br>sources: faq-battery-life, manual-safety, error-e102</div><div class="out"><b>You should see</b><br>top 3: [('faq-serial-number', 0.46), ('faq-data-export', 0.43), ('faq-wifi', 0.42)]<br>answer:  I could not find that in the knowledge base.<br>sources: none</div></details><details><summary>Solution: Part D</summary><pre><code>from my_ai_project.answering import NO_ANSWER, answer_question
+from my_ai_project.embedder import FakeEmbedder
+from my_ai_project.knowledge_base import Document
+from my_ai_project.retrieval import InMemoryIndex
+
+DOCUMENTS = [
+    Document(doc_id=&quot;error-e101&quot;, kind=&quot;error&quot;, title=&quot;E101 Sensor timeout&quot;, body=&quot;Check the sensor cable and restart.&quot;),
+    Document(doc_id=&quot;faq-battery&quot;, kind=&quot;faq&quot;, title=&quot;Battery life&quot;, body=&quot;The battery lasts about eight hours.&quot;),
+    Document(doc_id=&quot;faq-wifi&quot;, kind=&quot;faq&quot;, title=&quot;Wi-Fi&quot;, body=&quot;Only 2.4 GHz networks are supported.&quot;),
+]
+
+
+class RecordingClient:
+    def __init__(self) -&gt; None:
+        self.prompts: list[str] = []
+
+    def complete(self, prompt: str) -&gt; str:
+        self.prompts.append(prompt)
+        return &quot;Check the cable [error-e101].&quot;
+
+
+def make_index() -&gt; InMemoryIndex:
+    return InMemoryIndex(FakeEmbedder(), DOCUMENTS)
+
+
+def test_search_puts_the_best_document_first() -&gt; None:
+    hits = make_index().search(&quot;sensor cable timeout&quot;, top_k=2)
+    assert hits[0].doc_id == &quot;error-e101&quot;
+    assert len(hits) == 2
+
+
+def test_the_answer_names_its_sources_and_the_prompt_holds_them() -&gt; None:
+    client = RecordingClient()
+    answer = answer_question(&quot;sensor cable timeout&quot;, make_index(), client, min_score=0.1)
+    assert answer.sources[0] == &quot;error-e101&quot;
+    assert &quot;[error-e101]&quot; in client.prompts[0]
+    assert &quot;Check the sensor cable and restart.&quot; in client.prompts[0]
+
+
+def test_a_weak_match_gets_no_answer_and_no_model_call() -&gt; None:
+    client = RecordingClient()
+    answer = answer_question(&quot;coffee shop&quot;, make_index(), client, min_score=0.5)
+    assert answer.text == NO_ANSWER
+    assert answer.sources == []
+    assert client.prompts == []</code></pre></details><details><summary>Solution: Part F</summary><div class="out"><b>You should see</b><br>min_score 0.55 -> I could not find that in the knowledge base. | none<br>min_score 0.0 -> (fake) I would answer from the sources listed below. | faq-serial-number, faq-data-export, faq-wifi</div><p>With <code>min_score=0.0</code> the coffee question gets &ldquo;an answer&rdquo; and three unrelated sources, because retrieval always returns the nearest documents. The minimum score is what lets the assistant say it does not know. And here is the prompt that goes to the model for an error code:</p><div class="out"><b>You should see</b><br>Answer the question using only the sources below. Name the source in square brackets. If the sources do not contain the answer, say exactly: "I could not find that in the knowledge base."<br><br>Sources:<br>[error-e105] E105 Network lost<br>The monitor has lost its network connection. Readings are stored on the unit and sent when the connection returns. Check your router and the Wi-Fi password in Settings. Severity: low.<br><br>Question: What does error E105 mean?</div></details><details><summary>Template: Part H (note)</summary><pre><code># Retrieval prototype: what I learned
+
+1. The question I tried that worked best, and its top 3 sources: ...
+2. A question that got a weak or wrong top result, and why I think so: ...
+3. The minimum score I chose, and what happened with a question about something else: ...
+4. What I would change before this goes into the API: ...</code></pre></details><details><summary>Template: Part H (README)</summary><pre><code>## Retrieval prototype
+
+    uv run python ask.py &quot;My monitor stopped responding&quot;
+
+Embeds the knowledge base in memory (a small local model, no key), takes the 3 closest documents,
+and asks the LLM to answer from them, naming the source. Without LLM_MODE=real a fake model answers,
+so you can see the retrieval and the sources. If the best score is below min_score the app says it
+could not find an answer, and does not call the model.</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What are the two steps of retrieve-then-generate, and what goes into the prompt?</li><li>What are the two guards that let the assistant say &ldquo;I do not know&rdquo;?</li><li>Why do you return the list of source ids from your code and not only trust the model to cite?</li></ol><details><summary>Answers</summary><ol><li>Retrieve: embed the question and take the closest documents. Generate: put those documents in the prompt, with their ids, and ask the model to answer using only them.</li><li>A minimum score on the best match (skip the model if it is too low), and an instruction in the prompt to say a fixed sentence when the sources do not contain the answer.</li><li>A model can forget or invent a citation. The ids from your code come from the retrieval itself, so they are always the documents that were really given to the model.</li></ol></details></section>
+<section id="game-day42" class="game"><h2><span class="n">+</span> &middot; Game: Retrieval Referee <span class="t">5 min</span></h2>
+<p><p>You built a small retrieve-then-answer prototype. Read the situation, pick what you expect, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day42-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day42-play">Start the game</button></div>
+<div id="day42-round" hidden><div class="gtop"><span id="day42-num">Round 1</span><span id="day42-score">Score 0</span></div>
+<pre hidden><code id="day42-code"></code></pre><div class="q" id="day42-q"></div><div class="choices" id="day42-opts"></div>
+<div class="fb" id="day42-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day42-next" hidden>Next round</button></p></div>
+<div id="day42-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day42",[{"c": "uv run python ask.py \"My monitor stopped responding\"   # a fake model", "q": "What do you see?", "o": ["The top 3 with scores, a fake answer, and three source ids", "Only a fake answer", "An error: the key is missing"], "a": 0, "out": "top 3: [('error-e101', 0.74), ('faq-reset', 0.7), ('error-e103', 0.68)]\nanswer:  (fake) I would answer from the sources listed below.\nsources: error-e101, faq-reset, error-e103", "why": "Without LLM_MODE=real a fake model answers, so you can still see the retrieval and the sources."}, {"c": "uv run python ask.py \"Where can I buy a coffee?\"   # min_score is 0.55", "q": "What does the assistant do?", "o": ["Says it could not find it, with no sources, and does not call the model", "Answers with the three closest documents", "Raises an error"], "a": 0, "out": "top 3: [('faq-serial-number', 0.46), ('faq-data-export', 0.43), ('faq-wifi', 0.42)]\nanswer:  I could not find that in the knowledge base.\nsources: none", "why": "The best score, 0.46, is below the minimum, so the model is skipped. It also saves money."}, {"c": "answer_question(\"Where can I buy a coffee?\", index, client, min_score=0.0)", "q": "With no minimum score, what happens to the coffee question?", "o": ["It gets an answer, with three unrelated sources", "It is still rejected", "It crashes"], "a": 0, "out": "min_score 0.55 -> I could not find that in the knowledge base. | none\nmin_score 0.0 -> (fake) I would answer from the sources listed below. | faq-serial-number, faq-data-export, faq-wifi", "why": "Retrieval always returns the nearest documents. The minimum score is what lets the assistant admit it does not know."}, {"c": "[error-e105] E105 Network lost\nThe monitor has lost its network connection. ...\n\nQuestion: What does error E105 mean?", "q": "Why is the id in square brackets in front of each source?", "o": ["So the model can name the source in its answer", "It is the file name", "It makes the prompt shorter"], "a": 0, "out": "Answer the question using only the sources below. Name the source in square brackets. If the sources do not contain the answer, say exactly: \"I could not find that in the knowledge base.\"\n\nSources:\n[error-e105] E105 Network lost\n...", "why": "Labels let the answer carry a citation that a person can check."}, {"c": "uv run pytest   # FakeEmbedder and a recording fake client, no key, no download", "q": "How many tests pass, and why does it need no model download?", "o": ["3, because the fakes replace the embedder and the model", "20, one per document", "1, with the real model"], "a": 0, "out": "3 passed in 0.55s", "why": "FakeEmbedder counts words into buckets, and the fake client records prompts, so the tests are fast and need no secret."}, {"c": "", "q": "Why do you return the source ids from your code, and not only trust the model to cite?", "o": ["The ids come from the retrieval, so they are always the documents really given to the model", "The model never cites", "Citations are not allowed"], "a": 0, "out": "", "why": "A model can forget or invent a citation. Your list of ids cannot."}],["Retrieval rookie", "Retrieval referee", "Assistant builder"],"Retrieve the closest documents, put them in the prompt with their ids, return the ids from code, and use a minimum score and a prompt rule so the assistant can say it does not know.");</script>
+<p><small>Tick &ldquo;Play the Retrieval Referee game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> the first working core of your assistant: it finds the closest documents by meaning, asks a model to answer from them, names its sources, and admits when it does not know. All of it is tested without a key or a download.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 42 checklist.</li><li>Share one line in the comments: which question surprised you, good or bad?</li><li><strong>Next:</strong> Sunday is the module 3 retrospective, and the second note of your checkpoint: why embeddings, not keyword search, are the right retrieval for your assistant.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
