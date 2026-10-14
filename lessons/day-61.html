@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 61 - Mixed practice: embeddings in pgvector</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 61 &middot; LEVEL 6: RAG &middot; MIXED PRACTICE</div><h1>Mixed practice: embeddings in pgvector</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to store 10 embeddings in pgvector and query them from Python, with the same ranking as in memory, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What do the image, the container and the volume do?</li><li>Which operator gives the cosine distance, and how do you sort for the nearest rows?</li></ol><details><summary>Answers</summary><ol><li>The image is the recipe, the container is one running copy, and the volume keeps the data outside the container so it survives a restart.</li><li><code>&lt;=&gt;</code>, sorted ascending: <code>ORDER BY embedding &lt;=&gt; query LIMIT 3</code>. A smaller distance is closer.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Another blank file. On Day 40 you ranked 10 documents in Python. Today the same ten go into a database. If everything is right, what should the ranking look like, compared with the one in memory?</strong></p><details><summary>Guess first, then open</summary><p>Identical: the same documents, the same model, the same cosine similarity, so the same order and the same scores. A database that gives a different answer than your in-memory code would be a bug, so the comparison is a good test. Today you also see something new: the data stays, so you can restart the database and ask again without embedding the documents.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
+<p>No new ideas today. The map of what you reuse:</p>
+<h3>Piece 1: embeddings and the knowledge base (Day 37 and Day 40)</h3>
+<p><code>FastEmbedder.embed</code> gives vectors of 384 numbers, and <code>load_knowledge_base</code> gives the documents.</p>
+<h3>Piece 2: a table with a vector column (Day 60)</h3>
+<p>A table <code>docs</code> with <code>doc_id</code> (the primary key), <code>title</code> and <code>embedding vector(384)</code>. The driver needs one extra step to speak vectors: <code>register_vector(conn)</code> from the <code>pgvector</code> Python package.</p>
+<h3>Piece 3: write so that you can run it twice</h3>
+<p>A script you run twice must not break or double the data. <strong>Upsert</strong> means &ldquo;insert, or update if the row already exists&rdquo;: <code>INSERT ... ON CONFLICT (doc_id) DO UPDATE ...</code>. A database that you can fill again and again is much easier to work with.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>register_vector</code> is like registering a custom type handler with Dapper or Npgsql, and the upsert is the same <code>INSERT ... ON CONFLICT</code> you would write for Postgres in any language (or <code>MERGE</code> in SQL Server).</div>
+<div class="box cap"><strong>Capstone:</strong> this is the first time the assistant&rsquo;s documents live outside Python&rsquo;s memory. On Saturday you do the same with chunks and add the metadata that makes a search useful.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">3 min</span></h2><p>No code to copy today. This is the <strong>contract</strong>: what your finished script must do. Start the database from Day 60 first (<code>docker compose up -d</code>).</p><table><tr><th>Part</th><th>What it does</th></tr><tr><td><code>store_ten.py</code></td><td>Loads the knowledge base and keeps the <strong>first 10</strong> documents. Embeds <code>title. body</code> of each one in a single call. Connects with <code>psycopg</code> and <code>register_vector</code>. Creates the table <code>docs</code> if it does not exist. <strong>Upserts</strong> the 10 rows. Prints the number of rows. Then, for two questions, prints the top 3 with their cosine similarity, using one SQL query each</td></tr></table><p>The two questions are <code>My monitor stopped responding</code> and <code>How long will it run on battery?</code>. When it works, run it twice: the second run must still say 10 rows. The output looks like this, and <strong>the scores must match your Day 40 ranking</strong>:</p><div class="out"><b>You should see</b><br>rows in docs: 10<br>My monitor stopped responding<br>&nbsp;&nbsp;0.70&nbsp;&nbsp;faq-reset<br>&nbsp;&nbsp;0.67&nbsp;&nbsp;manual-firmware-update<br>&nbsp;&nbsp;0.59&nbsp;&nbsp;manual-network-setup<br>How long will it run on battery?<br>&nbsp;&nbsp;0.71&nbsp;&nbsp;faq-battery-life<br>&nbsp;&nbsp;0.68&nbsp;&nbsp;manual-safety<br>&nbsp;&nbsp;0.61&nbsp;&nbsp;manual-firmware-update</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">25 min</span></h2>
+<p>Work in <code>my-ai-project</code> (you need <code>embedder.py</code>, the knowledge base and loader, Docker and the database from Day 60, and <code>uv add &quot;psycopg[binary]&quot; pgvector</code>), on a branch if you like (<code>git switch -c store-ten</code>).</p>
+<h3><span class="step">Step 1</span> The script</h3>
+<p>Write <code>store_ten.py</code> from the contract. Run it and match the output. Then <strong>compare</strong> the scores with what you got on Day 40 from the in-memory ranking. Are they the same?</p>
+<h3><span class="step">Step 2</span> Run it twice</h3>
+<p>Run it a second time. The row count must stay 10. Then <strong>break it on purpose</strong>: remove the <code>ON CONFLICT ...</code> part of the insert and run it again. Read the error. Put the upsert back.</p>
+<h3><span class="step">Step 3</span> Two more mistakes</h3>
+<p>Remove the line <code>register_vector(conn)</code> and run it. Then put it back and change <code>vector(384)</code> to <code>vector(3)</code> in the table definition (drop the table first: <code>DROP TABLE docs;</code>). Read both errors, then restore the script and the table.</p>
+<h3><span class="step">Step 4</span> Your turn: it stays</h3>
+<p>Write a second, very short script <code>ask_stored.py</code> that does <strong>not</strong> load or embed the documents. It embeds only a question and queries the table. Restart the database (<code>docker compose restart db</code>) and run it. Does it still find the documents? Then remove <code>[:10]</code> from the first script, store all 20 documents, and ask <code>My monitor stopped responding</code> again. What changed, and why?</p>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m &quot;Store embeddings in pgvector and query them&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;connection failed&rdquo; or &ldquo;Connection refused&rdquo;</strong>: the database is not running, or the port differs. Check <code>docker compose ps</code> and the port in your connection string.</li><li><strong>&ldquo;cannot adapt type 'ndarray'&rdquo;</strong>: <code>register_vector(conn)</code> is missing, or it ran before the connection existed.</li><li><strong>&ldquo;expected 384 dimensions, not 3&rdquo;</strong> (or the other way round): the table and the model disagree. The model gives 384 numbers. Drop the table and create it again with <code>vector(384)</code>.</li><li><strong>The scores differ from Day 40</strong>: check that you embed <code>title. body</code> in both places, and that the same 10 documents are in the table.</li><li><strong>The first run is slow</strong>: the embedding model is loaded, as on Day 37.</li></ul><details><summary>Hint: Step 1</summary><p>Embed all the documents in one call: <code>embedder.embed([...])</code> returns one row per text. Insert them in a loop with a parameterised statement (<code>%s</code>, never string formatting). For a query, embed the question as a list of one text and take the first vector, and use it twice in the SQL: once in the similarity column, once in <code>ORDER BY</code>.</p></details><details><summary>Solution: Step 1 and 2</summary><pre><code>from pathlib import Path
+
+import psycopg
+from pgvector.psycopg import register_vector
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.knowledge_base import load_knowledge_base
+
+DSN = &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;
+
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))[:10]
+embedder = FastEmbedder()
+vectors = embedder.embed([f&quot;{d.title}. {d.body}&quot; for d in documents])
+
+with psycopg.connect(DSN) as conn:
+    register_vector(conn)
+    conn.execute(&quot;CREATE TABLE IF NOT EXISTS docs (doc_id text PRIMARY KEY, title text NOT NULL, embedding vector(384) NOT NULL)&quot;)
+    for document, vector in zip(documents, vectors):
+        conn.execute(
+            &quot;INSERT INTO docs (doc_id, title, embedding) VALUES (%s, %s, %s) &quot;
+            &quot;ON CONFLICT (doc_id) DO UPDATE SET title = EXCLUDED.title, embedding = EXCLUDED.embedding&quot;,
+            (document.doc_id, document.title, vector),
+        )
+    count = conn.execute(&quot;SELECT count(*) FROM docs&quot;).fetchone()
+    print(&quot;rows in docs:&quot;, count[0] if count else 0)
+
+    for question in [&quot;My monitor stopped responding&quot;, &quot;How long will it run on battery?&quot;]:
+        query = embedder.embed([question])[0]
+        rows = conn.execute(
+            &quot;SELECT doc_id, 1 - (embedding &lt;=&gt; %s) AS similarity FROM docs ORDER BY embedding &lt;=&gt; %s LIMIT 3&quot;,
+            (query, query),
+        ).fetchall()
+        print(question)
+        for doc_id, similarity in rows:
+            print(f&quot;  {similarity:.2f}  {doc_id}&quot;)</code></pre><div class="out"><b>You should see</b><br>rows in docs: 10<br>My monitor stopped responding<br>&nbsp;&nbsp;0.70&nbsp;&nbsp;faq-reset<br>&nbsp;&nbsp;0.67&nbsp;&nbsp;manual-firmware-update<br>&nbsp;&nbsp;0.59&nbsp;&nbsp;manual-network-setup<br>How long will it run on battery?<br>&nbsp;&nbsp;0.71&nbsp;&nbsp;faq-battery-life<br>&nbsp;&nbsp;0.68&nbsp;&nbsp;manual-safety<br>&nbsp;&nbsp;0.61&nbsp;&nbsp;manual-firmware-update</div><p>The scores are the same as the in-memory ranking of Day 40: the database changed <em>where</em> the vectors live, not what the numbers say. Without the upsert, the second run fails:</p><div class="out"><b>You should see</b><br>psycopg.errors.UniqueViolation: duplicate key value violates unique constraint "docs_pkey"<br>DETAIL:  Key (doc_id)=(manual-calibration) already exists.</div><p>The upsert looks like this:</p><pre><code>INSERT INTO docs (doc_id, title, embedding) VALUES (%s, %s, %s)
+ON CONFLICT (doc_id) DO UPDATE SET title = EXCLUDED.title, embedding = EXCLUDED.embedding</code></pre></details><details><summary>Solution: Step 3</summary><div class="out"><b>You should see</b><br>psycopg.ProgrammingError: cannot adapt type 'ndarray' using placeholder '%s' (format: AUTO)</div><div class="out"><b>You should see</b><br>psycopg.errors.DataException: expected 3 dimensions, not 384</div><p>The first means the driver does not know how to send a numpy array: <code>register_vector</code> teaches it. The second is the dimension check you saw in psql on Day 60.</p></details><details><summary>Solution: Step 4</summary><pre><code>import sys
+
+import psycopg
+from pgvector.psycopg import register_vector
+
+from my_ai_project.embedder import FastEmbedder
+
+DSN = &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;
+question = &quot; &quot;.join(sys.argv[1:]) or &quot;My monitor stopped responding&quot;
+query = FastEmbedder().embed([question])[0]
+
+with psycopg.connect(DSN) as conn:
+    register_vector(conn)
+    rows = conn.execute(
+        &quot;SELECT doc_id, 1 - (embedding &lt;=&gt; %s) AS similarity FROM docs ORDER BY embedding &lt;=&gt; %s LIMIT 3&quot;, (query, query)
+    ).fetchall()
+print(question)
+for doc_id, similarity in rows:
+    print(f&quot;  {similarity:.2f}  {doc_id}&quot;)</code></pre><p>After <code>docker compose restart db</code>, only the question is embedded and the documents are still there:</p><div class="out"><b>You should see</b><br>My monitor stopped responding<br>&nbsp;&nbsp;0.70&nbsp;&nbsp;faq-reset<br>&nbsp;&nbsp;0.67&nbsp;&nbsp;manual-firmware-update<br>&nbsp;&nbsp;0.59&nbsp;&nbsp;manual-network-setup</div><p>With all 20 documents stored, the error pages are in the table too, and for the monitor question <code>error-e101</code> becomes the best match (as on Day 40). You can only find what is stored. The data stays in the volume as long as you do not run <code>docker compose down -v</code>.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why should the ranking from the database equal the one from memory?</li><li>What is an upsert, and why does the script need one?</li><li>What does <code>register_vector</code> do?</li></ol><details><summary>Answers</summary><ol><li>The model, the texts and the formula are the same, only the storage differs. If the results differ, there is a bug (a different text, a different model, or a wrong operator).</li><li>An insert that updates the row if it already exists. Without it, running the script twice fails with a duplicate key or doubles the data.</li><li>It teaches the database driver how to send and read the <code>vector</code> type as numpy arrays.</li></ol></details></section>
+<section id="game-day61" class="game"><h2><span class="n">+</span> &middot; Game: Store and Query <span class="t">5 min</span></h2>
+<p><p>You store ten embeddings in Postgres and query them. Read what you run, pick what you expect, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day61-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day61-play">Start the game</button></div>
+<div id="day61-round" hidden><div class="gtop"><span id="day61-num">Round 1</span><span id="day61-score">Score 0</span></div>
+<pre hidden><code id="day61-code"></code></pre><div class="q" id="day61-q"></div><div class="choices" id="day61-opts"></div>
+<div class="fb" id="day61-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day61-next" hidden>Next round</button></p></div>
+<div id="day61-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day61",[{"c": "python store_ten.py   # the first 10 documents, question: My monitor stopped responding", "q": "How do the scores compare with the in-memory ranking of Day 40?", "o": ["The same documents in the same order, with the same scores", "Different documents", "Higher scores"], "a": 0, "out": "rows in docs: 10\nMy monitor stopped responding\n  0.70  faq-reset\n  0.67  manual-firmware-update\n  0.59  manual-network-setup", "why": "The model, the texts and the formula are the same, only the storage changed. A different ranking would mean a bug."}, {"c": "# run store_ten.py a second time, with ON CONFLICT ... DO UPDATE", "q": "How many rows are in the table after the second run?", "o": ["Still 10", "20", "An error"], "a": 0, "out": "rows in docs: 10", "why": "An upsert updates a row that already exists, so a script that runs twice does not double the data."}, {"c": "# the same script, but the insert has no ON CONFLICT part, second run", "q": "What happens?", "o": ["UniqueViolation: duplicate key value", "Nothing", "The rows are replaced"], "a": 0, "out": "psycopg.errors.UniqueViolation: duplicate key value violates unique constraint \"docs_pkey\"\nDETAIL:  Key (doc_id)=(manual-calibration) already exists.", "why": "The primary key says a doc_id can exist only once. The upsert is the way around it."}, {"c": "# the script without register_vector(conn)\nconn.execute(\"INSERT ... VALUES (%s, %s, %s)\", (doc_id, title, vector))", "q": "What does the driver say about a numpy array?", "o": ["It cannot adapt type 'ndarray'", "It sends it as text", "It rounds it"], "a": 0, "out": "psycopg.ProgrammingError: cannot adapt type 'ndarray' using placeholder '%s' (format: AUTO)", "why": "register_vector teaches the driver how to send and read the vector type."}, {"c": "CREATE TABLE docs (..., embedding vector(3));   # but the model gives 384 numbers", "q": "What happens on the insert?", "o": ["DataException: expected 3 dimensions, not 384", "It keeps the first 3 numbers", "It works"], "a": 0, "out": "psycopg.errors.DataException: expected 3 dimensions, not 384", "why": "The table and the model must agree on the size. Drop the table and create it again with the right size."}, {"c": "docker compose restart db\npython ask_stored.py   # embeds only the question, no documents", "q": "Are the documents still found?", "o": ["Yes: the data lives in the volume", "No: a restart deletes the data", "Only after storing them again"], "a": 0, "out": "My monitor stopped responding\n  0.70  faq-reset\n  0.67  manual-firmware-update\n  0.59  manual-network-setup", "why": "A restart keeps the volume. Only docker compose down -v deletes the data."}],["Store rookie", "Store and query", "Persistence builder"],"The database gives the same ranking as memory, an upsert lets a script run twice, the driver needs register_vector, the dimensions must match, and the data survives a restart.");</script>
+<p><small>Tick &ldquo;Play the Store and Query game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> embeddings stored in a real database, a nearest-neighbour query in one SQL statement that gives the same ranking as your in-memory code, and a script that you can run twice. The data survives a restart.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 61 checklist.</li><li>Share one line in the comments: did your scores match Day 40?</li><li><strong>Next:</strong> Friday is a teach-back: explain why we use a vector database. You will measure what an index does to the speed of a search.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

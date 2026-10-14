@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 62 - Teach-back: why a vector database</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 62 &middot; LEVEL 6: RAG &middot; TEACH-BACK</div><h1>Teach-back: why a vector database</h1>
+<div class="meta"><span>30 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to explain in 5 sentences why vectors live in a database, with the speed, accuracy and cost of an index measured.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A colleague says: &ldquo;I keep 1,000 embeddings in a numpy array and it works. Why would I run a database for vectors?&rdquo; Write what you would answer in two lines. Then write one situation in which the colleague is right, and one in which they are not.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p></section>
+<section><h2><span class="n">2</span> &middot; Explain it <span class="t">10 min</span></h2><p><strong>Your task:</strong> explain <strong>why we use a vector database</strong> (here: PostgreSQL with pgvector) instead of a list in memory, in <strong>5 sentences</strong> or a <strong>60-second voice note</strong>.</p><ul><li><strong>Who you are talking to:</strong> the colleague above, who is happy with numpy.</li><li><strong>Use these words:</strong> persist, index, nearest, filter, approximate.</li><li><strong>Rules:</strong> no notes, and be fair: give the case where the database is <em>not</em> needed.</li></ul><p>Write it or record it now. A rough first try is exactly right.</p><details><summary>Stuck? Sentence starters</summary><p>Use these if you freeze:</p><pre><code>1. A vector database keeps ... so that ...
+2. Searching without an index means ..., so it gets ... when there are more rows.
+3. An index such as HNSW ..., but the answer is only ...
+4. Because it is SQL, I can also ...
+5. But for ... rows I would not use one, because ...</code></pre></details></section>
+<section><h2><span class="n">3</span> &middot; Check it against the key points <span class="t">8 min</span></h2><p>Read the six key points and tick each one that <strong>your explanation said clearly</strong>. Be strict.</p><ol><li><strong>Persistence and sharing</strong>: the vectors survive a restart, and several programs can use them.</li><li><strong>Speed at scale</strong>: an exact search compares the question with <em>every</em> row, so it slows down as the data grows. An <strong>index</strong> (such as HNSW) finds the nearest rows without looking at all of them.</li><li><strong>Approximate</strong>: an index usually gives <em>almost</em> the same answer, not exactly the same. You trade a little accuracy (recall) for a lot of speed.</li><li><strong>SQL</strong>: you can filter by metadata (language, product, date), join other tables, and update or delete rows, in the same place as the rest of your data.</li><li><strong>Not always needed</strong>: for a few hundred or thousand chunks that rarely change, an array in memory is simple and fast enough.</li><li><strong>It costs something</strong>: time to build an index, memory, and one more thing to run and back up.</li></ol><details><summary>A model answer in 5 sentences</summary><p>A vector database keeps the embeddings so that they survive a restart and several programs can use them. Searching without an index means comparing the question with every row, so it gets slower as the data grows, and an index such as HNSW finds the nearest rows without checking all of them. The answer from an index is only approximate, so I trade a little accuracy for a lot of speed. Because it is SQL, I can also filter by metadata and join other tables in the same place as my other data. But for a few hundred chunks that rarely change, an array in memory is simpler and fast enough, so I would not run a database for that.</p></details><p>Count your ticks. <strong>6</strong>: very clear. <strong>3 to 5</strong>: good, you found your gaps. <strong>0 to 2</strong>: also fine, the next step fills them in.</p></section>
+<section><h2><span class="n">4</span> &middot; Look at the evidence <span class="t">5 min</span></h2><p>Do not trust the argument. Measure it. This script puts <strong>50,000 synthetic vectors</strong> of 384 numbers into your database (they are grouped around 200 &ldquo;topics&rdquo;, like real text embeddings are, and every question is near a topic). It runs 20 questions with an exact search, then builds an HNSW index and runs the same 20 questions again, and compares the answers. It needs the database from Day 60 (port 5433). Save it as <code>scale_test.py</code>:</p><pre><code>import time
+
+import numpy as np
+import psycopg
+from pgvector.psycopg import register_vector
+
+DSN = &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;
+ROWS, DIMS, QUERIES, TOPICS = 50_000, 384, 20, 200
+
+# Real embeddings are not random: texts about the same topic sit close together. So we make 200 &quot;topics&quot;
+# and put every vector near one of them, and every question near one of them.
+rng = np.random.default_rng(0)
+topics = rng.normal(size=(TOPICS, DIMS)).astype(np.float32)
+
+
+def near_topics(count: int) -&gt; np.ndarray:
+    points = topics[rng.integers(0, TOPICS, size=count)] + 0.4 * rng.normal(size=(count, DIMS)).astype(np.float32)
+    return points / np.linalg.norm(points, axis=1, keepdims=True)
+
+
+vectors = near_topics(ROWS)
+queries = near_topics(QUERIES)
+
+SEARCH = &quot;SELECT id FROM big ORDER BY embedding &lt;=&gt; %s LIMIT 10&quot;
+
+
+def run_queries(conn: psycopg.Connection) -&gt; tuple[float, list[list[int]]]:
+    started = time.perf_counter()
+    results = [[row[0] for row in conn.execute(SEARCH, (q,)).fetchall()] for q in queries]
+    return (time.perf_counter() - started) / QUERIES * 1000, results
+
+
+with psycopg.connect(DSN, autocommit=True) as conn:
+    register_vector(conn)
+    conn.execute(&quot;DROP TABLE IF EXISTS big&quot;)
+    conn.execute(&quot;CREATE TABLE big (id int PRIMARY KEY, embedding vector(384) NOT NULL)&quot;)
+    with conn.cursor().copy(&quot;COPY big (id, embedding) FROM STDIN WITH (FORMAT BINARY)&quot;) as copy:
+        copy.set_types([&quot;int4&quot;, &quot;vector&quot;])
+        for i, v in enumerate(vectors):
+            copy.write_row((i, v))
+    print(&quot;rows:&quot;, conn.execute(&quot;SELECT count(*) FROM big&quot;).fetchone()[0])
+
+    plan = conn.execute(&quot;EXPLAIN &quot; + SEARCH, (queries[0],)).fetchall()
+    print(&quot;without an index:&quot;, [line[0].strip() for line in plan if &quot;Scan&quot; in line[0]][0])
+    exact_ms, exact = run_queries(conn)
+    print(f&quot;  exact search: {exact_ms:.1f} ms per query&quot;)
+
+    started = time.perf_counter()
+    conn.execute(&quot;CREATE INDEX big_hnsw ON big USING hnsw (embedding vector_cosine_ops)&quot;)
+    print(f&quot;building the HNSW index: {time.perf_counter() - started:.1f} s&quot;)
+    plan = conn.execute(&quot;EXPLAIN &quot; + SEARCH, (queries[0],)).fetchall()
+    print(&quot;with the index:&quot;, [line[0].strip() for line in plan if &quot;Scan&quot; in line[0]][0])
+    fast_ms, approx = run_queries(conn)
+    recall = np.mean([len(set(a) &amp; set(e)) / 10 for a, e in zip(approx, exact)])
+    print(f&quot;  index search: {fast_ms:.1f} ms per query, recall of the top 10: {recall:.0%}&quot;)
+    conn.execute(&quot;DROP TABLE big&quot;)</code></pre><p><strong>Predict first:</strong> how much faster will the index be, and how many of the true top 10 will it find?</p><div class="out"><b>You should see</b><br>rows: 50000<br>without an index: ->&nbsp;&nbsp;Parallel Seq Scan on big&nbsp;&nbsp;(cost=0.00..16694.33 rows=531707 width=12)<br>&nbsp;&nbsp;exact search: 8.6 ms per query<br>building the HNSW index: 10.2 s<br>with the index: ->&nbsp;&nbsp;Index Scan using big_hnsw on big&nbsp;&nbsp;(cost=638.72..91196.00 rows=50000 width=12)<br>&nbsp;&nbsp;index search: 0.6 ms per query, recall of the top 10: 95%</div><p>On this laptop the index is about <strong>14 times faster</strong> (0.6 ms against 8.6 ms), it finds <strong>95 percent</strong> of the true top 10 (the rest are near neighbours instead), and it needed about <strong>10 seconds</strong> to build. The plan changes from a scan of every row (<code>Seq Scan</code>) to <code>Index Scan using big_hnsw</code>. Your numbers will be different: speeds depend on your machine. The pattern is what matters: <em>faster, approximate, and a build cost</em>. With your 26 chunks, the planner would not even use the index, and that is fine.</p><p><small>The vectors are synthetic, made for this experiment, so the table says nothing about your assistant&rsquo;s quality. And with 50,000 rows the exact search is still only 9 ms: the gap becomes important with millions of rows or many users at once.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Fix the biggest gap <span class="t">3 min</span></h2><p>Look at the key points you did not tick. Pick the <strong>one</strong> that matters most and write a better sentence for it, using the numbers. Did you give the fair case where a database is not needed? Add what is missing, and save your five sentences next to your earlier teach-backs.</p></section>
+<section id="game-day62" class="game"><h2><span class="n">+</span> &middot; Game: Why a Vector Database <span class="t">5 min</span></h2>
+<p><p>You measured exact and indexed search on 50,000 vectors (synthetic, on one laptop). Read the numbers, pick the meaning, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day62-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day62-play">Start the game</button></div>
+<div id="day62-round" hidden><div class="gtop"><span id="day62-num">Round 1</span><span id="day62-score">Score 0</span></div>
+<pre hidden><code id="day62-code"></code></pre><div class="q" id="day62-q"></div><div class="choices" id="day62-opts"></div>
+<div class="fb" id="day62-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day62-next" hidden>Next round</button></p></div>
+<div id="day62-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day62",[{"c": "# no index: ORDER BY embedding <=> query LIMIT 10 on 50,000 rows", "q": "What does the plan say, and about how long does a query take?", "o": ["Parallel Seq Scan: it reads every row, about 8.6 ms", "Index Scan, about 0.6 ms", "It uses no table"], "a": 0, "out": "rows: 50000\nwithout an index: ->  Parallel Seq Scan on big  (cost=0.00..16694.33 rows=531707 width=12)\n  exact search: 8.6 ms per query", "why": "Without an index the database compares the question with every row, so the work grows with the data."}, {"c": "CREATE INDEX big_hnsw ON big USING hnsw (embedding vector_cosine_ops)", "q": "What does the index cost?", "o": ["About 10 seconds to build, here", "Nothing", "A change in the answers to exactly zero"], "a": 0, "out": "building the HNSW index: 10.2 s", "why": "Building an index takes time (and memory). You pay it once, and then every search is faster."}, {"c": "# the same 20 questions, with the index", "q": "How fast is a search with the index, and what is the plan?", "o": ["About 0.6 ms (about 14 times faster): Index Scan using big_hnsw", "The same speed", "Slower"], "a": 0, "out": "with the index: ->  Index Scan using big_hnsw on big  (cost=638.72..91196.00 rows=50000 width=12)\n  index search: 0.6 ms per query, recall of the top 10: 95%", "why": "The index finds near neighbours without looking at every row. Your numbers will differ: the pattern is what matters."}, {"c": "recall of the top 10: 95%", "q": "What does this mean?", "o": ["On average 9.5 of the true top 10 are found, the rest are near neighbours", "95 percent of queries fail", "The answers are random"], "a": 0, "out": "index search: 0.6 ms per query, recall of the top 10: 95%", "why": "An HNSW index is approximate: a little accuracy is traded for a lot of speed."}, {"c": "# the table of the lab has 26 chunks\nEXPLAIN SELECT ... ORDER BY embedding <=> ... LIMIT 3;", "q": "Does the planner use the HNSW index for 26 rows?", "o": ["No: a sequential scan is cheaper for a table this small", "Yes, always", "It refuses to run"], "a": 0, "out": "Limit  (cost=14.17..14.18 rows=3 width=22)\n  ->  Seq Scan on chunks chunks_1  (cost=0.00..13.26 rows=26 width=1544)", "why": "For a few rows the index is not worth it, and the planner knows. That is fine."}, {"c": "", "q": "Which is a fair reason to use a vector database, and which is not?", "o": ["Fair: persistence, sharing, filters and speed at scale. Not: because it sounds modern, with 200 chunks", "Always use one", "Never use one"], "a": 0, "out": "", "why": "For a few hundred chunks that rarely change, an array in memory is simple and fast enough."}],["Index rookie", "Index reader", "Search architect"],"A vector database keeps the vectors, shares them, filters them with SQL, and with an index searches much faster but approximately, at the price of build time, memory and one more thing to run.");</script>
+<p><small>Tick &ldquo;Play the Why a Vector Database game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">6</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a fair, balanced explanation of why vectors live in a database, and a measurement that shows the trade: much faster, almost the same answer, a build cost.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 62 checklist.</li><li>Share one line in the comments: when is numpy enough for you?</li><li><strong>Next:</strong> Saturday is Project Lab 9: Postgres and pgvector running in Docker, a <code>chunks</code> table, and one SQL query that returns the nearest 3 chunks.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

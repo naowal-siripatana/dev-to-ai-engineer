@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 63 - Project Lab 9: chunks in Postgres</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 63 &middot; LEVEL 6: RAG &middot; PROJECT LAB</div><h1>Project Lab 9: chunks in Postgres</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to store chunks with their metadata in Postgres, and return the nearest 3 with one SQL query, with tests that skip when the database is down.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why do you write an upsert and not a plain insert when you fill the database?</li><li>What does an HNSW index trade for speed?</li></ol><details><summary>Answers</summary><ol><li>So the script can run twice without a duplicate key error or doubled data.</li><li>Exactness: it finds almost the same nearest rows, not always exactly the same (the recall is below 100 percent), and it takes time and memory to build.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>On Day 35 you cut documents into chunks of at most 40 tokens, in memory. Tomorrow someone asks: &ldquo;Which chunk came from which document, and where in it?&rdquo; What does a chunk need to carry with it to answer that?</strong></p><details><summary>Guess first, then open</summary><p>At least the <strong>document id</strong> and the <strong>position</strong> of the chunk in it. That is called <strong>metadata</strong>: facts <em>about</em> the text. Without them an answer cannot say where it came from. Today every chunk is stored with its document id, its index and its token count, next to the vector.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: one row per chunk</h3>
+<p>The table <code>chunks</code> has one row for each chunk: the <code>doc_id</code>, the <code>chunk_index</code> (its position in the document), the <code>text</code>, its number of <code>tokens</code> and its <code>embedding</code>. A <strong>unique constraint</strong> on <code>(doc_id, chunk_index)</code> says that one position of one document can only exist once, which is what makes the upsert possible.</p>
+<h3>Piece 2: a small class owns the SQL</h3>
+<p>A class <code>ChunkStore</code> hides the SQL from the rest of the code: <code>init_schema</code>, <code>add_chunks</code>, <code>count</code> and <code>search</code>. The rest of your app asks for chunks and does not know the table. Two safety rules: values always go in as <strong>parameters</strong> (never glued into the SQL text), and a table name, which cannot be a parameter, is checked against a strict pattern first.</p>
+<h3>Piece 3: test the database part without losing your data</h3>
+<p>Tests that need a database are slower and need Docker. Use a <strong>separate table name</strong> for the tests, drop it before and after, and <strong>skip</strong> the tests (do not fail them) when the database is not running. That way a friend who has no Docker can still run the other tests.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>ChunkStore</code> is a repository class over Npgsql or Dapper, <code>sql.Identifier</code> is like quoting an identifier safely instead of building SQL strings, and skipping a test when the database is down is like marking an integration test with a category that CI runs only when a container is available.</div>
+<div class="box cap"><strong>Capstone:</strong> this is the real storage of <code>ai-knowledge-assistant</code>. Next week you add more metadata (language, product, type) and a search endpoint that returns cited chunks.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. The database is the one from Day 60 (<code>compose.yaml</code> and <code>db/init.sql</code>, unchanged). The class that owns the SQL, <code>src/my_ai_project/store.py</code>:</p><pre><code>import re
+from dataclasses import dataclass
+
+import numpy as np
+import psycopg
+from pgvector.psycopg import register_vector
+from psycopg import sql
+
+from my_ai_project.chunking import Chunk
+
+TABLE_NAME = re.compile(r&quot;^[a-z_][a-z0-9_]*$&quot;)
+
+
+@dataclass
+class Found:
+    doc_id: str
+    chunk_index: int
+    text: str
+    similarity: float
+
+
+class ChunkStore:
+    def __init__(self, dsn: str, table: str = &quot;chunks&quot;, dims: int = 384) -&gt; None:
+        if not TABLE_NAME.match(table):
+            raise ValueError(f&quot;not a safe table name: {table!r}&quot;)
+        self.dsn = dsn
+        self.table = sql.Identifier(table)
+        self.index = sql.Identifier(f&quot;{table}_embedding_idx&quot;)
+        self.dims = dims
+
+    def connect(self) -&gt; psycopg.Connection:
+        conn = psycopg.connect(self.dsn)
+        register_vector(conn)
+        return conn
+
+    def init_schema(self) -&gt; None:
+        with self.connect() as conn:
+            conn.execute(
+                sql.SQL(
+                    &quot;CREATE TABLE IF NOT EXISTS {table} (&quot;
+                    &quot;id bigserial PRIMARY KEY, doc_id text NOT NULL, chunk_index int NOT NULL, &quot;
+                    &quot;text text NOT NULL, tokens int NOT NULL, embedding vector({dims}) NOT NULL, &quot;
+                    &quot;UNIQUE (doc_id, chunk_index))&quot;
+                ).format(table=self.table, dims=sql.Literal(self.dims))
+            )
+            conn.execute(
+                sql.SQL(&quot;CREATE INDEX IF NOT EXISTS {index} ON {table} USING hnsw (embedding vector_cosine_ops)&quot;).format(
+                    index=self.index, table=self.table
+                )
+            )
+
+    def add_chunks(self, chunks: list[Chunk], vectors: np.ndarray) -&gt; int:
+        query = sql.SQL(
+            &quot;INSERT INTO {table} (doc_id, chunk_index, text, tokens, embedding) VALUES (%s, %s, %s, %s, %s) &quot;
+            &quot;ON CONFLICT (doc_id, chunk_index) DO UPDATE SET &quot;
+            &quot;text = EXCLUDED.text, tokens = EXCLUDED.tokens, embedding = EXCLUDED.embedding&quot;
+        ).format(table=self.table)
+        with self.connect() as conn:
+            for chunk, vector in zip(chunks, vectors):
+                conn.execute(query, (chunk.doc_id, chunk.index, chunk.text, chunk.tokens, vector))
+        return len(chunks)
+
+    def count(self) -&gt; int:
+        with self.connect() as conn:
+            row = conn.execute(sql.SQL(&quot;SELECT count(*) FROM {table}&quot;).format(table=self.table)).fetchone()
+        return int(row[0]) if row else 0
+
+    def search(self, query_vector: np.ndarray, top_k: int = 3) -&gt; list[Found]:
+        query = sql.SQL(
+            &quot;SELECT doc_id, chunk_index, text, 1 - (embedding &lt;=&gt; %s) AS similarity &quot;
+            &quot;FROM {table} ORDER BY embedding &lt;=&gt; %s LIMIT %s&quot;
+        ).format(table=self.table)
+        with self.connect() as conn:
+            rows = conn.execute(query, (query_vector, query_vector, top_k)).fetchall()
+        return [Found(doc_id, chunk_index, text, round(float(similarity), 2)) for doc_id, chunk_index, text, similarity in rows]
+
+    def drop(self) -&gt; None:
+        with self.connect() as conn:
+            conn.execute(sql.SQL(&quot;DROP TABLE IF EXISTS {table}&quot;).format(table=self.table))</code></pre><p>A script that chunks the knowledge base with your splitter from Day 35, embeds the chunks, and stores them. <code>ingest.py</code>:</p><pre><code>from pathlib import Path
+
+from my_ai_project.chunking import chunk_documents
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.knowledge_base import load_knowledge_base
+from my_ai_project.store import ChunkStore
+
+DSN = &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;
+
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+chunks = chunk_documents(documents, max_tokens=40)
+vectors = FastEmbedder().embed([f&quot;{chunk.text}&quot; for chunk in chunks])
+
+store = ChunkStore(DSN)
+store.init_schema()
+store.add_chunks(chunks, vectors)
+print(f&quot;stored {len(chunks)} chunks from {len(documents)} documents; rows in the table: {store.count()}&quot;)</code></pre><div class="out"><b>You should see</b><br>stored 26 chunks from 20 documents; rows in the table: 26</div><p>A script that asks a question and prints the nearest 3 chunks. <code>ask_db.py</code>:</p><pre><code>import sys
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.store import ChunkStore
+
+DSN = &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;
+question = &quot; &quot;.join(sys.argv[1:]) or &quot;My monitor stopped responding&quot;
+
+query_vector = FastEmbedder().embed([question])[0]
+print(question)
+for found in ChunkStore(DSN).search(query_vector, top_k=3):
+    print(f&quot;  {found.similarity:.2f}  {found.doc_id} #{found.chunk_index}: {found.text[:60]}&quot;)</code></pre><div class="out"><b>You should see</b><br>My monitor stopped responding<br>&nbsp;&nbsp;0.80&nbsp;&nbsp;error-e101 #0: The sensor did not answer within 10 seconds. Check that the<br>&nbsp;&nbsp;0.72&nbsp;&nbsp;error-e105 #0: The monitor has lost its network connection. Readings are st<br>&nbsp;&nbsp;0.72&nbsp;&nbsp;error-e102 #0: The battery is under 15 percent. Connect the power cable and<br>How long does the battery last?<br>&nbsp;&nbsp;0.75&nbsp;&nbsp;faq-battery-life #0: A full charge lasts about 8 hours without mains power. Charg<br>&nbsp;&nbsp;0.64&nbsp;&nbsp;error-e102 #0: The battery is under 15 percent. Connect the power cable and<br>&nbsp;&nbsp;0.63&nbsp;&nbsp;manual-safety #0: Disconnect the power cable before you open the casing. Insta<br>Where can I buy a coffee?<br>&nbsp;&nbsp;0.45&nbsp;&nbsp;faq-serial-number #0: The serial number is on the label under the device, and on t<br>&nbsp;&nbsp;0.45&nbsp;&nbsp;faq-data-export #0: Yes. Open the web dashboard, choose Readings, and press Expo<br>&nbsp;&nbsp;0.45&nbsp;&nbsp;faq-warranty #0: The monitor has a two year warranty on manufacturing faults.</div><p>And the query that the lab is about: <strong>one SQL query</strong> that returns the nearest 3 chunks. Here the question is the first chunk of <code>error-e101</code> itself, so you can see it come out first with a similarity of 1.00. <code>nearest.sql</code>:</p><pre><code>SELECT doc_id, chunk_index, left(text, 40) AS start_of_text,
+       round((1 - (embedding &lt;=&gt; (SELECT embedding FROM chunks WHERE doc_id = &#x27;error-e101&#x27; AND chunk_index = 0)))::numeric, 2) AS similarity
+FROM chunks
+ORDER BY embedding &lt;=&gt; (SELECT embedding FROM chunks WHERE doc_id = &#x27;error-e101&#x27; AND chunk_index = 0)
+LIMIT 3;</code></pre><div class="out"><b>You should see</b><br>&nbsp;&nbsp;&nbsp;&nbsp;doc_id&nbsp;&nbsp;&nbsp;&nbsp;| chunk_index |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;start_of_text&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | similarity<br>--------------+-------------+------------------------------------------+------------<br> error-e101&nbsp;&nbsp; |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0 | The sensor did not answer within 10 seco |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.00<br> error-e106&nbsp;&nbsp; |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0 | The sensor firmware and the monitor firm |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0.79<br> faq-warranty |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0 | The monitor has a two year warranty on m |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0.76<br>(3 rows)</div></section>
+<section><h2><span class="n">5</span> &middot; Build it <span class="t">2.5 h</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch (<code>git switch -c lab-9</code>). You need Docker, <code>compose.yaml</code> and <code>db/init.sql</code> from Day 60, the chunker (<code>chunking.py</code>, Day 35), <code>embedder.py</code>, the knowledge base and loader, and <code>uv add &quot;psycopg[binary]&quot; pgvector</code>.</p>
+<p><strong>Done looks like:</strong> the database runs in Docker, a <code>chunks</code> table holds your chunks with their metadata, <strong>one SQL query</strong> returns the nearest 3 chunks, <code>ingest.py</code> can run twice without duplicates, three database tests pass (and skip when the database is down), the README is updated, and it is pushed.</p>
+<h3><span class="step">Part A</span> Design first (15 min)</h3>
+<p>On paper: the columns of <code>chunks</code> and the unique constraint, what the class <code>ChunkStore</code> must offer, and which test needs the database. Compare with the worked example.</p>
+<h3><span class="step">Part B</span> The database (15 min)</h3>
+<p>Start it: <code>docker compose up -d</code>, and check <code>docker compose ps</code> says healthy. If it was reset (<code>down -v</code>), <code>init.sql</code> turns the extension on again.</p>
+<h3><span class="step">Part C</span> The store (40 min)</h3>
+<p>Write <code>store.py</code>: a safe table name, <code>init_schema</code> (the table and an HNSW index on the embedding with cosine distance), <code>add_chunks</code> as an upsert, <code>count</code>, <code>search</code> and <code>drop</code>. Check it with <code>uv run mypy src</code>.</p>
+<h3><span class="step">Part D</span> Ingest (25 min)</h3>
+<p>Write <code>ingest.py</code>. Run it <strong>twice</strong>: both runs must print <code>26 chunks</code> and 26 rows. Then look at the table in <code>psql</code> (<code>\d chunks</code>) and at the chunks of one document.</p>
+<h3><span class="step">Part E</span> Ask (15 min)</h3>
+<p>Write <code>ask_db.py</code> and ask the three questions of the worked example. Compare the answers with Day 42: are the first results the same? (They can differ a little, because chunks are shorter than whole documents now.)</p>
+<h3><span class="step">Part F</span> The one SQL query (20 min)</h3>
+<p>In <code>psql</code>, run the query of <code>nearest.sql</code>, with the first chunk of a document of your choice. It is today&rsquo;s &ldquo;done looks like&rdquo;. Then run <code>EXPLAIN</code> on a similar query. <strong>Predict</strong> whether it uses the index with 26 rows.</p>
+<h3><span class="step">Part G</span> Tests (30 min)</h3>
+<p>Write the three tests of the template: the nearest chunk comes first (use the fake embedder with 64 dimensions and a table called <code>chunks_test</code>), adding the same chunks twice does not duplicate them, and an unsafe table name is rejected. Run <code>uv run pytest</code> with the database running, and again after <code>docker compose stop db</code>. <strong>Mid-point check-in</strong> (do it after Part D): <code>docker compose ps</code> is healthy, <code>ingest.py</code> prints 26 rows twice, and mypy has no issues. Take a 10-minute break.</p>
+<h3><span class="step">Part H</span> Break it on purpose (10 min)</h3>
+<p>Stop the database (<code>docker compose stop db</code>) and run <code>ask_db.py</code>. Read the error. Start it again (<code>docker compose start db</code>). Is your data still there?</p>
+<h3><span class="step">Part I</span> README, note, push, reflect (20 min)</h3>
+<p>Add the README section and write the note (templates in Stuck). Commit and push: <code>git add .</code>, <code>git commit -m &quot;Store chunks in Postgres with pgvector&quot;</code>, <code>git push</code>. Write three lines: what worked, what broke, and what you would add before real users come.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;type vector does not exist&rdquo;</strong>: the extension is not on in that database. Run <code>CREATE EXTENSION vector;</code>, or reset with <code>docker compose down -v</code> and <code>up -d</code>.</li><li><strong>&ldquo;expected 384 dimensions, not 64&rdquo;</strong>: a table was created with another size. The tests use <code>chunks_test</code> with 64 dimensions, and the app uses <code>chunks</code> with 384. Do not mix the tables.</li><li><strong>Ingest says 26 rows the first time and 52 the second</strong>: the upsert is missing, or the unique constraint is not on <code>(doc_id, chunk_index)</code>.</li><li><strong>The tests are skipped</strong>: the database is not running, or the connection string differs. Check <code>docker compose ps</code>.</li><li><strong>Your first results differ from the lesson</strong>: your chunk size or your documents differ. Compare the number of chunks first.</li></ul><details><summary>Hint: Part C</summary><p>Use <code>psycopg.sql</code> to build statements: <code>sql.Identifier(table)</code> for the name and <code>sql.Literal(dims)</code> for the size, and <code>%s</code> parameters for the values. The upsert is <code>INSERT ... ON CONFLICT (doc_id, chunk_index) DO UPDATE SET ...</code>. For the search use the same vector twice: in the similarity column and in <code>ORDER BY embedding &lt;=&gt; %s LIMIT %s</code>.</p></details><details><summary>Solution: Parts C and D</summary><pre><code>import re
+from dataclasses import dataclass
+
+import numpy as np
+import psycopg
+from pgvector.psycopg import register_vector
+from psycopg import sql
+
+from my_ai_project.chunking import Chunk
+
+TABLE_NAME = re.compile(r&quot;^[a-z_][a-z0-9_]*$&quot;)
+
+
+@dataclass
+class Found:
+    doc_id: str
+    chunk_index: int
+    text: str
+    similarity: float
+
+
+class ChunkStore:
+    def __init__(self, dsn: str, table: str = &quot;chunks&quot;, dims: int = 384) -&gt; None:
+        if not TABLE_NAME.match(table):
+            raise ValueError(f&quot;not a safe table name: {table!r}&quot;)
+        self.dsn = dsn
+        self.table = sql.Identifier(table)
+        self.index = sql.Identifier(f&quot;{table}_embedding_idx&quot;)
+        self.dims = dims
+
+    def connect(self) -&gt; psycopg.Connection:
+        conn = psycopg.connect(self.dsn)
+        register_vector(conn)
+        return conn
+
+    def init_schema(self) -&gt; None:
+        with self.connect() as conn:
+            conn.execute(
+                sql.SQL(
+                    &quot;CREATE TABLE IF NOT EXISTS {table} (&quot;
+                    &quot;id bigserial PRIMARY KEY, doc_id text NOT NULL, chunk_index int NOT NULL, &quot;
+                    &quot;text text NOT NULL, tokens int NOT NULL, embedding vector({dims}) NOT NULL, &quot;
+                    &quot;UNIQUE (doc_id, chunk_index))&quot;
+                ).format(table=self.table, dims=sql.Literal(self.dims))
+            )
+            conn.execute(
+                sql.SQL(&quot;CREATE INDEX IF NOT EXISTS {index} ON {table} USING hnsw (embedding vector_cosine_ops)&quot;).format(
+                    index=self.index, table=self.table
+                )
+            )
+
+    def add_chunks(self, chunks: list[Chunk], vectors: np.ndarray) -&gt; int:
+        query = sql.SQL(
+            &quot;INSERT INTO {table} (doc_id, chunk_index, text, tokens, embedding) VALUES (%s, %s, %s, %s, %s) &quot;
+            &quot;ON CONFLICT (doc_id, chunk_index) DO UPDATE SET &quot;
+            &quot;text = EXCLUDED.text, tokens = EXCLUDED.tokens, embedding = EXCLUDED.embedding&quot;
+        ).format(table=self.table)
+        with self.connect() as conn:
+            for chunk, vector in zip(chunks, vectors):
+                conn.execute(query, (chunk.doc_id, chunk.index, chunk.text, chunk.tokens, vector))
+        return len(chunks)
+
+    def count(self) -&gt; int:
+        with self.connect() as conn:
+            row = conn.execute(sql.SQL(&quot;SELECT count(*) FROM {table}&quot;).format(table=self.table)).fetchone()
+        return int(row[0]) if row else 0
+
+    def search(self, query_vector: np.ndarray, top_k: int = 3) -&gt; list[Found]:
+        query = sql.SQL(
+            &quot;SELECT doc_id, chunk_index, text, 1 - (embedding &lt;=&gt; %s) AS similarity &quot;
+            &quot;FROM {table} ORDER BY embedding &lt;=&gt; %s LIMIT %s&quot;
+        ).format(table=self.table)
+        with self.connect() as conn:
+            rows = conn.execute(query, (query_vector, query_vector, top_k)).fetchall()
+        return [Found(doc_id, chunk_index, text, round(float(similarity), 2)) for doc_id, chunk_index, text, similarity in rows]
+
+    def drop(self) -&gt; None:
+        with self.connect() as conn:
+            conn.execute(sql.SQL(&quot;DROP TABLE IF EXISTS {table}&quot;).format(table=self.table))</code></pre><pre><code>from pathlib import Path
+
+from my_ai_project.chunking import chunk_documents
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.knowledge_base import load_knowledge_base
+from my_ai_project.store import ChunkStore
+
+DSN = &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;
+
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+chunks = chunk_documents(documents, max_tokens=40)
+vectors = FastEmbedder().embed([f&quot;{chunk.text}&quot; for chunk in chunks])
+
+store = ChunkStore(DSN)
+store.init_schema()
+store.add_chunks(chunks, vectors)
+print(f&quot;stored {len(chunks)} chunks from {len(documents)} documents; rows in the table: {store.count()}&quot;)</code></pre></details><details><summary>Solution: Part E and F</summary><pre><code>import sys
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.store import ChunkStore
+
+DSN = &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;
+question = &quot; &quot;.join(sys.argv[1:]) or &quot;My monitor stopped responding&quot;
+
+query_vector = FastEmbedder().embed([question])[0]
+print(question)
+for found in ChunkStore(DSN).search(query_vector, top_k=3):
+    print(f&quot;  {found.similarity:.2f}  {found.doc_id} #{found.chunk_index}: {found.text[:60]}&quot;)</code></pre><div class="out"><b>You should see</b><br>My monitor stopped responding<br>&nbsp;&nbsp;0.80&nbsp;&nbsp;error-e101 #0: The sensor did not answer within 10 seconds. Check that the<br>&nbsp;&nbsp;0.72&nbsp;&nbsp;error-e105 #0: The monitor has lost its network connection. Readings are st<br>&nbsp;&nbsp;0.72&nbsp;&nbsp;error-e102 #0: The battery is under 15 percent. Connect the power cable and<br>How long does the battery last?<br>&nbsp;&nbsp;0.75&nbsp;&nbsp;faq-battery-life #0: A full charge lasts about 8 hours without mains power. Charg<br>&nbsp;&nbsp;0.64&nbsp;&nbsp;error-e102 #0: The battery is under 15 percent. Connect the power cable and<br>&nbsp;&nbsp;0.63&nbsp;&nbsp;manual-safety #0: Disconnect the power cable before you open the casing. Insta<br>Where can I buy a coffee?<br>&nbsp;&nbsp;0.45&nbsp;&nbsp;faq-serial-number #0: The serial number is on the label under the device, and on t<br>&nbsp;&nbsp;0.45&nbsp;&nbsp;faq-data-export #0: Yes. Open the web dashboard, choose Readings, and press Expo<br>&nbsp;&nbsp;0.45&nbsp;&nbsp;faq-warranty #0: The monitor has a two year warranty on manufacturing faults.</div><pre><code>SELECT doc_id, chunk_index, left(text, 40) AS start_of_text,
+       round((1 - (embedding &lt;=&gt; (SELECT embedding FROM chunks WHERE doc_id = &#x27;error-e101&#x27; AND chunk_index = 0)))::numeric, 2) AS similarity
+FROM chunks
+ORDER BY embedding &lt;=&gt; (SELECT embedding FROM chunks WHERE doc_id = &#x27;error-e101&#x27; AND chunk_index = 0)
+LIMIT 3;</code></pre><div class="out"><b>You should see</b><br>&nbsp;&nbsp;&nbsp;&nbsp;doc_id&nbsp;&nbsp;&nbsp;&nbsp;| chunk_index |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;start_of_text&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | similarity<br>--------------+-------------+------------------------------------------+------------<br> error-e101&nbsp;&nbsp; |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0 | The sensor did not answer within 10 seco |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.00<br> error-e106&nbsp;&nbsp; |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0 | The sensor firmware and the monitor firm |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0.79<br> faq-warranty |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0 | The monitor has a two year warranty on m |&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0.76<br>(3 rows)</div><p>The table as <code>psql</code> shows it with <code>\d chunks</code>:</p><div class="out"><b>You should see</b><br>                                 Table "public.chunks"<br>   Column    |    Type     | Collation | Nullable |              Default<br>-------------+-------------+-----------+----------+------------------------------------<br> id          | bigint      |           | not null | nextval('chunks_id_seq'::regclass)<br> doc_id      | text        |           | not null |<br> chunk_index | integer     |           | not null |<br> text        | text        |           | not null |<br> tokens      | integer     |           | not null |<br> embedding   | vector(384) |           | not null |<br>Indexes:<br>    "chunks_pkey" PRIMARY KEY, btree (id)<br>    "chunks_doc_id_chunk_index_key" UNIQUE CONSTRAINT, btree (doc_id, chunk_index)<br>    "chunks_embedding_idx" hnsw (embedding vector_cosine_ops)</div><p>With only 26 rows the planner does not use the HNSW index. It reads all rows, and that is the right choice for a table this small:</p><div class="out"><b>You should see</b><br>Limit  (cost=14.17..14.18 rows=3 width=22)<br>  ...<br>  ->  Seq Scan on chunks chunks_1  (cost=0.00..13.26 rows=26 width=1544)</div></details><details><summary>Solution: Part G (tests)</summary><pre><code>import os
+from collections.abc import Iterator
+
+import psycopg
+import pytest
+
+from my_ai_project.chunking import Chunk
+from my_ai_project.embedder import FakeEmbedder
+from my_ai_project.store import ChunkStore
+
+DSN = os.environ.get(&quot;TEST_DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)
+
+CHUNKS = [
+    Chunk(doc_id=&quot;error-e101&quot;, index=0, text=&quot;Check the sensor cable and restart the monitor.&quot;, tokens=9),
+    Chunk(doc_id=&quot;faq-battery&quot;, index=0, text=&quot;The battery lasts about eight hours.&quot;, tokens=7),
+    Chunk(doc_id=&quot;faq-wifi&quot;, index=0, text=&quot;Only 2.4 GHz networks are supported.&quot;, tokens=8),
+]
+
+
+@pytest.fixture
+def store() -&gt; Iterator[ChunkStore]:
+    chunk_store = ChunkStore(DSN, table=&quot;chunks_test&quot;, dims=64)
+    try:
+        chunk_store.drop()
+    except psycopg.OperationalError:
+        pytest.skip(&quot;the database is not running: start it with docker compose up -d&quot;)
+    chunk_store.init_schema()
+    yield chunk_store
+    chunk_store.drop()
+
+
+def test_the_nearest_chunk_comes_first(store: ChunkStore) -&gt; None:
+    embedder = FakeEmbedder()
+    store.add_chunks(CHUNKS, embedder.embed([c.text for c in CHUNKS]))
+    found = store.search(embedder.embed([&quot;sensor cable restart&quot;])[0], top_k=2)
+    assert [f.doc_id for f in found][0] == &quot;error-e101&quot;
+    assert len(found) == 2
+
+
+def test_adding_the_same_chunks_twice_does_not_duplicate_them(store: ChunkStore) -&gt; None:
+    vectors = FakeEmbedder().embed([c.text for c in CHUNKS])
+    store.add_chunks(CHUNKS, vectors)
+    store.add_chunks(CHUNKS, vectors)
+    assert store.count() == 3
+
+
+def test_an_unsafe_table_name_is_rejected() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;not a safe table name&quot;):
+        ChunkStore(DSN, table=&quot;chunks; DROP TABLE chunks&quot;)</code></pre><div class="out"><b>You should see</b><br>3 passed in 0.70s</div><p>With the database stopped, the two tests that need it are skipped and the other one still runs:</p><div class="out"><b>You should see</b><br>1 passed, 2 skipped in 0.46s</div></details><details><summary>Solution: Part H</summary><div class="out"><b>You should see</b><br>Multiple connection attempts failed. All failures were:<br>- host: 'localhost', port: '5433', hostaddr: '::1': connection failed: ... Connection refused<br>- host: 'localhost', port: '5433', hostaddr: '127.0.0.1': connection failed: ... Connection refused</div><p>The program cannot reach the database. After <code>docker compose start db</code> the data is still there, because it lives in the volume.</p></details><details><summary>Template: Part I (README)</summary><pre><code>## Database
+
+The chunks live in PostgreSQL with pgvector, started with Docker (local learning credentials only):
+
+    docker compose up -d                 # start the database on port 5433
+    uv run python ingest.py              # chunk, embed and store the knowledge base (safe to run again)
+    uv run python ask_db.py &quot;My monitor stopped responding&quot;
+
+`docker compose down` stops it and keeps the data. `docker compose down -v` also deletes the data.
+The tests that need the database skip themselves when it is not running.</code></pre></details><details><summary>Template: Part I (note)</summary><pre><code># Chunks in a database: what I learned
+
+1. How many chunks and why that chunk size: ...
+2. The nearest 3 chunks for one question, and whether they make sense: ...
+3. One thing that was easier in SQL than in Python, and one that was harder: ...
+4. What I need before this can serve real users (index, filters, backups, a bigger knowledge base): ...</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does the table have a unique constraint on <code>(doc_id, chunk_index)</code>?</li><li>Why is the table name checked, and the values passed as parameters?</li><li>Why do the database tests skip themselves when the database is not running?</li></ol><details><summary>Answers</summary><ol><li>One position of one document can exist only once, so you can upsert: the same chunk written twice updates the row instead of adding a copy.</li><li>Values go in as parameters so that text from a document or a user can never become SQL. A table name cannot be a parameter, so it is checked against a strict pattern before it is used.</li><li>So that people without Docker, or with the database stopped, can still run the other tests and see a clean result. A skipped test says &ldquo;not run&rdquo;, and a failed test says &ldquo;broken&rdquo;.</li></ol></details></section>
+<section id="game-day63" class="game"><h2><span class="n">+</span> &middot; Game: Chunk Store Check <span class="t">5 min</span></h2>
+<p><p>Your chunks live in a Postgres table. Read what you run, pick what you expect, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day63-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day63-play">Start the game</button></div>
+<div id="day63-round" hidden><div class="gtop"><span id="day63-num">Round 1</span><span id="day63-score">Score 0</span></div>
+<pre hidden><code id="day63-code"></code></pre><div class="q" id="day63-q"></div><div class="choices" id="day63-opts"></div>
+<div class="fb" id="day63-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day63-next" hidden>Next round</button></p></div>
+<div id="day63-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day63",[{"c": "python ingest.py   # twice", "q": "How many rows does the table have after the second run?", "o": ["26: the upsert keeps one row per chunk", "52", "0"], "a": 0, "out": "stored 26 chunks from 20 documents; rows in the table: 26\nstored 26 chunks from 20 documents; rows in the table: 26", "why": "The unique (doc_id, chunk_index) and the upsert make the ingest safe to repeat."}, {"c": "python ask_db.py \"My monitor stopped responding\"", "q": "Which chunk is first?", "o": ["error-e101 #0, with 0.80", "faq-reset", "manual-safety"], "a": 0, "out": "My monitor stopped responding\n  0.80  error-e101 #0: The sensor did not answer within 10 seconds. Check that the \n  0.72  error-e105 #0: The monitor has lost its network connection. Readings are st\n  0.72  error-e102 #0: The battery is under 15 percent. Connect the power cable and", "why": "The chunk of the sensor error is the nearest. The other two are close in score, not in meaning."}, {"c": "python ask_db.py \"Where can I buy a coffee?\"", "q": "What do the scores say?", "o": ["Low and close together (0.45): nothing is really near", "High: 0.9", "An error"], "a": 0, "out": "Where can I buy a coffee?\n  0.45  faq-serial-number #0: The serial number is on the label under the device, and on t\n  0.45  faq-data-export #0: Yes. Open the web dashboard, choose Readings, and press Expo\n  0.45  faq-warranty #0: The monitor has a two year warranty on manufacturing faults.", "why": "There is always a nearest chunk. Low and flat scores are the sign that nothing fits."}, {"c": "ORDER BY embedding <=> (SELECT embedding FROM chunks WHERE doc_id = 'error-e101' AND chunk_index = 0) LIMIT 3", "q": "The query vector is the chunk of error-e101 itself. What is the first row?", "o": ["error-e101 itself, with a similarity of 1.00", "error-e106", "faq-warranty"], "a": 0, "out": "    doc_id    | chunk_index |              start_of_text               | similarity \n--------------+-------------+------------------------------------------+------------\n error-e101   |           0 | The sensor did not answer within 10 seco |       1.00\n error-e106   |           0 | The sensor firmware and the monitor firm |       0.79\n faq-warranty |           0 | The monitor has a two year warranty on m |       0.76", "why": "A chunk is identical to itself. A good sanity check for your query."}, {"c": "docker compose stop db\npython ask_db.py", "q": "What does the script say?", "o": ["Connection refused: it cannot reach the database", "It answers from memory", "It returns empty results"], "a": 0, "out": "Multiple connection attempts failed. All failures were:\n- host: 'localhost', port: '5433', hostaddr: '::1': connection failed: ... Connection refused", "why": "The data is safe in the volume, but the program cannot reach it until you start the database again."}, {"c": "uv run pytest tests/test_store.py   # with the database stopped", "q": "What do the database tests do?", "o": ["They are skipped, and the test that needs no database still passes", "They all fail", "They start the database"], "a": 0, "out": "1 passed, 2 skipped in 0.46s", "why": "A skipped test says not run. A failed test says broken. Do not mix them up."}],["Store rookie", "Store checker", "Chunk store owner"],"One row per chunk with its metadata, an upsert for safe repeats, scores that tell you when nothing fits, and tests that skip when the database is down.");</script>
+<p><small>Tick &ldquo;Play the Chunk Store Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> the real storage of your assistant: a Postgres database in Docker with a <code>chunks</code> table, a class that owns the SQL, an ingest that can run twice, one SQL query that returns the nearest 3 chunks, and tests that skip when the database is down.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 63 checklist.</li><li>Share one line in the comments: what did your first nearest-3 query return?</li><li><strong>Next:</strong> Sunday is the self-test on context rot and vectors. Then week 10 is about chunking strategies and a retrieval pipeline with filters.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

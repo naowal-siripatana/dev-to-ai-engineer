@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 58 - Context engineering: what goes in the window</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 58 &middot; LEVEL 5: PROMPTS AND CONTEXT</div><h1>Context engineering: what goes in the window</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to fill a context window within a token budget by priority, and say what you drop and why.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>In a long conversation, which part of the context grows the most?</li><li>What does the table from the simulated model prove, and what does it not prove?</li></ol><details><summary>Answers</summary><ol><li>The conversation history. With 51 turns it was 78 percent of the call, and the sources only 9 percent.</li><li>It proves that your measuring script works. It does not prove that your prompt works with a real model, because the stand-in follows a few fixed rules.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>At turn 51 of a chat, your assistant starts to ignore one of the rules in its system prompt. The window is only 20 percent full. Nothing hit a limit. What could be going on?</strong></p><details><summary>Guess first, then open</summary><p>The rule is still there, but now it competes with more than a thousand tokens of old conversation. Models can follow instructions less reliably when the context is long and full of things that do not matter for the current question, even when everything <em>fits</em>. This is often called <strong>context rot</strong>. The fix is not a bigger window, it is a better-chosen one.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: fill the window in order of importance</h3>
+<p>Give every part a priority. <strong>Must have</strong>: the system prompt and the question. <strong>Most valuable</strong>: the best sources for this question. <strong>Nice to have</strong>: the history of the conversation. You decide a <strong>budget</strong> (a number of tokens you want to spend) and fill it in that order. What does not fit is left out, on purpose.</p>
+<h3>Piece 2: the history needs a plan</h3>
+<p>The history only grows. The simplest plan is to keep the <strong>newest</strong> turns and drop the oldest ones. A richer plan is to <strong>summarise</strong> old turns into two lines (that costs one extra model call, so use it when it pays). Remember that old answers are not facts: they can be wrong, so never treat them as sources.</p>
+<h3>Piece 3: less, but better</h3>
+<p>More text is not better text. Put in only the sources that match <em>this</em> question, label each one with its id, keep duplicates out, and keep contradictions out. Ask of every piece: &ldquo;would the answer be worse without it?&rdquo; If not, remove it. It costs less, it is faster, and the model has less to be distracted by.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> a context builder is like building a request under a payload limit: you add the required fields first, then optional ones by priority until the size limit, and you return what you dropped for the logs. The memory of a chat is a bounded buffer with an eviction policy: here the policy is &ldquo;oldest first&rdquo;.</div>
+<div class="box cap"><strong>Capstone:</strong> your assistant will carry on conversations. This is the function that decides, for every question, what the model actually reads. Retrieval (module 6) feeds its sources part.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. <code>build_context</code> takes the system prompt, the question, the sources (best first), the history and a budget. It counts tokens with <code>count_tokens</code> from Day 32, adds parts in priority order, and reports what it used and what it dropped. <code>src/my_ai_project/context.py</code>:</p><pre><code>from dataclasses import dataclass, field
+
+from my_ai_project.tokens import count_tokens
+
+
+class ContextTooSmallError(Exception):
+    &quot;&quot;&quot;The budget cannot even hold the fixed parts: the system prompt and the question.&quot;&quot;&quot;
+
+
+@dataclass
+class Context:
+    user_message: str
+    used: dict[str, int]
+    dropped: list[str] = field(default_factory=list)
+
+    @property
+    def total(self) -&gt; int:
+        return sum(self.used.values())
+
+
+def build_context(
+    system: str,
+    question: str,
+    sources: list[tuple[str, str]],
+    history: list[tuple[str, str]],
+    budget: int,
+) -&gt; Context:
+    &quot;&quot;&quot;Fill the window in order of importance: system prompt and question, then sources (best first), then the newest turns.&quot;&quot;&quot;
+    used = {&quot;system prompt&quot;: count_tokens(system), &quot;question&quot;: count_tokens(question)}
+    if sum(used.values()) &gt; budget:
+        raise ContextTooSmallError(f&quot;{sum(used.values())} tokens of fixed parts do not fit in a budget of {budget}&quot;)
+    left = budget - sum(used.values())
+    dropped: list[str] = []
+
+    kept_sources: list[str] = []
+    for doc_id, text in sources:
+        line = f&quot;[{doc_id}] {text}&quot;
+        cost = count_tokens(line)
+        if cost &lt;= left:
+            kept_sources.append(line)
+            left -= cost
+        else:
+            dropped.append(f&quot;source {doc_id} ({cost} tokens)&quot;)
+    used[&quot;sources&quot;] = sum(count_tokens(line) for line in kept_sources)
+
+    kept_turns: list[str] = []
+    for asked, answered in reversed(history):
+        turn = f&quot;User: {asked}\nAssistant: {answered}&quot;
+        cost = count_tokens(turn)
+        if cost &gt; left:
+            break
+        kept_turns.insert(0, turn)
+        left -= cost
+    omitted = len(history) - len(kept_turns)
+    if omitted:
+        dropped.append(f&quot;{omitted} oldest turns&quot;)
+    used[&quot;history&quot;] = sum(count_tokens(turn) for turn in kept_turns)
+
+    parts = []
+    if kept_sources:
+        parts.append(&quot;Sources:\n&quot; + &quot;\n&quot;.join(kept_sources))
+    if kept_turns:
+        parts.append(&quot;Conversation so far:\n&quot; + &quot;\n&quot;.join(kept_turns))
+    parts.append(f&quot;Question: {question}&quot;)
+    return Context(user_message=&quot;\n\n&quot;.join(parts), used=used, dropped=dropped)</code></pre><p>A script to try four budgets with a conversation of 51 turns and three sources. <code>show_context.py</code>:</p><pre><code>from my_ai_project.context import ContextTooSmallError, build_context
+from my_ai_project.prompts import BETTER_SYSTEM
+
+question = &quot;My monitor stopped responding&quot;
+sources = [
+    (&quot;error-e101&quot;, &quot;E101 Sensor timeout. The sensor did not answer within 10 seconds. Check that the sensor cable is firmly connected.&quot;),
+    (&quot;faq-reset&quot;, &quot;How do I reset the monitor? Hold the power button for 5 seconds until the light blinks.&quot;),
+    (&quot;error-e103&quot;, &quot;E103 Overheat. The internal temperature is above 45 degrees Celsius. Move the monitor away from heat.&quot;),
+]
+turns = [
+    (&quot;What is E101?&quot;, &quot;The sensor did not answer within ten seconds [error-e101].&quot;),
+    (&quot;And how long does the battery last?&quot;, &quot;About 8 hours on a full charge [faq-battery-life].&quot;),
+    (&quot;Can I turn the alarm off?&quot;, &quot;Yes, in Settings, under Sound [faq-alarm-sound].&quot;),
+]
+history = turns * 17   # 51 turns
+
+for budget in (2000, 500, 300, 150):
+    try:
+        context = build_context(BETTER_SYSTEM, question, sources, history, budget)
+    except ContextTooSmallError as err:
+        print(f&quot;budget {budget}: {err}&quot;)
+        continue
+    print(f&quot;budget {budget}: used {context.total} tokens {context.used}&quot;)
+    print(&quot;          dropped:&quot;, &quot;, &quot;.join(context.dropped) or &quot;nothing&quot;)</code></pre><div class="out"><b>You should see</b><br>budget 2000: used 1521 tokens {'system prompt': 195, 'question': 4, 'sources': 81, 'history': 1241}<br>          dropped: nothing<br>budget 500: used 499 tokens {'system prompt': 195, 'question': 4, 'sources': 81, 'history': 219}<br>          dropped: 42 oldest turns<br>budget 300: used 280 tokens {'system prompt': 195, 'question': 4, 'sources': 81, 'history': 0}<br>          dropped: 51 oldest turns<br>budget 150: 199 tokens of fixed parts do not fit in a budget of 150</div><p><small>With a budget of 500 the sources and the system prompt are untouched, and the 42 oldest turns are dropped. With 300 there is room for no turn at all. With 150 even the fixed parts do not fit, and you get an error instead of a broken prompt.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c context</code>). You need <code>tokens.py</code> (Day 32) and <code>prompts.py</code> (Day 53).</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>context.py</code> and <code>show_context.py</code> and run it. Match the four budget lines. Which part is never dropped, and which part is dropped first?</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Change the budgets in the loop to <code>(700, 1000)</code>. <strong>Predict:</strong> how many oldest turns are dropped at 700, and at 1000? Run it and check. What does each extra 300 tokens buy you?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Run the loop with a budget of <code>150</code>, as in the worked example, and read the error. <strong>What should a real app do</strong> when the fixed parts do not fit: crash, cut the system prompt, or something else? Write your answer down.</p>
+<h3><span class="step">Step 4</span> Your turn: choose and justify</h3>
+<p>Without code, fill in this table for your assistant. For each situation say what you include, what you leave out, and <strong>why</strong>. The &ldquo;why&rdquo; is the point of the exercise.</p><pre><code>situation                                  include                       leave out                      why
+1. first question of a new chat             ...                           ...                            ...
+2. turn 51 of a long chat                   ...                           ...                            ...
+3. a question that needs two documents      ...                           ...                            ...</code></pre>
+<p>Then write the five tests of the template (Stuck): everything fits in a big budget, the total never goes over the budget, the oldest turns go first, sources are kept before history, and a budget that is too small is an error. Commit: <code>git add .</code> and <code>git commit -m "Build the context within a token budget"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The total is a few tokens over the budget</strong>: the labels (<code>Sources:</code>, <code>User:</code>) and the blank lines also cost tokens. This version counts each source line and each turn, and accepts a small difference for the headings. If you need a hard limit, count the final message once more.</li><li><strong>All the history is dropped at a small budget</strong>: a turn costs about 24 tokens here. If less than that is left, no turn fits. That is normal.</li><li><strong>You want to keep a very old turn</strong>: this builder only keeps the newest turns in a row. For important facts from earlier, summarise them or store them as notes.</li><li><strong>&ldquo;ModuleNotFoundError ... tokens&rdquo;</strong>: <code>tokens.py</code> from Day 32 must be in <code>src/my_ai_project/</code>.</li></ul><details><summary>A sample of the message it builds</summary><pre><code>Sources:
+[error-e101] E101 Sensor timeout. The sensor did not answer.
+
+Conversation so far:
+User: What is E101?
+Assistant: The sensor timed out [error-e101].
+...
+
+Question: My monitor stopped responding</code></pre><p>The sources come first (the facts), then the conversation, then the question last, close to where the model starts to answer.</p></details><details><summary>Solution: Step 2</summary><div class="out"><b>You should see</b><br>budget 700: used 696 tokens {'system prompt': 195, 'question': 4, 'sources': 81, 'history': 416}<br>          dropped: 34 oldest turns<br>budget 1000: used 988 tokens {'system prompt': 195, 'question': 4, 'sources': 81, 'history': 708}<br>          dropped: 22 oldest turns</div><p>Every extra 300 tokens of budget keeps about 12 more turns. The sources and the rules did not change: only the old chat grows. Ask yourself whether those old turns help the next answer.</p></details><details><summary>Solution: Step 3</summary><p>Cutting the system prompt silently would remove your rules, which is the worst option. Crashing for the user is also bad. A good app raises a clear error in its own logs, and answers with a safe message, or uses a smaller prompt that you prepared in advance. The error exists so that a budget that is too small is a <em>decision</em> and not an accident.</p></details><details><summary>A model answer for Step 4</summary><p><strong>1. First question of a new chat:</strong> include the system prompt, the best 3 sources and the question. Leave out history (there is none). Why: nothing else is needed, and fewer tokens are faster and cheaper.</p><p><strong>2. Turn 51:</strong> include the system prompt, the best sources for <em>this</em> question, the last few turns, and a short summary of the earlier ones. Leave out the oldest turns word by word. Why: old turns are 78 percent of the call and rarely matter, and they compete with the rules.</p><p><strong>3. A question that needs two documents:</strong> include both documents, labelled, and maybe one more as a backup. Leave out near-duplicates and sources about another topic. Why: the model needs the facts from both, and noise makes it less sure which one to use.</p></details><details><summary>Template: Step 4 (tests)</summary><pre><code>import pytest
+
+from my_ai_project.context import ContextTooSmallError, build_context
+
+SYSTEM = &quot;Answer from the sources.&quot;
+SOURCES = [(&quot;a&quot;, &quot;First source about the sensor cable.&quot;), (&quot;b&quot;, &quot;Second source about the battery.&quot;)]
+HISTORY = [(f&quot;question {n}&quot;, f&quot;answer {n}&quot;) for n in range(30)]
+
+
+def test_everything_fits_in_a_big_budget() -&gt; None:
+    context = build_context(SYSTEM, &quot;What now?&quot;, SOURCES, HISTORY[:2], budget=1000)
+    assert context.dropped == []
+    assert &quot;[a]&quot; in context.user_message and &quot;[b]&quot; in context.user_message
+
+
+def test_the_total_never_goes_over_the_budget() -&gt; None:
+    for budget in (60, 90, 150, 400):
+        assert build_context(SYSTEM, &quot;What now?&quot;, SOURCES, HISTORY, budget).total &lt;= budget
+
+
+def test_the_oldest_turns_go_first() -&gt; None:
+    context = build_context(SYSTEM, &quot;What now?&quot;, SOURCES, HISTORY, budget=120)
+    assert &quot;question 29&quot; in context.user_message
+    assert &quot;question 0&quot; not in context.user_message
+    assert any(&quot;oldest turns&quot; in item for item in context.dropped)
+
+
+def test_sources_are_kept_before_history() -&gt; None:
+    base = build_context(SYSTEM, &quot;What now?&quot;, SOURCES, [], budget=1000).total   # exactly what the sources need
+    context = build_context(SYSTEM, &quot;What now?&quot;, SOURCES, HISTORY, budget=base)
+    assert &quot;[a]&quot; in context.user_message and &quot;[b]&quot; in context.user_message
+    assert context.used[&quot;history&quot;] == 0
+
+
+def test_a_budget_too_small_for_the_fixed_parts_is_an_error() -&gt; None:
+    with pytest.raises(ContextTooSmallError):
+        build_context(SYSTEM, &quot;What now?&quot;, SOURCES, HISTORY, budget=3)</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>In which order do you fill the window, and why?</li><li>Why is the history the part you drop first?</li><li>What is context rot, and why does a bigger window not solve it?</li></ol><details><summary>Answers</summary><ol><li>First the system prompt and the question (they must be there), then the best sources (the facts), then the history (nice to have). You fill by importance, so what is left out is the least useful.</li><li>It only grows, old turns often do not matter for the new question, and old answers can be wrong. It is also the cheapest part to trim without losing the facts.</li><li>Context rot: quality can fall when the context is long and full of things that do not matter, even when it fits. A bigger window only lets you add more noise: you need to choose what goes in.</li></ol></details></section>
+<section id="game-day58" class="game"><h2><span class="n">+</span> &middot; Game: Window Planner <span class="t">5 min</span></h2>
+<p><p>You fill a context window within a token budget. Read the budget, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day58-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day58-play">Start the game</button></div>
+<div id="day58-round" hidden><div class="gtop"><span id="day58-num">Round 1</span><span id="day58-score">Score 0</span></div>
+<pre hidden><code id="day58-code"></code></pre><div class="q" id="day58-q"></div><div class="choices" id="day58-opts"></div>
+<div class="fb" id="day58-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day58-next" hidden>Next round</button></p></div>
+<div id="day58-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day58",[{"c": "build_context(system, question, sources, history, budget=2000)   # 51 turns of history", "q": "What is dropped?", "o": ["Nothing: everything fits, and the history is 1,241 tokens", "The sources", "The system prompt"], "a": 0, "out": "budget 2000: used 1521 tokens {'system prompt': 195, 'question': 4, 'sources': 81, 'history': 1241}\n          dropped: nothing", "why": "With a big budget everything fits. That does not mean everything helps."}, {"c": "build_context(..., budget=500)", "q": "What is dropped, and what stays untouched?", "o": ["The 42 oldest turns; the rules and the sources stay", "The sources", "The newest turns"], "a": 0, "out": "budget 500: used 499 tokens {'system prompt': 195, 'question': 4, 'sources': 81, 'history': 219}\n          dropped: 42 oldest turns", "why": "The order of importance is: system prompt and question, then sources, then the newest turns."}, {"c": "build_context(..., budget=300)", "q": "How much history is kept?", "o": ["None: 20 tokens are left and a turn costs about 24", "All of it", "The oldest turn"], "a": 0, "out": "budget 300: used 280 tokens {'system prompt': 195, 'question': 4, 'sources': 81, 'history': 0}\n          dropped: 51 oldest turns", "why": "A turn costs about 24 tokens here, so if less than that is left, no turn fits."}, {"c": "build_context(..., budget=150)   # the system prompt alone is 195 tokens", "q": "What happens?", "o": ["An error: 199 tokens of fixed parts do not fit", "The system prompt is cut", "The question is dropped"], "a": 0, "out": "budget 150: 199 tokens of fixed parts do not fit in a budget of 150", "why": "Cutting the rules silently would be the worst option. A budget that is too small should be a decision, not an accident."}, {"c": "budget 700 -> dropped 34 oldest turns\nbudget 1000 -> dropped 22 oldest turns", "q": "What do the extra 300 tokens of budget buy?", "o": ["About 12 more old turns, not more facts", "More sources", "A better system prompt"], "a": 0, "out": "budget 700: used 696 tokens {'system prompt': 195, 'question': 4, 'sources': 81, 'history': 416}\nbudget 1000: used 988 tokens {'system prompt': 195, 'question': 4, 'sources': 81, 'history': 708}", "why": "The sources and the rules did not change, only the old chat grows. Ask whether those old turns help the next answer."}, {"c": "", "q": "At turn 51 the assistant starts to ignore a rule, and the window is only 20 percent full. What is the likely idea?", "o": ["Context rot: the rule competes with a lot of old, unrelated text", "The window is full", "The rule is too short"], "a": 0, "out": "", "why": "A long, noisy context can make a model follow instructions less reliably, even when everything fits."}],["Window rookie", "Window planner", "Context engineer"],"Fill the window by importance (rules and question, then the best sources, then the newest history), report what you dropped, refuse an impossible budget, and remember that more text is not better text.");</script>
+<p><small>Tick &ldquo;Play the Window Planner game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a context builder that fills the window by priority within a token budget, reports what it dropped, and refuses an impossible budget. You also wrote down, for your own assistant, what you include and why.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 58 checklist.</li><li>Share one line in the comments: what would you leave out at turn 51?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you start module 6 for real: PostgreSQL with the pgvector extension, running in Docker.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
