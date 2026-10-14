@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 54 - Mixed practice: break your prompt, then fix it</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 54 &middot; LEVEL 5: PROMPTS AND CONTEXT &middot; MIXED PRACTICE</div><h1>Mixed practice: break your prompt, then fix it</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to take a prompt apart one rule at a time, score each version, and read what matters, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Name two things that make a rule in a prompt better than a wish.</li><li>Why must the examples in a prompt differ from the questions you test with?</li></ol><details><summary>Answers</summary><ol><li>A rule can be checked, and it says what to do (for example &ldquo;answer in at most two short sentences&rdquo;). A wish such as &ldquo;be helpful&rdquo; can be neither checked nor followed exactly.</li><li>If a test question is in the prompt, a good answer may only be memory, so the test no longer measures how the prompt works on new questions.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your better prompt has four rules and two examples. A colleague asks: &ldquo;Which of them really matters? Could we delete half and save tokens?&rdquo; How do you answer with evidence, not opinion?</strong></p><details><summary>Guess first, then open</summary><p>You take the rules away <em>one at a time</em> and measure what gets worse. That is called an <strong>ablation</strong>: if the score does not move, the part may not be needed, and if it drops, you have found a rule that matters. Today you build that experiment from a blank file.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
+<p>No new ideas today. The map of what you reuse:</p>
+<h3>Piece 1: a prompt you can take apart (Day 53)</h3>
+<p>The better prompt has numbered rules and two examples, so you can remove one rule, or the examples, by removing lines.</p>
+<h3>Piece 2: a few questions with checks (new, small)</h3>
+<p>Five questions, each with a simple, mechanical check: does the answer name the right source, is it short, does it say &ldquo;I could not find that&rdquo; when it should. The score is how many checks pass. This is the smallest possible <strong>evaluation</strong>. Module 8 makes it bigger.</p>
+<h3>Piece 3: break, measure, fix</h3>
+<p>Change one thing, run the same questions, and compare the scores. Change one thing at a time, otherwise you cannot tell which change did what.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> an ablation is like commenting out one dependency at a time to see which tests fail. The five questions with checks are a tiny test suite for the prompt, and <code>SimulatedModel</code> plays the role of a test double for the model.</div>
+<div class="box cap"><strong>Capstone:</strong> this loop is how you will improve the assistant for the rest of the course: a fixed set of questions, a score, and one change at a time.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">3 min</span></h2><p>No code to copy for the script itself: you write it. This is the <strong>contract</strong>.</p><table><tr><th>Part</th><th>What it does</th></tr><tr><td><code>without_rule(system, number)</code></td><td>Returns the prompt without the line that starts with that rule number</td></tr><tr><td><code>without_examples(system)</code></td><td>Returns the prompt up to the first example</td></tr><tr><td><code>break_and_fix.py</code></td><td>Builds six prompts: the full one, one without each of the four rules, and one without the examples. Runs the five questions with each one, and prints one line per prompt: the name, the score, and which checks fail</td></tr></table><p>When it works, the output looks like this. <strong>The model here is simulated</strong>: a small program that follows the rules it finds in the prompt, to practise the loop with no key and no cost. A real model is less predictable.</p><div class="out"><b>You should see</b><br>full prompt&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;7 of 8&nbsp;&nbsp; fails: says it does not know<br>without rule 1 (only the sources)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;7 of 8&nbsp;&nbsp; fails: says it does not know<br>without rule 2 (two short sentences)&nbsp;&nbsp; 4 of 8&nbsp;&nbsp; fails: is short (30 words or fewer), says it does not know<br>without rule 3 (name the source)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 4 of 8&nbsp;&nbsp; fails: cites the right source, says it does not know<br>without rule 4 (say you do not know)&nbsp;&nbsp; 6 of 8&nbsp;&nbsp; fails: says it does not know<br>without the two examples&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 7 of 8&nbsp;&nbsp; fails: says it does not know</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">25 min</span></h2>
+<p>Work in <code>my-ai-project</code> (you need the knowledge base, <code>embedder.py</code>, <code>retrieval.py</code>, <code>answering.py</code> and <code>prompts.py</code>), on a branch if you like (<code>git switch -c ablation</code>).</p>
+<h3><span class="step">Step 1</span> The given parts</h3>
+<p>Three files are given (in Stuck): the simulated model, the five questions with their checks and the function that runs them, and one small change to <code>retrieval.py</code> that puts the page of an exact error code first (you saw on Day 41 why). Add them, and run the tests in Stuck.</p>
+<h3><span class="step">Step 2</span> Write the script</h3>
+<p>From a blank file, write <code>break_and_fix.py</code> from the contract. Run it and match the six lines.</p>
+<h3><span class="step">Step 3</span> Break it your way</h3>
+<p>Add a seventh variant of your own: remove <strong>rules 3 and 4 together</strong>. <strong>Predict</strong> the score before you run it. What do you learn about changing two things at once?</p>
+<h3><span class="step">Step 4</span> Your turn: two surprises</h3>
+<p><strong>Surprise 1.</strong> Removing rule 1 or the examples changed nothing. <strong>Why?</strong> Think about what the simulated model can and cannot do. What would you expect with a real model, and how would you check it?</p>
+<p><strong>Surprise 2.</strong> The question <em>How much does the monitor cost?</em> fails in <strong>every</strong> variant, even the full prompt. Look at the first source the model sees for it. Write down what you would try to fix it (a rule? an example? something in the search?), and whether the simulated model could show the fix.</p>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Break the prompt one rule at a time"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The numbers differ from the lesson</strong>: check that <code>retrieval.py</code> has the exact-code change, that the knowledge base has all 20 documents, and that the prompt text is the one from Day 53 (a changed rule changes the score).</li><li><strong>&ldquo;ModuleNotFoundError ... evaluate&rdquo;</strong>: the new files go into <code>src/my_ai_project/</code>.</li><li><strong>A variant removes the wrong line</strong>: <code>without_rule</code> removes the line that <em>starts with</em> <code>1. </code>. Print the variant and look.</li><li><strong>The first run is slow</strong>: the embedding model is loaded, as on Day 37. Later runs are faster.</li></ul><details><summary>Given: simulated.py</summary><p>A stand-in for a model. It answers only if a word of the question is in the first source, and it follows the rules it finds in the system prompt: it names the source if the prompt asks for square brackets, it is short if the prompt says so, and it says the exact sentence if the prompt tells it to. It cannot read examples, and it ignores rule 1. It is <strong>not</strong> a real model.</p><pre><code>import re
+
+from my_ai_project.prompts import NO_ANSWER
+
+STOP_WORDS = {&quot;what&quot;, &quot;does&quot;, &quot;mean&quot;, &quot;where&quot;, &quot;this&quot;, &quot;that&quot;, &quot;have&quot;, &quot;with&quot;, &quot;from&quot;, &quot;much&quot;, &quot;long&quot;, &quot;will&quot;, &quot;your&quot;, &quot;about&quot;, &quot;when&quot;, &quot;there&quot;}
+
+
+class SimulatedModel:
+    &quot;&quot;&quot;A stand-in for a real model, to practise the before and after loop with no key and no cost.
+
+    It follows literally the rules it finds in the system prompt. It is NOT a real model: a real model is less predictable.
+    It answers only if a word of the question appears in the first source.&quot;&quot;&quot;
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        system = system or &quot;&quot;
+        question = prompt.split(&quot;Question:&quot;, 1)[1].split(&quot;\n&quot;, 1)[0].strip()
+        sources = re.findall(r&quot;^\[([a-z0-9-]+)\] (.+)$&quot;, prompt, re.MULTILINE)
+        words = {w for w in re.findall(r&quot;[a-z0-9]+&quot;, question.lower()) if len(w) &gt;= 4 and w not in STOP_WORDS}
+        top_id, top_text = sources[0] if sources else (&quot;&quot;, &quot;&quot;)
+        answerable = any(word in top_text.lower() for word in words)
+        if not answerable:
+            return NO_ANSWER if &quot;reply with exactly&quot; in system else &quot;You can usually fix this in the settings menu of your device.&quot;
+        first_sentence = top_text.split(&quot;. &quot;)[1] if &quot;. &quot; in top_text else top_text
+        text = first_sentence.rstrip(&quot;.&quot;) + &quot;.&quot;
+        if &quot;square brackets&quot; in system:
+            text = text[:-1] + f&quot; [{top_id}].&quot;
+        if &quot;at most two short sentences&quot; not in system:
+            text += &quot; Please let me know if there is anything else I can help you with today, and I hope this answer was useful to you!&quot;
+        return text</code></pre></details><details><summary>Given: evaluate.py</summary><pre><code>import re
+from dataclasses import dataclass
+
+from my_ai_project.answering import LlmClient, build_user_message
+from my_ai_project.prompts import NO_ANSWER
+from my_ai_project.retrieval import InMemoryIndex
+
+
+@dataclass
+class Case:
+    question: str
+    expected_source: str | None   # the source the answer must cite, or None if the answer is not in the knowledge base
+
+
+CASES = [
+    Case(&quot;My monitor stopped responding&quot;, &quot;error-e101&quot;),
+    Case(&quot;How long does the battery last?&quot;, &quot;faq-battery-life&quot;),
+    Case(&quot;What does error E105 mean?&quot;, &quot;error-e105&quot;),
+    Case(&quot;Where can I buy a coffee?&quot;, None),
+    Case(&quot;How much does the monitor cost?&quot;, None),
+]
+
+
+def check(case: Case, reply: str) -&gt; dict[str, bool]:
+    if case.expected_source is None:
+        return {&quot;says it does not know&quot;: reply.strip() == NO_ANSWER}
+    return {
+        &quot;cites the right source&quot;: f&quot;[{case.expected_source}]&quot; in reply,
+        &quot;is short (30 words or fewer)&quot;: len(re.findall(r&quot;\S+&quot;, reply)) &lt;= 30,
+    }
+
+
+def run(index: InMemoryIndex, client: LlmClient, system: str) -&gt; list[tuple[Case, str, dict[str, bool]]]:
+    results = []
+    for case in CASES:
+        hits = index.search(case.question, 3)
+        reply = client.complete(build_user_message(case.question, index, [h.doc_id for h in hits]), system)
+        results.append((case, reply, check(case, reply)))
+    return results
+
+
+def score(results: list[tuple[Case, str, dict[str, bool]]]) -&gt; tuple[int, int]:
+    checks = [passed for _, _, outcome in results for passed in outcome.values()]
+    return sum(checks), len(checks)</code></pre></details><details><summary>Given: the change in retrieval.py</summary><p>Replace the line that computes <code>best</code> in <code>search</code> with these lines:</p><pre><code>        best = [int(i) for i in np.argsort(scores)[::-1][:top_k]]
+        # Embeddings are fuzzy with exact codes (E101 and E105 look alike), so a code in the question puts its own page first.
+        for code in reversed(re.findall(r&quot;\bE\d{3}\b&quot;, question.upper())):
+            for position, document in enumerate(self.documents):
+                if document.doc_id == f&quot;error-{code.lower()}&quot;:
+                    best = [position] + [i for i in best if i != position][: top_k - 1]</code></pre><div class="out"><b>You should see</b><br>top 3 for 'What does error E105 mean?' before the change: error-e101, error-e105, error-e106<br>top 3 after the change:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; error-e105, error-e101, error-e106</div></details><details><summary>Given: the tests</summary><pre><code>from pathlib import Path
+
+from my_ai_project.embedder import FakeEmbedder
+from my_ai_project.evaluate import CASES, Case, check, run, score
+from my_ai_project.knowledge_base import load_knowledge_base
+from my_ai_project.prompts import BETTER_SYSTEM, NO_ANSWER, WEAK_SYSTEM
+from my_ai_project.retrieval import InMemoryIndex
+from my_ai_project.simulated import SimulatedModel
+
+
+def make_index() -&gt; InMemoryIndex:
+    return InMemoryIndex(FakeEmbedder(), load_knowledge_base(Path(&quot;data/kb&quot;)))
+
+
+def test_a_good_reply_cites_the_right_source_and_is_short() -&gt; None:
+    case = Case(&quot;What does error E105 mean?&quot;, &quot;error-e105&quot;)
+    assert check(case, &quot;The network was lost [error-e105].&quot;) == {
+        &quot;cites the right source&quot;: True,
+        &quot;is short (30 words or fewer)&quot;: True,
+    }
+    assert check(case, &quot;The network was lost.&quot;)[&quot;cites the right source&quot;] is False
+
+
+def test_an_unanswerable_question_needs_the_exact_sentence() -&gt; None:
+    case = Case(&quot;Where can I buy a coffee?&quot;, None)
+    assert check(case, NO_ANSWER) == {&quot;says it does not know&quot;: True}
+    assert check(case, &quot;Try the settings menu.&quot;) == {&quot;says it does not know&quot;: False}
+
+
+def test_the_better_prompt_has_the_rules_and_two_examples() -&gt; None:
+    assert BETTER_SYSTEM.count(&quot;Example &quot;) == 2
+    assert &quot;square brackets&quot; in BETTER_SYSTEM
+    assert NO_ANSWER in BETTER_SYSTEM
+
+
+def test_the_examples_do_not_contain_the_test_questions() -&gt; None:
+    assert all(case.question not in BETTER_SYSTEM for case in CASES)
+
+
+def test_an_exact_code_in_the_question_puts_its_page_first() -&gt; None:
+    hits = make_index().search(&quot;What does error E105 mean?&quot;, 3)
+    assert hits[0].doc_id == &quot;error-e105&quot;
+    assert len(hits) == 3
+
+
+def test_the_better_prompt_scores_higher_than_the_weak_one() -&gt; None:
+    index, model = make_index(), SimulatedModel()
+    before = score(run(index, model, WEAK_SYSTEM))
+    after = score(run(index, model, BETTER_SYSTEM))
+    assert after[0] &gt; before[0]
+    assert after[1] == before[1]</code></pre><p>Run <code>uv run pytest</code>: they all pass, with no key and no download (the tests use a fake embedder).</p></details><details><summary>Hint: Step 2</summary><p>A dictionary maps the name of each variant to its prompt. Loop over it: <code>results = run(index, model, system)</code>, then <code>score(results)</code> gives the passed and total checks. To list the failing checks, collect the names whose value is <code>False</code> in the outcome of every case.</p></details><details><summary>Solution: Step 2</summary><pre><code>from pathlib import Path
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.evaluate import run, score
+from my_ai_project.knowledge_base import load_knowledge_base
+from my_ai_project.prompts import BETTER_SYSTEM
+from my_ai_project.retrieval import InMemoryIndex
+from my_ai_project.simulated import SimulatedModel
+
+
+def without_rule(system: str, number: int) -&gt; str:
+    lines = [line for line in system.splitlines() if not line.startswith(f&quot;{number}. &quot;)]
+    return &quot;\n&quot;.join(lines)
+
+
+def without_examples(system: str) -&gt; str:
+    return system.split(&quot;Example 1&quot;)[0].rstrip()
+
+
+variants = {
+    &quot;full prompt&quot;: BETTER_SYSTEM,
+    &quot;without rule 1 (only the sources)&quot;: without_rule(BETTER_SYSTEM, 1),
+    &quot;without rule 2 (two short sentences)&quot;: without_rule(BETTER_SYSTEM, 2),
+    &quot;without rule 3 (name the source)&quot;: without_rule(BETTER_SYSTEM, 3),
+    &quot;without rule 4 (say you do not know)&quot;: without_rule(BETTER_SYSTEM, 4),
+    &quot;without the two examples&quot;: without_examples(BETTER_SYSTEM),
+}
+index = InMemoryIndex(FastEmbedder(), load_knowledge_base(Path(&quot;data/kb&quot;)))
+model = SimulatedModel()
+for name, system in variants.items():
+    results = run(index, model, system)
+    passed, total = score(results)
+    failing = sorted({what for _, _, outcome in results for what, ok in outcome.items() if not ok})
+    print(f&quot;{name:&lt;38} {passed} of {total}   fails: {&#x27;, &#x27;.join(failing) or &#x27;nothing&#x27;}&quot;)</code></pre><div class="out"><b>You should see</b><br>full prompt&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;7 of 8&nbsp;&nbsp; fails: says it does not know<br>without rule 1 (only the sources)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;7 of 8&nbsp;&nbsp; fails: says it does not know<br>without rule 2 (two short sentences)&nbsp;&nbsp; 4 of 8&nbsp;&nbsp; fails: is short (30 words or fewer), says it does not know<br>without rule 3 (name the source)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 4 of 8&nbsp;&nbsp; fails: cites the right source, says it does not know<br>without rule 4 (say you do not know)&nbsp;&nbsp; 6 of 8&nbsp;&nbsp; fails: says it does not know<br>without the two examples&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 7 of 8&nbsp;&nbsp; fails: says it does not know</div></details><details><summary>Solution: Step 3</summary><pre><code>&quot;without rules 3 and 4&quot;: without_rule(without_rule(BETTER_SYSTEM, 3), 4),</code></pre><div class="out"><b>You should see</b><br>without rules 3 and 4                  3 of 8   fails: cites the right source, says it does not know</div><p>Two changes at once drop the score more than either alone, but the table cannot tell you how much each one did. That is why you change one thing at a time.</p></details><details><summary>Solution: Step 4</summary><p><strong>Surprise 1.</strong> The simulated model is a small program that looks for the words <code>square brackets</code>, <code>at most two short sentences</code> and <code>reply with exactly</code>. It has no way to use rule 1 or to learn from examples, so removing them changes nothing. A real model <em>does</em> react to examples and to rule 1, so run the same script with your real key and see. An experiment only shows what the thing under test can show.</p><p><strong>Surprise 2.</strong> The best source for the price question is <code>faq-warranty</code>, which is about the monitor and the warranty but has no price. The simulated model answers whenever a word matches (<code>monitor</code>). With a real model I would try a third example for exactly this case: a source that is related to the question but does not contain the answer. The example must be about a <strong>different</strong> question than the one in your test (here, the colour of the casing), or it would leak the test.</p><pre><code>Example 3
+Question: What colour is the casing?
+Sources:
+[faq-warranty] What does the warranty cover? The monitor has a two year warranty on manufacturing faults.
+Answer: I could not find that in the knowledge base.</code></pre><p>The simulation cannot show this fix, so test it with a real model if you have a key.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What is an ablation, and what does it tell you?</li><li>Why change one thing at a time?</li><li>Why can a result from the simulated model not prove that a prompt works with a real model?</li></ol><details><summary>Answers</summary><ol><li>You remove one part (a rule, the examples) and measure again. If the score drops, that part matters. If it does not move, it may not be needed.</li><li>If you change two things and the score changes, you cannot tell which one did it.</li><li>The simulated model follows a few fixed rules. A real model is less predictable and reacts to things the simulation cannot, such as examples. The simulation only proves that your measuring script works.</li></ol></details></section>
+<section id="game-day54" class="game"><h2><span class="n">+</span> &middot; Game: Ablation Lab <span class="t">5 min</span></h2>
+<p><p>You take one part of the prompt away at a time and score five questions. The model is a SIMULATED stand-in. Read the line, pick the cause, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day54-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day54-play">Start the game</button></div>
+<div id="day54-round" hidden><div class="gtop"><span id="day54-num">Round 1</span><span id="day54-score">Score 0</span></div>
+<pre hidden><code id="day54-code"></code></pre><div class="q" id="day54-q"></div><div class="choices" id="day54-opts"></div>
+<div class="fb" id="day54-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day54-next" hidden>Next round</button></p></div>
+<div id="day54-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day54",[{"c": "full prompt   (all four rules and the two examples)", "q": "What is the score, and which check still fails?", "o": ["7 of 8, and the price question still does not get the not-found sentence", "8 of 8", "0 of 8"], "a": 0, "out": "full prompt                            7 of 8   fails: says it does not know", "why": "The price question has a related source (the warranty), so the stand-in answers instead of saying it does not know."}, {"c": "without rule 3 (name the source in square brackets)", "q": "What happens to the score?", "o": ["It drops to 4 of 8: the citation checks fail", "Nothing changes", "It rises"], "a": 0, "out": "without rule 3 (name the source)       4 of 8   fails: cites the right source, says it does not know", "why": "Without the rule nothing asks for a citation, so three checks fail."}, {"c": "without rule 2 (at most two short sentences)", "q": "Which check fails now?", "o": ["is short (30 words or fewer)", "cites the right source", "Nothing"], "a": 0, "out": "without rule 2 (two short sentences)   4 of 8   fails: is short (30 words or fewer), says it does not know", "why": "Without the length rule the stand-in adds a long polite ending, so the short check fails."}, {"c": "without rule 4 (reply with exactly: I could not find that...)", "q": "What happens to the score?", "o": ["It drops to 6 of 8: the coffee question is no longer refused", "It stays at 7 of 8", "It rises to 8 of 8"], "a": 0, "out": "without rule 4 (say you do not know)   6 of 8   fails: says it does not know", "why": "Without the rule the stand-in guesses an answer for a question that is not in the sources."}, {"c": "without rule 1, and without the examples", "q": "Both lines say 7 of 8, the same as the full prompt. Why?", "o": ["The stand-in cannot use rule 1 or examples. A real model might show a difference", "Rule 1 and the examples never matter", "A bug in the table"], "a": 0, "out": "without rule 1 (only the sources)      7 of 8   fails: says it does not know\nwithout the two examples               7 of 8   fails: says it does not know", "why": "An experiment only shows what the thing under test can show. Run the same script with a real model."}, {"c": "without rules 3 and 4 together", "q": "Why is it better to change one thing at a time?", "o": ["Two changes gave 3 of 8, and the table cannot say how much each one did", "Two changes always give a higher score", "It is faster"], "a": 0, "out": "without rules 3 and 4                  3 of 8   fails: cites the right source, says it does not know", "why": "With one change at a time you know which change moved the score."}],["Ablation rookie", "Ablation lab tech", "Prompt scientist"],"Take a prompt apart one rule at a time, score the same questions each time, change one thing at a time, and remember that a simulation can only show what it can model.");</script>
+<p><small>Tick &ldquo;Play the Ablation Lab game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> an ablation script that shows which rule of a prompt matters, and you know the limit of the stand-in model you used. You also found one case, the price question, that you cannot fix with the simulation.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 54 checklist.</li><li>Share one line in the comments: which rule mattered most in your table?</li><li><strong>Next:</strong> Friday is a teach-back: explain context engineering in your own words. Saturday is the lab with retries and a rewritten prompt, and a before and after comparison.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

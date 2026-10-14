@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 56 - Project Lab 8: retries and a rewritten prompt</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 56 &middot; LEVEL 5: PROMPTS AND CONTEXT &middot; PROJECT LAB</div><h1>Project Lab 8: retries and a rewritten prompt</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to make real-mode calls retry, and show a before and after score for a rewritten prompt on five questions.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is an ablation, and why do you change one thing at a time?</li><li>Which part of the context grows the most in a long conversation?</li></ol><details><summary>Answers</summary><ol><li>You remove one part of a prompt and measure again, to see which part matters. With one change at a time you know which change did what.</li><li>The conversation history: with 51 turns it was 78 percent of the call in the lesson, while the sources were 9 percent.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You rewrite the system prompt and the answers &ldquo;feel&rdquo; better. Your manager asks: &ldquo;How do you know?&rdquo; What is the one thing you must have done <em>before</em> you changed the prompt?</strong></p><details><summary>Guess first, then open</summary><p>Measured the old prompt. Without a <em>before</em> number there is no comparison, only a feeling. So today the first thing you do is score the weak prompt on five fixed questions, then you change one thing, and score again.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: reliability and quality are two separate jobs</h3>
+<p>Retries make a call <em>reliable</em>: a timeout or a busy provider does not become an error for the user. A better prompt makes the answer <em>good</em>: cited, short, honest. They fail differently and you test them differently, so you do them in two clear steps and keep their tests apart.</p>
+<h3>Piece 2: a before and after on fixed questions</h3>
+<p>Five questions, fixed in advance, each with a mechanical check. The weak prompt gets a score, the better prompt gets a score, and you compare. The questions and the checks <strong>do not change</strong> between the two runs. And you do not copy the test questions into the prompt (Day 53).</p>
+<h3>Piece 3: read the failures, not only the score</h3>
+<p>A score of 7 out of 8 is not the end. The one failure tells you what to work on, and whether the cause is the <strong>prompt</strong>, the <strong>search</strong> (the right page was not first) or the <strong>model</strong>. Write down your guess, try one change, and measure again. Keep the table: it is the checkpoint of module 5.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> this is a regression suite for a prompt: a fixed set of inputs with expected properties that you run before and after every change. <code>SimulatedModel</code> is the test double that lets you check the suite itself with no network.</div>
+<div class="box cap"><strong>Capstone:</strong> this is the checkpoint of module 5: a rewritten prompt with few-shot examples and an explicit &ldquo;I do not know&rdquo; rule, and a before and after comparison on five questions. In module 8 you grow it into a proper evaluation with 15 to 20 golden questions.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. The retrying client is the one from Monday. In real mode, the dependency wraps the real client with it, and the fake stays the default (<code>src/my_ai_project/deps.py</code>):</p><pre><code>import os
+from typing import Annotated
+
+from fastapi import Depends
+
+from my_ai_project.llm import AnthropicClient, FakeLlmClient, StreamingClient
+from my_ai_project.retry import RetryingClient
+from my_ai_project.services import SummaryService
+from my_ai_project.summarizer import LlmClient
+
+
+def get_llm_client() -&gt; StreamingClient:
+    if os.environ.get(&quot;LLM_MODE&quot;, &quot;fake&quot;) == &quot;real&quot;:
+        api_key = os.environ.get(&quot;ANTHROPIC_API_KEY&quot;)
+        if not api_key:
+            raise RuntimeError(&quot;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&quot;)
+        return RetryingClient(AnthropicClient(api_key=api_key, timeout=30.0), max_attempts=3)
+    return FakeLlmClient()
+
+
+LlmDep = Annotated[StreamingClient, Depends(get_llm_client)]
+
+
+def get_summary_service(client: LlmDep) -&gt; SummaryService:
+    return SummaryService(client)
+
+
+SummaryDep = Annotated[SummaryService, Depends(get_summary_service)]</code></pre><p>The prompts are the ones from Wednesday (<code>prompts.py</code>):</p><pre><code>NO_ANSWER = &quot;I could not find that in the knowledge base.&quot;
+
+WEAK_SYSTEM = &quot;You are a helpful assistant. Answer the user&#x27;s question using the documents.&quot;
+
+BETTER_SYSTEM = f&quot;&quot;&quot;You are a support assistant for the PumpGuard monitor.
+
+Rules:
+1. Use only the sources in the user message. Do not use any other knowledge.
+2. Answer in at most two short sentences.
+3. After each fact, name its source in square brackets, like [error-e101].
+4. If the sources do not contain the answer, reply with exactly: {NO_ANSWER}
+
+Example 1
+Question: What does error E107 mean?
+Sources:
+[error-e107] E107 Calibration expired. The last calibration is older than 30 days, so readings may drift.
+Answer: The last calibration is older than 30 days, so readings may drift [error-e107].
+
+Example 2
+Question: Can I pay in instalments?
+Sources:
+[faq-warranty] What does the warranty cover? The monitor has a two year warranty on manufacturing faults.
+Answer: {NO_ANSWER}&quot;&quot;&quot;</code></pre><p>The comparison script scores both prompts with the same questions and the same checks. It uses a real model if <code>LLM_MODE=real</code>, and the simulated stand-in otherwise. <code>compare_prompts.py</code>:</p><pre><code>import os
+from pathlib import Path
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.evaluate import run, score
+from my_ai_project.knowledge_base import load_knowledge_base
+from my_ai_project.llm import AnthropicClient
+from my_ai_project.prompts import BETTER_SYSTEM, WEAK_SYSTEM
+from my_ai_project.retrieval import InMemoryIndex
+from my_ai_project.simulated import SimulatedModel
+
+index = InMemoryIndex(FastEmbedder(), load_knowledge_base(Path(&quot;data/kb&quot;)))
+if os.environ.get(&quot;LLM_MODE&quot;) == &quot;real&quot;:
+    client, label = AnthropicClient(api_key=os.environ[&quot;ANTHROPIC_API_KEY&quot;]), &quot;real model&quot;
+else:
+    client, label = SimulatedModel(), &quot;SIMULATED model (not a real one)&quot;
+print(&quot;model:&quot;, label)
+
+for name, system in ((&quot;BEFORE (weak prompt)&quot;, WEAK_SYSTEM), (&quot;AFTER (better prompt)&quot;, BETTER_SYSTEM)):
+    results = run(index, client, system)
+    passed, total = score(results)
+    print(f&quot;\n{name}: {passed} of {total} checks passed&quot;)
+    for case, reply, outcome in results:
+        marks = &quot; &quot;.join((&quot;ok &quot; if ok else &quot;NO &quot;) + what for what, ok in outcome.items())
+        print(f&quot;  {case.question:&lt;34} {marks}&quot;)</code></pre><div class="out"><b>You should see</b><br>model: SIMULATED model (not a real one)<br><br>BEFORE (weak prompt): 0 of 8 checks passed<br>  My monitor stopped responding      NO cites the right source NO is short (30 words or fewer)<br>  How long does the battery last?    NO cites the right source NO is short (30 words or fewer)<br>  What does error E105 mean?         NO cites the right source NO is short (30 words or fewer)<br>  Where can I buy a coffee?          NO says it does not know<br>  How much does the monitor cost?    NO says it does not know<br><br>AFTER (better prompt): 7 of 8 checks passed<br>  My monitor stopped responding      ok cites the right source ok is short (30 words or fewer)<br>  How long does the battery last?    ok cites the right source ok is short (30 words or fewer)<br>  What does error E105 mean?         ok cites the right source ok is short (30 words or fewer)<br>  Where can I buy a coffee?          ok says it does not know<br>  How much does the monitor cost?    NO says it does not know</div><p><small>This table comes from the <strong>simulated</strong> model, so the script can be tested without a key. It shows that the measuring works, not that your prompt works with a real model.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Build it <span class="t">2.5 h</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch (<code>git switch -c lab-8</code>). You need everything from Day 51 to Day 54: the retrying client, <code>prompts.py</code>, <code>simulated.py</code>, <code>evaluate.py</code> and the exact-code change in <code>retrieval.py</code>.</p>
+<p><strong>Done looks like:</strong> real-mode model calls retry (with a test), the <strong>before and after table</strong> for the five questions is saved in a note (with the real model if you can), you wrote down the failures and your guess for each, tests pass with no key, the README is updated, and it is pushed.</p>
+<h3><span class="step">Part A</span> Measure first (20 min)</h3>
+<p>Before you change anything, run the five questions with the <strong>weak</strong> prompt and write the score down. Check the five questions and their checks once more: do they test what you care about? Do not change them after you see a result.</p>
+<h3><span class="step">Part B</span> Reliability (35 min)</h3>
+<p>In <code>deps.py</code>, make the real mode return a <code>RetryingClient</code> around the real client, with a timeout. Write the two tests of the template (the real mode retries, and the default is the fake). Run <code>uv run pytest</code>.</p>
+<h3><span class="step">Part C</span> The better prompt (30 min)</h3>
+<p>Use the prompt from Wednesday (four rules, two examples). Read it as a stranger would: can each rule be checked? Make sure that <strong>no example is one of your five test questions</strong>.</p>
+<h3><span class="step">Part D</span> The comparison (35 min)</h3>
+<p>Write <code>compare_prompts.py</code> from the worked example, run it with the simulated model, and match the table. The test of the template checks that the system prompt really reaches the client.</p>
+<p><strong>Mid-point check-in.</strong> <code>uv run pytest</code> and <code>uv run mypy src tests</code> pass with no key. If not, fix it before Part E. Take a 10-minute break.</p>
+<h3><span class="step">Part E</span> With a real model (20 min)</h3>
+<p>With your key in <code>.env</code> and <code>LLM_MODE=real</code>, run the script again. <strong>This is your real table.</strong> Copy it into your note. It will differ from the simulated one, and it can differ from run to run.</p><pre><code>uv run --env-file .env python compare_prompts.py
+# with LLM_MODE=real and your key in .env</code></pre>
+<h3><span class="step">Part F</span> Read the failures and try one change (25 min)</h3>
+<p>Take the first failing case. Is the cause the prompt, the search or the model? Look at the top sources and at the reply. Try <strong>one</strong> change (a third example about a different question, a clearer rule, a change in the search), run again, and write down what happened. If the score went down, keep the old prompt.</p>
+<h3><span class="step">Part G</span> The checkpoint note (15 min)</h3>
+<p>Write <code>notes/prompt-before-after.md</code> from the template in Stuck. It is the module 5 checkpoint.</p>
+<h3><span class="step">Part H</span> README, commit, push, reflect (20 min)</h3>
+<p>Add the README section, commit and push: <code>git add .</code>, <code>git commit -m "Retry model calls and compare two prompts"</code>, <code>git push</code>. Write three lines: what worked, what broke, and what the score cannot tell you.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The simulated table does not match</strong>: check <code>retrieval.py</code> (the exact-code change), the 20 documents, and that the prompt is the one from Day 53. Run the tests in <code>test_prompts.py</code>.</li><li><strong>Your real model passes the weak prompt too</strong>: good news about the model. Make the questions harder (a related page that does not contain the answer) and look at the checks: are they strict enough?</li><li><strong>The real score changes between runs</strong>: a real model is not deterministic. Run it two or three times and write the range, not one number.</li><li><strong>A check fails but the answer looks fine to you</strong>: either the check is too strict (for example it needs the exact sentence) or the answer is not as good as it looks. Decide, and write why.</li><li><strong>&ldquo;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&rdquo;</strong>: start with <code>uv run --env-file .env</code>.</li></ul><details><summary>Hint: Part B</summary><p><code>get_llm_client</code> returns <code>RetryingClient(AnthropicClient(api_key=api_key, timeout=30.0), max_attempts=3)</code> in real mode, and <code>FakeLlmClient()</code> otherwise. The test sets the environment with <code>monkeypatch.setenv</code> and checks the type with <code>isinstance</code>.</p></details><details><summary>Solution: Part B and D (tests)</summary><pre><code>from pathlib import Path
+
+import pytest
+
+from my_ai_project.answering import answer_question
+from my_ai_project.deps import get_llm_client
+from my_ai_project.embedder import FakeEmbedder
+from my_ai_project.knowledge_base import load_knowledge_base
+from my_ai_project.llm import FakeLlmClient
+from my_ai_project.prompts import BETTER_SYSTEM
+from my_ai_project.retrieval import InMemoryIndex
+from my_ai_project.retry import RetryingClient
+
+
+def test_the_real_mode_client_retries(monkeypatch: pytest.MonkeyPatch) -&gt; None:
+    monkeypatch.setenv(&quot;LLM_MODE&quot;, &quot;real&quot;)
+    monkeypatch.setenv(&quot;ANTHROPIC_API_KEY&quot;, &quot;test-key&quot;)
+    assert isinstance(get_llm_client(), RetryingClient)
+
+
+def test_the_default_client_is_the_fake_one(monkeypatch: pytest.MonkeyPatch) -&gt; None:
+    monkeypatch.delenv(&quot;LLM_MODE&quot;, raising=False)
+    assert isinstance(get_llm_client(), FakeLlmClient)
+
+
+def test_the_answer_is_asked_with_the_system_prompt() -&gt; None:
+    client = FakeLlmClient(reply=&quot;Check the cable [error-e101].&quot;)
+    index = InMemoryIndex(FakeEmbedder(), load_knowledge_base(Path(&quot;data/kb&quot;)))
+    answer_question(&quot;sensor cable timeout&quot;, index, client, min_score=0.0)
+    assert client.last_system == BETTER_SYSTEM</code></pre></details><details><summary>Template: Part G (note)</summary><pre><code># Before and after: my prompt on 5 questions
+
+Model used: (simulated / real: name)
+
+| | Before (weak prompt) | After (better prompt) |
+|---|---|---|
+| Checks passed | ... of 8 | ... of 8 |
+
+What the new prompt fixed: ...
+What is still wrong, and my guess why (search, prompt, or model): ...
+One change I tried next, and what happened: ...
+What the score cannot tell me: ...</code></pre></details><details><summary>Template: Part H (README)</summary><pre><code>## Reliable calls and a tested prompt
+
+- Model calls retry with backoff (`retry.py`): timeouts, rate limits and server errors, never a wrong key.
+- The system prompt (`prompts.py`) has rules and two examples. `compare_prompts.py` scores the old and the new
+  prompt on 5 questions, with simple checks: the right source, a short answer, and the exact &quot;not found&quot; sentence.
+
+    uv run python compare_prompts.py                        # a simulated model, no key
+    uv run --env-file .env python compare_prompts.py        # with LLM_MODE=real in .env
+
+The simulated model is only a stand-in to test the script. Use the real model for real numbers.</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why do you score the old prompt <em>before</em> you change it?</li><li>A check fails. Name the three places the cause can be.</li><li>Why does the table from the simulated model not prove your prompt works?</li></ol><details><summary>Answers</summary><ol><li>Without a before number there is nothing to compare with, only a feeling. And if you change first, you cannot go back to measure the old one in the same conditions.</li><li>The prompt (the rules or examples), the search (the right page was not in the sources or not first), and the model (it does not follow the rules).</li><li>The simulated model follows a few fixed rules. It only shows that your measuring script works. A real model is less predictable, so you need the real table.</li></ol></details></section>
+<section id="game-day56" class="game"><h2><span class="n">+</span> &middot; Game: Before and After <span class="t">5 min</span></h2>
+<p><p>You score a weak and a better prompt on the same five questions. The model is SIMULATED, so the script can be tested without a key. Read the table, pick the cause, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day56-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day56-play">Start the game</button></div>
+<div id="day56-round" hidden><div class="gtop"><span id="day56-num">Round 1</span><span id="day56-score">Score 0</span></div>
+<pre hidden><code id="day56-code"></code></pre><div class="q" id="day56-q"></div><div class="choices" id="day56-opts"></div>
+<div class="fb" id="day56-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day56-next" hidden>Next round</button></p></div>
+<div id="day56-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day56",[{"c": "uv run python compare_prompts.py   # BEFORE: the weak prompt", "q": "What does the weak prompt score?", "o": ["0 of 8: no citations, long answers, and it guesses", "8 of 8", "4 of 8"], "a": 0, "out": "BEFORE (weak prompt): 0 of 8 checks passed\n  My monitor stopped responding      NO cites the right source NO is short (30 words or fewer)\n  Where can I buy a coffee?          NO says it does not know", "why": "The weak prompt has no rule for any of the three things the checks look at."}, {"c": "uv run python compare_prompts.py   # AFTER: the better prompt", "q": "What does the better prompt score, and which case fails?", "o": ["7 of 8, and the price question fails", "8 of 8", "3 of 8"], "a": 0, "out": "AFTER (better prompt): 7 of 8 checks passed\n  What does error E105 mean?         ok cites the right source ok is short (30 words or fewer)\n  Where can I buy a coffee?          ok says it does not know\n  How much does the monitor cost?    NO says it does not know", "why": "One failure is left, a case with a related source but no price. It is where you work next."}, {"c": "# top 3 for 'What does error E105 mean?'", "q": "Why does this question pass after the exact-code change in the search?", "o": ["The page of the code is put first, so the model sees the right source", "The prompt got longer", "The model got smarter"], "a": 0, "out": "top 3 for 'What does error E105 mean?' before the change: error-e101, error-e105, error-e106\ntop 3 after the change:                                   error-e105, error-e101, error-e106", "why": "That failure was a search problem, not a prompt problem. Knowing which one it is saves hours."}, {"c": "model: SIMULATED model (not a real one)", "q": "What does this table prove?", "o": ["That your measuring script works, not that your prompt works with a real model", "That the prompt is perfect", "That the simulation is a real model"], "a": 0, "out": "model: SIMULATED model (not a real one)", "why": "A real model is less predictable. Run the script with LLM_MODE=real for your real table."}, {"c": "# the test: the real mode must retry\nmonkeypatch.setenv(\"LLM_MODE\", \"real\")\nmonkeypatch.setenv(\"ANTHROPIC_API_KEY\", \"test-key\")\nassert isinstance(get_llm_client(), RetryingClient)", "q": "What does this test hold?", "o": ["That the real mode is wrapped in the retrying client", "That the key is valid", "That the model answers"], "a": 0, "out": "3 passed in 1.11s", "why": "It checks your wiring with no network and no real key."}, {"c": "", "q": "Why do you score the old prompt before you change it?", "o": ["Without a before number there is only a feeling", "To save time", "The weak prompt must be deleted first"], "a": 0, "out": "", "why": "A before and after needs both numbers, measured the same way."}],["Compare rookie", "Compare referee", "Measure-first builder"],"Measure the old prompt first, change one thing, score the same questions again, read the failures to find whether the cause is the prompt, the search or the model, and never mistake a simulation for the real thing.");</script>
+<p><small>Tick &ldquo;Play the Before and After game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a model client that retries politely, a better prompt with a score to prove it, and a before and after note written from your own run. This is the module 5 checkpoint.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 56 checklist.</li><li>Share one line in the comments: what was the first failure you looked at, and what did you guess?</li><li><strong>Next:</strong> Sunday is the self-test on module 4 and 5 words. Then module 6 starts: real retrieval with PostgreSQL and pgvector.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

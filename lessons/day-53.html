@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 53 - Prompt engineering: rules, examples, failure modes</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 53 &middot; LEVEL 5: PROMPTS AND CONTEXT</div><h1>Prompt engineering: rules, examples, failure modes</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to rewrite a weak prompt into one with numbered rules, two examples and a rule for the missing answer.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Which of these do you retry: <code>429</code>, <code>401</code>, a timeout? Why?</li><li>Why is a stream retried only before its first piece?</li></ol><details><summary>Answers</summary><ol><li><code>429</code> and a timeout may go away, so retry with backoff. <code>401</code> (wrong key) will fail every time, so do not retry.</li><li>After a piece went to the user, a retry would repeat or mix the text.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your prompt is &ldquo;You are a helpful assistant. Answer the user&rsquo;s question using the documents.&rdquo; It works in every demo. Then a customer asks the price of the monitor, and the documents do not say. What does a model that wants to be &ldquo;helpful&rdquo; do?</strong></p><details><summary>Guess first, then open</summary><p>Very often it helps by <em>making something up</em>: a plausible price, a plausible fix. Nothing in the prompt told it that &ldquo;I do not know&rdquo; is an acceptable answer. A prompt is not a wish, it is a specification. Today you rewrite a weak prompt into one that says what to do, shows two examples, and covers the case that the answer is missing.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: write rules, not wishes</h3>
+<p>&ldquo;Be helpful&rdquo; is a wish. A <strong>rule</strong> is something you can check: <em>use only the sources</em>, <em>answer in at most two short sentences</em>, <em>name the source in square brackets</em>, <em>if the sources do not contain the answer, reply with exactly this sentence</em>. Number the rules, keep each one short, and say what to <em>do</em>, not only what to avoid. Include a rule for the case where the answer is not there.</p>
+<h3>Piece 2: show two examples (few-shot)</h3>
+<p>An <strong>example</strong> shows the format and the behaviour better than a paragraph of explanation. Giving a few examples is called <strong>few-shot</strong> prompting. Two are often enough: one normal case and one &ldquo;I do not know&rdquo; case. Write them in the same shape as the real input. And keep them <strong>different from the questions you test with</strong>: if a test question is in the prompt, you are measuring memory, not skill (the same mistake as tuning on the test set on Day 27).</p>
+<h3>Piece 3: know the failure modes, and measure</h3>
+<p>The usual ways a prompt fails: the model <strong>makes things up</strong> when the sources do not contain the answer, it <strong>ignores the format</strong>, it is <strong>too long</strong>, it <strong>refuses too much</strong>, or two rules <strong>contradict</strong> each other. You cannot see these by reading the prompt. You see them by running a few questions and checking the answers with simple tests. And remember the price: the system prompt is sent <strong>every time</strong>, so a longer prompt costs tokens on every call.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> a system prompt is like a configuration file and a contract for a component: it should be readable, versioned in Git and tested. The few-shot examples are like unit-test fixtures that show the expected input and output, and the &ldquo;do not test with your examples&rdquo; rule is the same as not using the same data in the test and in the production code.</div>
+<div class="box cap"><strong>Capstone:</strong> the assistant must cite sources and must say when it does not know. Both come from the system prompt you write now. On Saturday you measure the difference on five questions.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. Two system prompts for the same job: the weak one from the hook, and a better one with four rules and two examples (one normal, one &ldquo;not found&rdquo;). <code>src/my_ai_project/prompts.py</code>:</p><pre><code>NO_ANSWER = &quot;I could not find that in the knowledge base.&quot;
+
+WEAK_SYSTEM = &quot;You are a helpful assistant. Answer the user&#x27;s question using the documents.&quot;
+
+BETTER_SYSTEM = f&quot;&quot;&quot;You are a support assistant for the PumpGuard monitor.
+
+Rules:
+1. Use only the sources in the user message. Do not use any other knowledge.
+2. Answer in at most two short sentences.
+3. After each fact, name its source in square brackets, like [error-e101].
+4. If the sources do not contain the answer, reply with exactly: {NO_ANSWER}
+
+Example 1
+Question: What does error E107 mean?
+Sources:
+[error-e107] E107 Calibration expired. The last calibration is older than 30 days, so readings may drift.
+Answer: The last calibration is older than 30 days, so readings may drift [error-e107].
+
+Example 2
+Question: Can I pay in instalments?
+Sources:
+[faq-warranty] What does the warranty cover? The monitor has a two year warranty on manufacturing faults.
+Answer: {NO_ANSWER}&quot;&quot;&quot;</code></pre><p>The user message carries the sources and the question, in the same shape as the examples. <code>src/my_ai_project/answering.py</code> keeps the instructions out of it (they live in the system prompt):</p><pre><code>from typing import Protocol
+
+from pydantic import BaseModel
+
+from my_ai_project.prompts import BETTER_SYSTEM, NO_ANSWER
+from my_ai_project.retrieval import InMemoryIndex
+
+
+
+class LlmClient(Protocol):
+    def complete(self, prompt: str, system: str | None = None) -&gt; str: ...
+
+
+class Answer(BaseModel):
+    text: str
+    sources: list[str]
+
+
+def build_user_message(question: str, index: InMemoryIndex, doc_ids: list[str]) -&gt; str:
+    by_id = {document.doc_id: document for document in index.documents}
+    context = &quot;\n&quot;.join(f&quot;[{doc_id}] {by_id[doc_id].title}. {by_id[doc_id].body}&quot; for doc_id in doc_ids)
+    return f&quot;Question: {question}\nSources:\n{context}&quot;
+
+
+def answer_question(
+    question: str,
+    index: InMemoryIndex,
+    client: LlmClient,
+    top_k: int = 3,
+    min_score: float = 0.55,
+    system: str = BETTER_SYSTEM,
+) -&gt; Answer:
+    hits = index.search(question, top_k)
+    if not hits or hits[0].score &lt; min_score:
+        return Answer(text=NO_ANSWER, sources=[])
+    doc_ids = [hit.doc_id for hit in hits]
+    return Answer(text=client.complete(build_user_message(question, index, doc_ids), system), sources=doc_ids)</code></pre><p>A tiny script to look at the two prompts and what each costs. <code>show_prompts.py</code>:</p><pre><code>from my_ai_project.prompts import BETTER_SYSTEM, WEAK_SYSTEM
+from my_ai_project.tokens import count_tokens
+
+for name, system in ((&quot;weak&quot;, WEAK_SYSTEM), (&quot;better&quot;, BETTER_SYSTEM)):
+    print(f&quot;--- {name} system prompt: {count_tokens(system)} tokens, {len(system.split())} words&quot;)
+    print(system)</code></pre><div class="out"><b>You should see</b><br>--- weak system prompt: 14 tokens, 12 words<br>You are a helpful assistant. Answer the user's question using the documents.<br>--- better system prompt: 195 tokens, 140 words<br>You are a support assistant for the PumpGuard monitor.<br>...<br>(the rules and the two examples follow)</div><p>The better prompt is about <strong>14 times longer</strong> (195 tokens against 14), and you pay for those tokens on every call. That is a trade-off: it is worth it only if the answers get better, which is why you measure.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code> (you need the knowledge base, <code>retrieval.py</code> and <code>answering.py</code> from Lab 6, and <code>tokens.py</code> from Day 32), on a branch if you like (<code>git switch -c prompts</code>). No model is called today.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>prompts.py</code>, change <code>answering.py</code> as in the worked example, and run <code>show_prompts.py</code>. Match the two token counts. Read the better prompt slowly: find the four rules and the two examples. Which rule handles the hook (the missing price)?</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Add a <strong>fifth rule</strong> to the better prompt (for example &ldquo;Do not mention the names of other products&rdquo;), and run <code>show_prompts.py</code> again. <strong>Predict:</strong> how many tokens does one short rule add? Check. What does this tell you about adding &ldquo;just one more rule&rdquo; many times?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Copy one of your <strong>test questions</strong> (for example <em>What does error E105 mean?</em>) into one of the examples of the prompt. Then run the test that checks that no test question is in the prompt (it comes with the tests in Stuck). <strong>What do you see?</strong> Put it back. Why does this matter?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Rewrite this weak prompt for a different job, summarising a support ticket, using the same pattern: a role, numbered rules (include a rule for the case where there is nothing to summarise), and <strong>two examples</strong> (one normal, one &ldquo;nothing to summarise&rdquo;). Count its tokens. If you have a key and want to try it, run it on three tickets of your own and compare it with the weak one.</p><pre><code>prompt = &quot;Summarize this ticket.&quot;</code></pre>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Write a better system prompt with rules and examples"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>Your token counts differ a little</strong>: a small change in the text (a space, a quote) changes the count. Compare the size, not the exact number.</li><li><strong>The leak test fails and you do not see why</strong>: print the test questions and search your prompt for each one. Even a part of the question can count if the whole sentence is there.</li><li><strong>Your rewritten prompt gets long</strong>: cut the rules that repeat each other, and keep one example for each behaviour you really need.</li><li><strong>You cannot tell if the new prompt is better</strong>: you cannot, by reading. You need questions and checks. Saturday builds that.</li></ul><details><summary>Hint: Step 4</summary><p>Start from the three parts of the better prompt: who the assistant is, the numbered rules, and the examples. For the summary, a rule can fix the length (&ldquo;one sentence of at most 20 words&rdquo;) and another the exact sentence for the empty case. Write the examples in the same shape as the real input: the word <em>Ticket:</em> and the word <em>Summary:</em>.</p></details><details><summary>Solution: Step 4 (one possible answer)</summary><pre><code>You turn a support ticket into a short summary for the person who answers it.
+
+Rules:
+1. Use only what is in the ticket. Do not guess a cause.
+2. Write one sentence of at most 20 words, then a line &quot;Priority: low, normal or urgent&quot;.
+3. If the ticket has no problem in it, reply with exactly: No problem found.
+
+Example 1
+Ticket: Hello, my monitor shows E101 again since this morning. The pump is still running. Thanks!
+Summary: The monitor shows error E101 again since this morning, and the pump still runs.
+Priority: normal
+
+Example 2
+Ticket: Thanks, it works now!
+Summary: No problem found.</code></pre><p>Check yours against these questions:</p><pre><code>Questions to ask about your rewritten prompt:
+1. Does each rule say what to do, in words a stranger can follow?
+2. Is there a rule for the case where the answer is not there?
+3. Do the examples look like the real input, and differ from the questions I will test with?
+4. Does a rule contradict another one?</code></pre></details><details><summary>The tests that come with the prompts (save them as tests/test_prompts.py)</summary><pre><code>from my_ai_project.prompts import BETTER_SYSTEM, NO_ANSWER
+
+TEST_QUESTIONS = [
+    &quot;My monitor stopped responding&quot;,
+    &quot;How long does the battery last?&quot;,
+    &quot;What does error E105 mean?&quot;,
+    &quot;Where can I buy a coffee?&quot;,
+    &quot;How much does the monitor cost?&quot;,
+]
+
+
+def test_the_better_prompt_has_the_rules_and_two_examples() -&gt; None:
+    assert BETTER_SYSTEM.count(&quot;Example &quot;) == 2
+    assert &quot;square brackets&quot; in BETTER_SYSTEM
+    assert NO_ANSWER in BETTER_SYSTEM
+
+
+def test_the_examples_do_not_contain_the_test_questions() -&gt; None:
+    assert all(question not in BETTER_SYSTEM for question in TEST_QUESTIONS)</code></pre><p>If an example contains a test question, the test fails:</p><div class="out"><b>You should see</b><br>FAILED tests/test_prompts.py::test_the_examples_do_not_contain_the_test_questions<br>1 failed, 1 passed</div></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What is the difference between a wish and a rule in a prompt? Give one of each.</li><li>Why should the examples be different from your test questions?</li><li>Why is a longer system prompt not always better?</li></ol><details><summary>Answers</summary><ol><li>A wish cannot be checked (&ldquo;be helpful&rdquo;). A rule can (&ldquo;answer in at most two sentences&rdquo;, &ldquo;if the sources do not contain the answer, reply with exactly this sentence&rdquo;).</li><li>If a test question is in the prompt, a good answer may be memory, and the test no longer tells you how the prompt works on new questions. It is the same mistake as tuning on the test set.</li><li>You pay for its tokens on every call, and more rules can contradict each other or distract the model. Add a rule only when a failure you measured needs it.</li></ol></details></section>
+<section id="game-day53" class="game"><h2><span class="n">+</span> &middot; Game: Prompt Doctor <span class="t">5 min</span></h2>
+<p><p>You rewrite a weak prompt. Read what you do, pick what you expect, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day53-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day53-play">Start the game</button></div>
+<div id="day53-round" hidden><div class="gtop"><span id="day53-num">Round 1</span><span id="day53-score">Score 0</span></div>
+<pre hidden><code id="day53-code"></code></pre><div class="q" id="day53-q"></div><div class="choices" id="day53-opts"></div>
+<div class="fb" id="day53-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day53-next" hidden>Next round</button></p></div>
+<div id="day53-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day53",[{"c": "WEAK_SYSTEM = \"You are a helpful assistant. Answer the user's question using the documents.\"\nBETTER_SYSTEM = ...four rules and two examples...", "q": "How many tokens does each prompt cost, and what does that mean?", "o": ["14 against 195: the better one costs about 14 times more on every call", "The same: prompts are free", "195 against 14"], "a": 0, "out": "--- weak system prompt: 14 tokens, 12 words\n--- better system prompt: 195 tokens, 140 words", "why": "The system prompt is sent on every call, so a longer prompt must earn its tokens by better answers."}, {"c": "# the customer asks the price; the sources do not say\n# weak prompt: \"Answer the user's question using the documents.\"", "q": "Which failure mode is likely?", "o": ["The model makes up a plausible price", "The model says it does not know", "The model refuses to answer anything"], "a": 0, "out": "", "why": "Nothing in the weak prompt says that I do not know is acceptable, so a helpful model may guess."}, {"c": "4. If the sources do not contain the answer, reply with exactly: I could not find that in the knowledge base.", "q": "Why does this rule say 'exactly'?", "o": ["So the answer is a fixed sentence that a check can compare", "To make the prompt longer", "Models need capital letters"], "a": 0, "out": "", "why": "A fixed sentence can be tested mechanically, and a user interface can recognise it."}, {"c": "# Example 1 in the prompt uses the test question: What does error E105 mean?\nuv run pytest", "q": "What happens?", "o": ["The leak test fails: a test question is inside the prompt", "All tests pass", "The prompt is shorter"], "a": 0, "out": "FAILED tests/test_prompts.py::test_the_examples_do_not_contain_the_test_questions\n1 failed, 1 passed", "why": "If a test question is in the prompt, a good answer may be memory, and the test no longer measures anything."}, {"c": "Example 1\nQuestion: What does error E107 mean?\nSources:\n[error-e107] E107 Calibration expired. ...\nAnswer: The last calibration is older than 30 days, so readings may drift [error-e107].", "q": "What does a few-shot example show the model?", "o": ["The format and the behaviour, in the same shape as the real input", "A secret password", "Only the topic"], "a": 0, "out": "", "why": "Examples teach the shape and the behaviour better than a paragraph of explanation. Two are often enough."}, {"c": "", "q": "You add 'just one more rule' ten times. What is the risk?", "o": ["More tokens on every call, and rules that contradict each other", "The prompt gets cheaper", "Nothing: more is always better"], "a": 0, "out": "", "why": "Add a rule only when a failure you measured needs it."}],["Prompt rookie", "Prompt doctor", "Prompt engineer"],"A prompt is a specification: numbered rules that can be checked, two examples that differ from your test questions, a rule for the missing answer, and a measurement before you add more.");</script>
+<p><small>Tick &ldquo;Play the Prompt Doctor game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a system prompt with rules and two examples, one for the missing-answer case, a test that stops you from putting your test questions into it, and a rewritten prompt for another job.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 53 checklist.</li><li>Share one line in the comments: which rule do you think matters most, and how would you check?</li><li><strong>Next:</strong> Thursday is mixed practice: you break your prompt on purpose, one rule at a time, and see which rule does what.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
