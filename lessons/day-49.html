@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 49 - Project Lab 7: structured and streaming chat</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 49 &middot; LEVEL 4: LLM APPS &middot; PROJECT LAB</div><h1>Project Lab 7: structured and streaming chat</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to give /api/chat a schema-valid answer and a live stream, with tests for the good path and both failure paths.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why do you validate a model&rsquo;s answer even when the prompt says &ldquo;return only JSON&rdquo;?</li><li>What is the last event of a stream that went well, and of one that failed?</li></ol><details><summary>Answers</summary><ol><li>A model predicts likely text, so the answer can have a wrong value, a missing field, extra words or be cut off. The output is untrusted input.</li><li><code>event: done</code> (or <code>event: result</code> for the extract stream) when it went well, and <code>event: error</code> when it failed.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your front end team asks two things of <code>/api/chat</code>: &ldquo;always give us the same JSON fields, so our code never breaks&rdquo; and &ldquo;send the text as it is written, so the page feels alive&rdquo;. Can one endpoint do both, or do you need two?</strong></p><details><summary>Guess first, then open</summary><p>You need two, because they are two different promises. A fixed JSON shape needs the <em>whole</em> answer before you can check it. A stream sends the answer <em>while</em> it is written. Today you build both side by side: <code>/api/chat</code> for a checked answer and <code>/api/chat/stream</code> for the live text.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: one endpoint, one promise</h3>
+<p><code>/api/chat</code> promises <strong>a valid object</strong>: <code>answer</code>, <code>sources</code> and <code>confidence</code>, in that shape, every time, or a <code>502</code>. <code>/api/chat/stream</code> promises <strong>live text</strong>, ending with <code>done</code> or <code>error</code>. A client picks the one it needs. You test each promise on its own.</p>
+<h3>Piece 2: the schema is the contract with your front end</h3>
+<p>The Pydantic model <code>ChatAnswer</code> is more than a check: it is the contract that your front end reads. If a field changes, the model and the tests change <em>first</em>. Keep it small, and use <code>Literal</code> for values from a short list, like <code>confidence</code>.</p>
+<h3>Piece 3: tests with scripted models</h3>
+<p>You cannot test a real model, because it is not the same every time. You test <em>your</em> code: with a fake model that returns a good reply, one that returns a bad reply, and one that fails halfway. Each of the three paths must give the answer your contract promises.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>ChatAnswer</code> is a response DTO that your OpenAPI file publishes, and the stream is an <code>IAsyncEnumerable</code> endpoint with <code>text/event-stream</code>. Contract tests with a hand-written fake replace the real dependency, as in Lab 3.</div>
+<div class="box cap"><strong>Capstone:</strong> this is the shape of the assistant&rsquo;s API for the rest of the course: a structured answer with sources and a confidence, a live stream, and tests that prove the failure paths. Later you fill <code>sources</code> from retrieval.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. The fake model must give a valid chat reply when the prompt asks for the schema (the other replies stay as they are):</p><pre><code>CHAT_REPLY = &#x27;{&quot;answer&quot;: &quot;Check the sensor cable and restart.&quot;, &quot;sources&quot;: [&quot;error-e101&quot;], &quot;confidence&quot;: &quot;medium&quot;}&#x27;
+
+# in FakeLlmClient.complete, after the &quot;Extract&quot; check:
+        if prompt.startswith(&quot;Answer briefly&quot;) and &quot;JSON Schema&quot; in prompt:
+            return CHAT_REPLY</code></pre><p>The structured helper from Day 44 (<code>structured.py</code>) does the asking, the finding, the checking and the retry:</p><pre><code>import json
+import logging
+import re
+from typing import Protocol, TypeVar
+
+from pydantic import BaseModel, ValidationError
+
+logger = logging.getLogger(&quot;structured&quot;)
+
+T = TypeVar(&quot;T&quot;, bound=BaseModel)
+
+
+class LlmClient(Protocol):
+    def complete(self, prompt: str) -&gt; str: ...
+
+
+class StructuredOutputError(Exception):
+    &quot;&quot;&quot;Raised when the model never gives an answer that matches the schema.&quot;&quot;&quot;
+
+
+def schema_prompt(task: str, model: type[BaseModel]) -&gt; str:
+    schema = json.dumps(model.model_json_schema(), indent=2)
+    return f&quot;{task}\n\nReturn only JSON that matches this JSON Schema, with no other text:\n{schema}&quot;
+
+
+def describe(err: Exception) -&gt; str:
+    if isinstance(err, ValidationError):
+        return &quot;; &quot;.join(f&quot;{&#x27;.&#x27;.join(str(part) for part in e[&#x27;loc&#x27;])}: {e[&#x27;msg&#x27;]}&quot; for e in err.errors())
+    return str(err)
+
+
+def extract_json(reply: str) -&gt; str:
+    fenced = re.search(r&quot;```(?:json)?\s*(.*?)```&quot;, reply, re.DOTALL)
+    text = fenced.group(1) if fenced else reply
+    start, end = text.find(&quot;{&quot;), text.rfind(&quot;}&quot;)
+    if start == -1 or end &lt; start:
+        raise StructuredOutputError(&quot;no JSON object in the reply&quot;)
+    return text[start : end + 1]
+
+
+def ask_structured(client: LlmClient, task: str, model: type[T], max_attempts: int = 2) -&gt; T:
+    prompt = schema_prompt(task, model)
+    problem = &quot;&quot;
+    for attempt in range(1, max_attempts + 1):
+        if attempt == 1:
+            reply = client.complete(prompt)
+        else:
+            reply = client.complete(f&quot;{prompt}\n\nYour last answer was not valid: {problem}\nReturn only the corrected JSON.&quot;)
+        try:
+            return model.model_validate_json(extract_json(reply))
+        except (ValidationError, StructuredOutputError) as err:
+            problem = describe(err)
+            logger.warning(&quot;attempt %d of %d failed: %s&quot;, attempt, max_attempts, problem)
+    raise StructuredOutputError(f&quot;no valid answer after {max_attempts} attempts: {problem}&quot;)</code></pre><p>And the two chat routes in <code>api.py</code>. The model <code>ChatAnswer</code> is the contract, and a model that never gives a valid answer becomes a <code>502</code> with a clear message. (You need the imports from Day 46 and Day 44.)</p><pre><code>class ChatAnswer(BaseModel):
+    answer: str = Field(min_length=1)
+    sources: list[str]
+    confidence: Literal[&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;]
+
+
+@app.post(&quot;/api/chat&quot;)
+def chat(request: ChatRequest, client: LlmDep) -&gt; ChatAnswer:
+    try:
+        return ask_structured(client, f&quot;Answer briefly: {request.question}&quot;, ChatAnswer)
+    except LlmError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    except StructuredOutputError as err:
+        raise HTTPException(status_code=502, detail=&quot;the model did not return a valid answer&quot;) from err
+
+
+@app.post(&quot;/api/chat/stream&quot;)
+def chat_stream(request: ChatRequest, client: LlmDep) -&gt; StreamingResponse:
+    def events() -&gt; Iterator[str]:
+        try:
+            for piece in client.stream(f&quot;Answer briefly: {request.question}&quot;):
+                yield f&quot;data: {json.dumps(piece)}\n\n&quot;
+            yield &quot;event: done\ndata: {}\n\n&quot;
+        except LlmError as err:
+            yield f&quot;event: error\ndata: {json.dumps(str(err))}\n\n&quot;
+
+    return StreamingResponse(events(), media_type=&quot;text/event-stream&quot;)</code></pre><p>Run the server and try both. The checked answer:</p><pre><code>curl -s -i -X POST http://127.0.0.1:8000/api/chat -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;question&quot;: &quot;What is E101?&quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>HTTP/1.1 200 OK<br>content-type: application/json<br><br>{"answer":"Check the sensor cable and restart.","sources":["error-e101"],"confidence":"medium"}</div><p>And the live text (<code>-N</code> turns off the buffering):</p><pre><code>curl -s -N -X POST http://127.0.0.1:8000/api/chat/stream -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;question&quot;: &quot;What is E101?&quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>data: "(fake) "<br><br>data: "What "<br><br>data: "is "<br><br>data: "E101? "<br><br>event: done<br>data: {}</div></section>
+<section><h2><span class="n">5</span> &middot; Build it <span class="t">2.5 h</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch (<code>git switch -c lab-7</code>). You need <code>structured.py</code> (Day 44), the streaming clients and route (Day 46), the extract stream (Day 47) and the fake client from Lab 3.</p>
+<p><strong>Done looks like:</strong> <code>/api/chat</code> returns a <strong>schema-valid</strong> <code>ChatAnswer</code> (or a <code>502</code>), <code>/api/chat/stream</code> streams the text and ends with <code>done</code> or <code>error</code>, <strong>tests</strong> for the good path and both failure paths pass with no key, the README and a short note are written, and it is pushed.</p>
+<h3><span class="step">Part A</span> Design first (15 min)</h3>
+<p>On paper: the fields of <code>ChatAnswer</code> and which are required; what the client sees for each of the three paths (good, invalid answer, failure in the middle of a stream); and which status or event each one gets. Compare with the worked example.</p>
+<h3><span class="step">Part B</span> Structured <code>/api/chat</code> (35 min)</h3>
+<p>Add <code>ChatAnswer</code> and change <code>/api/chat</code> to use <code>ask_structured</code>, with a <code>502</code> for <code>LlmError</code> and another for <code>StructuredOutputError</code>. Teach the fake to return a valid chat reply (see the worked example). Run the <code>curl</code> call and match the output.</p>
+<h3><span class="step">Part C</span> Streaming <code>/api/chat/stream</code> (30 min)</h3>
+<p>Make sure your streaming route from Day 46 is on the same app, and that the failure inside the generator becomes an <code>error</code> event. Run the <code>curl -N</code> call and match the output.</p>
+<h3><span class="step">Part D</span> Tests for three paths (35 min)</h3>
+<p>Update the old chat test (the answer is now the structured one), and write tests for: a valid structured answer; a model that never gives valid JSON gives a <code>502</code>; the stream ends with <code>done</code>; a failure in the middle of a stream gives an <code>error</code> event and no <code>done</code>. Use <code>dependency_overrides</code> and clear it after each test.</p>
+<p><strong>Mid-point check-in.</strong> <code>uv run pytest</code> passes with no key, and <code>uv run mypy src tests</code> has no issues. If not, fix it before Part E. Take a 10-minute break.</p>
+<h3><span class="step">Part E</span> A terminal client (15 min)</h3>
+<p>Write <code>stream_client.py</code> (from Day 46) and run it against your server: it should print the text as it arrives and a clear message for an <code>error</code> event.</p>
+<h3><span class="step">Part F</span> Break it on purpose (10 min)</h3>
+<p>Stop your server in the middle of a long stream (add <code>time.sleep(1)</code> in the fake&rsquo;s <code>stream</code> for this test), and watch what your terminal client shows. <strong>Predict</strong> first. What does it tell you about how a client should handle a stream that just stops?</p>
+<h3><span class="step">Part G</span> One real answer (10 min)</h3>
+<p>With your key in <code>.env</code> and <code>LLM_MODE=real</code>, call both endpoints. Does the real model return a valid <code>ChatAnswer</code> on the first try? Check the log for a warning that shows a retry. Remember: its <code>sources</code> are not real yet, because retrieval is not connected to this route.</p>
+<h3><span class="step">Part H</span> README, note, push, reflect (20 min)</h3>
+<p>Add the README section and write the note (templates in Stuck). Commit and push: <code>git add .</code>, <code>git commit -m "Add structured output and streaming to /api/chat"</code>, <code>git push</code>. Write three lines: what worked, what broke, and which of the three paths you trust least.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The structured chat always gives <code>502</code></strong>: check the fake. It must return the chat JSON when the prompt starts with <code>Answer briefly</code> and contains <code>JSON Schema</code>. Print the prompt your route sends.</li><li><strong>The old chat test fails</strong>: it expected the old answer. The new answer is the JSON object of the contract.</li><li><strong>The stream test never ends</strong>: the generator must finish, and <code>done</code> must be sent after the loop. A <code>while True</code> or a missing <code>yield</code> hangs the test.</li><li><strong>A failure in the middle crashes the stream</strong>: catch <code>LlmError</code> inside the generator and send an <code>error</code> event.</li><li><strong>mypy: <code>ChatAnswer</code> is not found</strong>: define it above the route, with <code>Literal</code> imported from <code>typing</code>.</li></ul><details><summary>Hint: Part B</summary><p>The route body is one call: <code>ask_structured(client, f&quot;Answer briefly: {request.question}&quot;, ChatAnswer)</code>. The return type of the route is <code>ChatAnswer</code>, so FastAPI also puts it in the response model and in <code>/docs</code>.</p></details><details><summary>Solution: Parts B and C</summary><pre><code>class ChatAnswer(BaseModel):
+    answer: str = Field(min_length=1)
+    sources: list[str]
+    confidence: Literal[&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;]
+
+
+@app.post(&quot;/api/chat&quot;)
+def chat(request: ChatRequest, client: LlmDep) -&gt; ChatAnswer:
+    try:
+        return ask_structured(client, f&quot;Answer briefly: {request.question}&quot;, ChatAnswer)
+    except LlmError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    except StructuredOutputError as err:
+        raise HTTPException(status_code=502, detail=&quot;the model did not return a valid answer&quot;) from err
+
+
+@app.post(&quot;/api/chat/stream&quot;)
+def chat_stream(request: ChatRequest, client: LlmDep) -&gt; StreamingResponse:
+    def events() -&gt; Iterator[str]:
+        try:
+            for piece in client.stream(f&quot;Answer briefly: {request.question}&quot;):
+                yield f&quot;data: {json.dumps(piece)}\n\n&quot;
+            yield &quot;event: done\ndata: {}\n\n&quot;
+        except LlmError as err:
+            yield f&quot;event: error\ndata: {json.dumps(str(err))}\n\n&quot;
+
+    return StreamingResponse(events(), media_type=&quot;text/event-stream&quot;)</code></pre></details><details><summary>Solution: Part D</summary><p>The two tests for <code>/api/chat</code>:</p><pre><code>def test_chat_returns_a_valid_structured_answer() -&gt; None:
+    response = client.post(&quot;/api/chat&quot;, json={&quot;question&quot;: &quot;What is E101?&quot;})
+    assert response.status_code == 200
+    assert response.json() == {
+        &quot;answer&quot;: &quot;Check the sensor cable and restart.&quot;,
+        &quot;sources&quot;: [&quot;error-e101&quot;],
+        &quot;confidence&quot;: &quot;medium&quot;,
+    }
+
+
+@pytest.mark.usefixtures(&quot;clean_overrides&quot;)
+def test_chat_with_a_model_that_never_gives_valid_json_is_a_502() -&gt; None:
+    app.dependency_overrides[get_llm_client] = lambda: FakeLlmClient(reply=&quot;Sorry, no JSON today.&quot;)
+    response = client.post(&quot;/api/chat&quot;, json={&quot;question&quot;: &quot;What is E101?&quot;})
+    assert response.status_code == 502
+    assert response.json() == {&quot;detail&quot;: &quot;the model did not return a valid answer&quot;}</code></pre><p>And the tests for the stream (from Day 46):</p><pre><code>from collections.abc import Iterator
+
+import httpx2
+import pytest
+from fastapi.testclient import TestClient
+
+from my_ai_project.api import app
+from my_ai_project.deps import get_llm_client
+from my_ai_project.llm import AnthropicClient, FakeLlmClient
+
+client = TestClient(app)
+
+
+@pytest.fixture
+def clean_overrides() -&gt; Iterator[None]:
+    yield
+    app.dependency_overrides.clear()
+
+
+def read_events(question: str) -&gt; str:
+    with client.stream(&quot;POST&quot;, &quot;/api/chat/stream&quot;, json={&quot;question&quot;: question}) as response:
+        assert response.status_code == 200
+        assert response.headers[&quot;content-type&quot;].startswith(&quot;text/event-stream&quot;)
+        return &quot;&quot;.join(response.iter_text())
+
+
+def test_the_answer_arrives_in_pieces_and_ends_with_done() -&gt; None:
+    body = read_events(&quot;What is E101?&quot;)
+    assert body.count(&quot;data: &quot;) &gt; 3
+    assert body.endswith(&quot;event: done\ndata: {}\n\n&quot;)
+
+
+@pytest.mark.usefixtures(&quot;clean_overrides&quot;)
+def test_a_failure_in_the_middle_becomes_an_error_event() -&gt; None:
+    app.dependency_overrides[get_llm_client] = lambda: FakeLlmClient(reply=&quot;one two three four&quot;, fail_after=2)
+    body = read_events(&quot;What is E101?&quot;)
+    assert body.startswith(&#x27;data: &quot;one &quot;\n\ndata: &quot;two &quot;\n\n&#x27;)
+    assert &#x27;event: error\ndata: &quot;the model call failed&quot;&#x27; in body
+    assert &quot;event: done&quot; not in body
+
+
+def test_the_real_client_streams_text_from_a_pretend_server() -&gt; None:
+    def sse(event: str, data: str) -&gt; str:
+        return f&quot;event: {event}\ndata: {data}\n\n&quot;
+
+    def handler(request: httpx2.Request) -&gt; httpx2.Response:
+        text = sse(&quot;message_start&quot;, &#x27;{&quot;type&quot;:&quot;message_start&quot;,&quot;message&quot;:{&quot;id&quot;:&quot;m&quot;,&quot;type&quot;:&quot;message&quot;,&quot;role&quot;:&quot;assistant&quot;,&quot;model&quot;:&quot;x&quot;,&quot;content&quot;:[],&quot;stop_reason&quot;:null,&quot;stop_sequence&quot;:null,&quot;usage&quot;:{&quot;input_tokens&quot;:5,&quot;output_tokens&quot;:1}}}&#x27;)
+        text += sse(&quot;content_block_start&quot;, &#x27;{&quot;type&quot;:&quot;content_block_start&quot;,&quot;index&quot;:0,&quot;content_block&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;&quot;}}&#x27;)
+        for piece in (&quot;E101 &quot;, &quot;means &quot;, &quot;timeout.&quot;):
+            text += sse(&quot;content_block_delta&quot;, &#x27;{&quot;type&quot;:&quot;content_block_delta&quot;,&quot;index&quot;:0,&quot;delta&quot;:{&quot;type&quot;:&quot;text_delta&quot;,&quot;text&quot;:&quot;%s&quot;}}&#x27; % piece)
+        text += sse(&quot;content_block_stop&quot;, &#x27;{&quot;type&quot;:&quot;content_block_stop&quot;,&quot;index&quot;:0}&#x27;)
+        text += sse(&quot;message_delta&quot;, &#x27;{&quot;type&quot;:&quot;message_delta&quot;,&quot;delta&quot;:{&quot;stop_reason&quot;:&quot;end_turn&quot;,&quot;stop_sequence&quot;:null},&quot;usage&quot;:{&quot;output_tokens&quot;:4}}&#x27;)
+        text += sse(&quot;message_stop&quot;, &#x27;{&quot;type&quot;:&quot;message_stop&quot;}&#x27;)
+        return httpx2.Response(200, headers={&quot;content-type&quot;: &quot;text/event-stream&quot;}, content=text.encode())
+
+    real = AnthropicClient(api_key=&quot;test-key&quot;, http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+    assert list(real.stream(&quot;What is E101?&quot;)) == [&quot;E101 &quot;, &quot;means &quot;, &quot;timeout.&quot;]</code></pre></details><details><summary>Solution: Part E</summary><pre><code>import json
+import sys
+
+import httpx2
+
+question = &quot; &quot;.join(sys.argv[1:]) or &quot;What is E101?&quot;
+event = &quot;message&quot;
+with httpx2.stream(&quot;POST&quot;, &quot;http://127.0.0.1:8000/api/chat/stream&quot;, json={&quot;question&quot;: question}, timeout=60) as response:
+    for line in response.iter_lines():
+        if line.startswith(&quot;event:&quot;):
+            event = line.removeprefix(&quot;event:&quot;).strip()
+        elif line.startswith(&quot;data:&quot;):
+            data = json.loads(line.removeprefix(&quot;data:&quot;).strip())
+            if event == &quot;message&quot;:
+                print(data, end=&quot;&quot;, flush=True)
+            elif event == &quot;error&quot;:
+                print(&quot;\n[error]&quot;, data)
+            event = &quot;message&quot;
+print()</code></pre><div class="out"><b>You should see</b><br>(fake) What is E101?</div></details><details><summary>Template: Part H (README)</summary><pre><code>## Chat: structured and streaming
+
+- `POST /api/chat` returns JSON that is checked against a schema: `answer`, `sources`, `confidence`.
+  If the model gives something invalid, the app asks again once (with the problem), then answers 502.
+- `POST /api/chat/stream` streams the answer as server-sent events: `data:` pieces, then `event: done`,
+  or `event: error` if the model call fails halfway.
+- Try the stream from a terminal: `uv run python stream_client.py &quot;What is E101?&quot;`
+
+Tests use a fake model, so they need no key: `uv run pytest`.</code></pre></details><details><summary>Template: Part H (note)</summary><pre><code># Structured output and streaming: what I learned
+
+1. What my structured answer looks like, and one case where the model gave something invalid (real or scripted): ...
+2. What happened when I retried with the problem, and how many attempts I allow: ...
+3. What the client sees when a stream fails halfway, and how it can tell: ...
+4. One thing a schema cannot check in my assistant&#x27;s answers, and what I will use for it: ...</code></pre></details><details><summary>Extra: the extract stream from Day 47</summary><p>If you also kept <code>/api/extract/stream</code>, this is its final version, with the error message that names the field:</p><pre><code>@app.post(&quot;/api/extract/stream&quot;)
+def extract_stream(request: ExtractRequest, client: LlmDep) -&gt; StreamingResponse:
+    prompt = schema_prompt(f&quot;Extract the error code, severity and action: {request.text}&quot;, Extraction)
+
+    def events() -&gt; Iterator[str]:
+        collected = &quot;&quot;
+        try:
+            for piece in client.stream(prompt):
+                collected += piece
+                yield f&quot;data: {json.dumps(piece)}\n\n&quot;
+            result = Extraction.model_validate_json(extract_json(collected))
+            yield f&quot;event: result\ndata: {result.model_dump_json()}\n\n&quot;
+        except LlmError as err:
+            yield f&quot;event: error\ndata: {json.dumps(str(err))}\n\n&quot;
+        except (StructuredOutputError, ValidationError) as err:
+            yield f&quot;event: error\ndata: {json.dumps(describe(err))}\n\n&quot;
+
+    return StreamingResponse(events(), media_type=&quot;text/event-stream&quot;)</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why are <code>/api/chat</code> and <code>/api/chat/stream</code> two endpoints and not one?</li><li>What are the three paths you test for the chat, and what does the client see for each?</li><li>What can a schema not check in a chat answer?</li></ol><details><summary>Answers</summary><ol><li>They make different promises. A checked object needs the whole answer before it can be validated, and a stream sends pieces while the answer is written. A client picks the promise it needs.</li><li>Good: <code>200</code> with a valid <code>ChatAnswer</code>. Invalid answer after the retry: <code>502</code> with a clear message. Failure in the middle of a stream: the text so far, then an <code>error</code> event and no <code>done</code>.</li><li>Whether the answer is <em>true</em>, and whether the <code>sources</code> are the right ones. The shape can be perfect and the content wrong, so those need checks against real documents.</li></ol></details></section>
+<section id="game-day49" class="game"><h2><span class="n">+</span> &middot; Game: Chat Contract <span class="t">5 min</span></h2>
+<p><p>Your chat has two promises: a checked object and a live stream. Read the situation, pick what the client sees, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day49-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day49-play">Start the game</button></div>
+<div id="day49-round" hidden><div class="gtop"><span id="day49-num">Round 1</span><span id="day49-score">Score 0</span></div>
+<pre hidden><code id="day49-code"></code></pre><div class="q" id="day49-q"></div><div class="choices" id="day49-opts"></div>
+<div class="fb" id="day49-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day49-next" hidden>Next round</button></p></div>
+<div id="day49-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day49",[{"c": "POST /api/chat\n{\"question\": \"What is E101?\"}   # the fake model replies with valid JSON", "q": "What does the client get?", "o": ["200 with answer, sources and confidence", "A stream of pieces", "502"], "a": 0, "out": "HTTP/1.1 200 OK\ncontent-type: application/json\n\n{\"answer\":\"Check the sensor cable and restart.\",\"sources\":[\"error-e101\"],\"confidence\":\"medium\"}", "why": "The reply passed the ChatAnswer schema, so the route returns it as the contract promises."}, {"c": "# the fake replies: Sorry, no JSON today.\nPOST /api/chat", "q": "What does the client get after the retry?", "o": ["502 with: the model did not return a valid answer", "200 with the text", "422"], "a": 0, "out": "{\"detail\":\"the model did not return a valid answer\"}", "why": "The thing you called gave a bad answer, so the status is 502, with a message that says so and no internal details."}, {"c": "POST /api/chat/stream\n{\"question\": \"What is E101?\"}", "q": "What does a good stream look like?", "o": ["data: pieces, then event: done", "One JSON object", "Pieces, then event: result"], "a": 0, "out": "data: \"(fake) \"\n\ndata: \"What \"\n\ndata: \"is \"\n\ndata: \"E101? \"\n\nevent: done\ndata: {}", "why": "The stream promises live text that ends with done (or error). The checked object is the other endpoint."}, {"c": "uv run python stream_client.py \"What is E101?\"", "q": "What does the terminal client print?", "o": ["The pieces joined on one line, as they arrive", "One line per piece", "Nothing until the end"], "a": 0, "out": "(fake) What is E101?", "why": "It prints each piece with end=\"\" and flush=True, so the text grows on one line."}, {"c": "app.dependency_overrides[get_llm_client] = lambda: FakeLlmClient(reply=\"one two three four\", fail_after=2)\nPOST /api/chat/stream", "q": "The fake fails after two pieces. How does the body start and end?", "o": ["Two data pieces, then event: error, and no event: done", "Four pieces, then done", "Only event: error"], "a": 0, "out": "data: \"one \"\n\ndata: \"two \"\n\nevent: error\ndata: \"the model call failed\"", "why": "The status was already 200, so the failure is signalled inside the stream."}, {"c": "", "q": "What can the ChatAnswer schema not check?", "o": ["Whether the answer is true and the sources are the right ones", "That confidence is low, medium or high", "That answer is not empty"], "a": 0, "out": "", "why": "The schema checks the shape. Whether the content is true needs checks against real documents."}],["Contract rookie", "Contract keeper", "API designer"],"A checked object needs the whole answer, a stream sends live text that ends with done or error, and tests with a fake model hold all three paths: good, invalid and broken halfway.");</script>
+<p><small>Tick &ldquo;Play the Chat Contract game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a chat API with two clear promises: a checked, schema-valid answer and a live stream that always ends with <code>done</code> or <code>error</code>. All three paths are tested, with no key.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 49 checklist.</li><li>Share one line in the comments: which of the three paths did you trust least?</li><li><strong>Next:</strong> Sunday is the self-test on module 4 so far. Then week 8 is about reliability: timeouts, retries and rate limits, and then how to write better prompts.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

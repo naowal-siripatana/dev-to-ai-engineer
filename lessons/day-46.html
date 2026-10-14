@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 46 - Streaming responses</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 46 &middot; LEVEL 4: LLM APPS</div><h1>Streaming responses</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to stream an answer piece by piece from your endpoint to the terminal, and signal a failure in the middle.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>When your structured helper gets an invalid answer, what does it send in the retry?</li><li>What is the difference between a <code>422</code> and a <code>502</code> in your API?</li></ol><details><summary>Answers</summary><ol><li>The same prompt, plus the exact problem (for example which field is wrong), and a request to return only the corrected JSON.</li><li><code>422</code>: the client sent a bad request. <code>502</code>: something your API called (the model) gave a bad answer or failed.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A model needs 8 seconds to write a full answer. In one app the user stares at a blank page for 8 seconds. In another the first word appears after half a second and the rest flows in. The total time is the same. Which app feels faster, and what does the second one send?</strong></p><details><summary>Guess first, then open</summary><p>The second one feels much faster, because the wait for the <em>first</em> word is what people notice. It does not wait for the whole answer: the model sends the text in small pieces as it writes, and your API passes each piece on at once. That is <strong>streaming</strong>.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: the answer arrives in pieces</h3>
+<p>With streaming, the provider sends many small <strong>events</strong> instead of one big reply: a start event, many <em>text delta</em> events (a few words each), and a final event with the stop reason and the token counts. Your code reads them as they come. The SDK gives you a plain loop: <code>for text in stream.text_stream</code>.</p>
+<h3>Piece 2: pass the pieces on with server-sent events</h3>
+<p><strong>Server-sent events</strong> (SSE) is a simple way to push text from a server to a browser or a script. The response has the type <code>text/event-stream</code>, and each event is a few lines of text ending with a blank line: <code>event: name</code> (optional) and <code>data: ...</code>. In FastAPI you write a <strong>generator</strong> (a function that uses <code>yield</code> for each piece) and wrap it in <code>StreamingResponse</code>.</p>
+<h3>Piece 3: an error can happen after the status code was sent</h3>
+<p>The status code <code>200</code> goes out <em>before</em> the first piece. If the model fails halfway, you cannot change it into a <code>502</code>: the client has already got a <code>200</code> and some text. So you catch the error <em>inside</em> the generator and send a special <code>error</code> event, and the client must be ready for a stream that ends badly.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> a Python generator with <code>yield</code> is like <code>IAsyncEnumerable&lt;T&gt;</code> with <code>yield return</code>, and <code>StreamingResponse</code> is like returning a stream from a controller, or writing to <code>HttpResponse.Body</code> and flushing each chunk. SSE is also what <code>text/event-stream</code> endpoints use in ASP.NET Core.</div>
+<div class="box cap"><strong>Capstone:</strong> the chat of the assistant should feel alive. Streaming is how the first words of an answer reach the user while the model is still writing the rest. On Saturday you add it to <code>/api/chat</code>.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. Start with the library and no network: this script gives the SDK a pretend server that sends the documented stream of events, so you see the pieces arrive. <code>stream_mock.py</code>:</p><pre><code>import anthropic
+import httpx2
+
+PIECES = [&quot;E101 &quot;, &quot;means &quot;, &quot;the &quot;, &quot;sensor &quot;, &quot;timed &quot;, &quot;out.&quot;]
+
+
+def sse(event: str, data: str) -&gt; str:
+    return f&quot;event: {event}\ndata: {data}\n\n&quot;
+
+
+def handler(request: httpx2.Request) -&gt; httpx2.Response:
+    body = sse(&quot;message_start&quot;, &#x27;{&quot;type&quot;:&quot;message_start&quot;,&quot;message&quot;:{&quot;id&quot;:&quot;msg_1&quot;,&quot;type&quot;:&quot;message&quot;,&quot;role&quot;:&quot;assistant&quot;,&quot;model&quot;:&quot;claude-haiku-4-5-20251001&quot;,&quot;content&quot;:[],&quot;stop_reason&quot;:null,&quot;stop_sequence&quot;:null,&quot;usage&quot;:{&quot;input_tokens&quot;:25,&quot;output_tokens&quot;:1}}}&#x27;)
+    body += sse(&quot;content_block_start&quot;, &#x27;{&quot;type&quot;:&quot;content_block_start&quot;,&quot;index&quot;:0,&quot;content_block&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;&quot;}}&#x27;)
+    for piece in PIECES:
+        body += sse(&quot;content_block_delta&quot;, &#x27;{&quot;type&quot;:&quot;content_block_delta&quot;,&quot;index&quot;:0,&quot;delta&quot;:{&quot;type&quot;:&quot;text_delta&quot;,&quot;text&quot;:&quot;%s&quot;}}&#x27; % piece)
+    body += sse(&quot;content_block_stop&quot;, &#x27;{&quot;type&quot;:&quot;content_block_stop&quot;,&quot;index&quot;:0}&#x27;)
+    body += sse(&quot;message_delta&quot;, &#x27;{&quot;type&quot;:&quot;message_delta&quot;,&quot;delta&quot;:{&quot;stop_reason&quot;:&quot;end_turn&quot;,&quot;stop_sequence&quot;:null},&quot;usage&quot;:{&quot;output_tokens&quot;:9}}&#x27;)
+    body += sse(&quot;message_stop&quot;, &#x27;{&quot;type&quot;:&quot;message_stop&quot;}&#x27;)
+    return httpx2.Response(200, headers={&quot;content-type&quot;: &quot;text/event-stream&quot;}, content=body.encode())
+
+
+client = anthropic.Anthropic(api_key=&quot;not-a-real-key&quot;, http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+with client.messages.stream(model=&quot;claude-haiku-4-5-20251001&quot;, max_tokens=100, messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is E101?&quot;}]) as stream:
+    for text in stream.text_stream:
+        print(repr(text))
+    final = stream.get_final_message()
+print(&quot;stop reason:&quot;, final.stop_reason, &quot;| tokens out:&quot;, final.usage.output_tokens)</code></pre><div class="out"><b>You should see</b><br>'E101 '<br>'means '<br>'the '<br>'sensor '<br>'timed '<br>'out.'<br>stop reason: end_turn | tokens out: 9</div><p>Now your own clients get a <code>stream</code> method next to <code>complete</code>: the fake one splits its reply into words, and the real one reads the SDK stream, logs one line at the end, and turns failures into <code>LlmError</code>. <code>src/my_ai_project/llm.py</code>:</p><pre><code>import logging
+import time
+from collections.abc import Iterator
+from typing import Protocol
+
+import anthropic
+
+logger = logging.getLogger(&quot;llm&quot;)
+
+EXTRACT_REPLY = &#x27;{&quot;error_code&quot;: &quot;E101&quot;, &quot;severity&quot;: &quot;medium&quot;, &quot;action&quot;: &quot;Check the sensor cable&quot;}&#x27;
+
+
+class LlmError(Exception):
+    &quot;&quot;&quot;Raised when a model call fails.&quot;&quot;&quot;
+
+
+class StreamingClient(Protocol):
+    def complete(self, prompt: str) -&gt; str: ...
+
+    def stream(self, prompt: str) -&gt; Iterator[str]: ...
+
+
+class FakeLlmClient:
+    &quot;&quot;&quot;Stands in for the real model: no network, no cost, same answer every time.&quot;&quot;&quot;
+
+    def __init__(self, reply: str | None = None, fail_after: int | None = None) -&gt; None:
+        self.reply = reply
+        self.fail_after = fail_after
+
+    def complete(self, prompt: str) -&gt; str:
+        if self.reply is not None:
+            return self.reply
+        if prompt.startswith(&quot;Extract&quot;):
+            return EXTRACT_REPLY
+        prompt = prompt.removeprefix(&quot;Summarize in one sentence: &quot;)
+        return &quot;(fake) &quot; + prompt.removeprefix(&quot;Answer briefly: &quot;)
+
+    def stream(self, prompt: str) -&gt; Iterator[str]:
+        for number, word in enumerate(self.complete(prompt).split(&quot; &quot;)):
+            if self.fail_after is not None and number &gt;= self.fail_after:
+                raise LlmError(&quot;the model call failed&quot;)
+            yield word + &quot; &quot;
+
+
+class AnthropicClient:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = &quot;claude-haiku-4-5-20251001&quot;,
+        max_tokens: int = 300,
+        http_client: anthropic.DefaultHttpxClient | None = None,
+    ) -&gt; None:
+        self.client = anthropic.Anthropic(api_key=api_key, http_client=http_client)
+        self.model = model
+        self.max_tokens = max_tokens
+
+    def complete(self, prompt: str) -&gt; str:
+        started = time.perf_counter()
+        try:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: prompt}],
+            )
+        except anthropic.APIError as err:
+            logger.error(&quot;llm call failed model=%s error=%s&quot;, self.model, type(err).__name__)
+            raise LlmError(&quot;the model call failed&quot;) from err
+        text = &quot;&quot;.join(block.text for block in message.content if block.type == &quot;text&quot;)
+        logger.info(
+            &quot;llm call ok model=%s prompt_chars=%d reply_chars=%d input_tokens=%d output_tokens=%d ms=%d&quot;,
+            self.model,
+            len(prompt),
+            len(text),
+            message.usage.input_tokens,
+            message.usage.output_tokens,
+            round((time.perf_counter() - started) * 1000),
+        )
+        return text
+
+    def stream(self, prompt: str) -&gt; Iterator[str]:
+        started = time.perf_counter()
+        pieces = 0
+        try:
+            with self.client.messages.stream(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: prompt}],
+            ) as stream:
+                for text in stream.text_stream:
+                    pieces += 1
+                    yield text
+                final = stream.get_final_message()
+        except anthropic.APIError as err:
+            logger.error(&quot;llm stream failed model=%s error=%s&quot;, self.model, type(err).__name__)
+            raise LlmError(&quot;the model call failed&quot;) from err
+        logger.info(
+            &quot;llm stream ok model=%s prompt_chars=%d pieces=%d input_tokens=%d output_tokens=%d ms=%d&quot;,
+            self.model,
+            len(prompt),
+            pieces,
+            final.usage.input_tokens,
+            final.usage.output_tokens,
+            round((time.perf_counter() - started) * 1000),
+        )</code></pre><p>And the route. It needs these imports in <code>api.py</code>, and then it wraps the generator in <code>StreamingResponse</code>:</p><pre><code>import json
+from collections.abc import Iterator
+
+from fastapi.responses import StreamingResponse</code></pre><pre><code>@app.post(&quot;/api/chat/stream&quot;)
+def chat_stream(request: ChatRequest, client: LlmDep) -&gt; StreamingResponse:
+    def events() -&gt; Iterator[str]:
+        try:
+            for piece in client.stream(f&quot;Answer briefly: {request.question}&quot;):
+                yield f&quot;data: {json.dumps(piece)}\n\n&quot;
+            yield &quot;event: done\ndata: {}\n\n&quot;
+        except LlmError as err:
+            yield f&quot;event: error\ndata: {json.dumps(str(err))}\n\n&quot;
+
+    return StreamingResponse(events(), media_type=&quot;text/event-stream&quot;)</code></pre><p>Run the server (<code>uv run uvicorn my_ai_project.api:app --reload</code>) and call it. The <code>-N</code> flag tells <code>curl</code> not to buffer, so you see each piece as it arrives:</p><pre><code>curl -s -N -i -X POST http://127.0.0.1:8000/api/chat/stream -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;question&quot;: &quot;What is E101?&quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>HTTP/1.1 200 OK<br>content-type: text/event-stream; charset=utf-8<br>Transfer-Encoding: chunked<br><br>data: "(fake) "<br><br>data: "What "<br><br>data: "is "<br><br>data: "E101? "<br><br>event: done<br>data: {}</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code> from Lab 3, on a branch if you like (<code>git switch -c streaming</code>). Today no real key is needed: the fake client streams.</p>
+<h3><span class="step">Step 1</span> Copy and run, without a model</h3>
+<p>Save <code>stream_mock.py</code> and run it. Match the six pieces and the last line. Which event carries the stop reason and the token count, and which carry the text?</p>
+<h3><span class="step">Step 2</span> Add streaming to your app</h3>
+<p>Add the <code>StreamingClient</code> protocol and the <code>stream</code> methods to <code>llm.py</code>, change <code>LlmDep</code> in <code>deps.py</code> to use <code>StreamingClient</code>, add the route, start the server, and run the <code>curl</code> call. Match the output.</p>
+<h3><span class="step">Step 3</span> Change one thing</h3>
+<p>In the fake client&rsquo;s <code>stream</code>, add <code>time.sleep(0.5)</code> before each <code>yield</code> (and <code>import time</code>). <strong>Predict:</strong> what will you see in the terminal with <code>curl -N</code>? Run it, and then try <code>curl</code> <em>without</em> <code>-N</code>. Take the <code>sleep</code> out afterwards.</p>
+<h3><span class="step">Step 4</span> Break it on purpose</h3>
+<p>Make a small app where the generator raises an error after two pieces, <em>without</em> a <code>try</code>:</p><pre><code>def events() -&gt; Iterator[str]:
+    yield &#x27;data: &quot;one &quot;\n\n&#x27;
+    yield &#x27;data: &quot;two &quot;\n\n&#x27;
+    raise RuntimeError(&quot;the model call failed&quot;)</code></pre>
+<p>Call it with <code>curl -N -i</code>. <strong>What status code does the client see, and what happens at the end?</strong> Look at the server log too. Then put the error handling back, as in the worked example.</p>
+<h3><span class="step">Step 5</span> Your turn</h3>
+<p>Write a small <strong>terminal client</strong>, <code>stream_client.py</code>, that calls your streaming endpoint with <code>httpx2</code>, reads the lines as they arrive, and prints the text pieces on one line, without waiting for the end. It must understand the <code>event:</code> lines, and print a clear message for an <code>error</code> event. Then write the three tests of the template in Stuck, and commit: <code>git add .</code> and <code>git commit -m "Stream the chat answer"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>You see everything at once, not piece by piece</strong>: use <code>curl -N</code>, and check that the route returns a <code>StreamingResponse</code> of a <em>generator</em> that yields while the model is still writing. If you build the whole answer first and return it afterwards, there is nothing left to stream.</li><li><strong>&ldquo;ModuleNotFoundError: No module named 'httpx2'&rdquo;</strong>: run <code>uv add httpx2</code> (it is also a dev dependency from Day 12).</li><li><strong>The terminal client prints each piece on a new line</strong>: use <code>print(piece, end=&quot;&quot;, flush=True)</code>. Without <code>flush=True</code> the text can sit in a buffer.</li><li><strong>A piece starts or ends with a space and it looks wrong</strong>: the space is part of the piece. That is why the data is sent as JSON (<code>json.dumps(piece)</code>): the quotes keep spaces and new lines safe.</li><li><strong>mypy says the route returns the wrong type</strong>: the return type is <code>StreamingResponse</code>, and the generator is annotated <code>Iterator[str]</code>.</li></ul><details><summary>Hint: Step 5</summary><p>Use <code>with httpx2.stream(&quot;POST&quot;, url, json=...) as response:</code> and loop over <code>response.iter_lines()</code>. Remember the last <code>event:</code> name. For a line starting with <code>data:</code>, take the rest, remove the spaces around it, and read it with <code>json.loads</code>. After an event is used, go back to the default name <code>message</code>.</p></details><details><summary>Solution: Step 5</summary><pre><code>import json
+import sys
+
+import httpx2
+
+question = &quot; &quot;.join(sys.argv[1:]) or &quot;What is E101?&quot;
+event = &quot;message&quot;
+with httpx2.stream(&quot;POST&quot;, &quot;http://127.0.0.1:8000/api/chat/stream&quot;, json={&quot;question&quot;: question}, timeout=60) as response:
+    for line in response.iter_lines():
+        if line.startswith(&quot;event:&quot;):
+            event = line.removeprefix(&quot;event:&quot;).strip()
+        elif line.startswith(&quot;data:&quot;):
+            data = json.loads(line.removeprefix(&quot;data:&quot;).strip())
+            if event == &quot;message&quot;:
+                print(data, end=&quot;&quot;, flush=True)
+            elif event == &quot;error&quot;:
+                print(&quot;\n[error]&quot;, data)
+            event = &quot;message&quot;
+print()</code></pre><p>With the server running and the fake client:</p><div class="out"><b>You should see</b><br>(fake) What is E101?</div><p>The words appear one after the other, as they arrive (they arrive too fast to see with the fake client unless you added the <code>sleep</code> in Step 3).</p></details><details><summary>Solution: Step 4</summary><div class="out"><b>You should see</b><br>HTTP/1.1 200 OK<br>content-type: text/event-stream; charset=utf-8<br>Transfer-Encoding: chunked<br><br>data: "one "<br><br>data: "two "<br><br>(then the connection ends; curl exits with code 18)</div><p>The status is <code>200</code>, because it was sent before the first piece. The client gets two pieces and then the connection just ends: <code>curl</code> exits with code <code>18</code> (a partial transfer). In the server log:</p><div class="out"><b>You should see</b><br>ERROR:    Exception in ASGI application<br>...<br>RuntimeError: the model call failed</div><p>The client cannot know whether the answer is complete. That is why your generator catches <code>LlmError</code> and sends an <code>event: error</code>, and ends with <code>event: done</code> on success. A client can then tell &ldquo;finished&rdquo; from &ldquo;broken&rdquo;.</p></details><details><summary>Template: Step 5 (tests)</summary><pre><code>from collections.abc import Iterator
+
+import httpx2
+import pytest
+from fastapi.testclient import TestClient
+
+from my_ai_project.api import app
+from my_ai_project.deps import get_llm_client
+from my_ai_project.llm import AnthropicClient, FakeLlmClient
+
+client = TestClient(app)
+
+
+@pytest.fixture
+def clean_overrides() -&gt; Iterator[None]:
+    yield
+    app.dependency_overrides.clear()
+
+
+def read_events(question: str) -&gt; str:
+    with client.stream(&quot;POST&quot;, &quot;/api/chat/stream&quot;, json={&quot;question&quot;: question}) as response:
+        assert response.status_code == 200
+        assert response.headers[&quot;content-type&quot;].startswith(&quot;text/event-stream&quot;)
+        return &quot;&quot;.join(response.iter_text())
+
+
+def test_the_answer_arrives_in_pieces_and_ends_with_done() -&gt; None:
+    body = read_events(&quot;What is E101?&quot;)
+    assert body.count(&quot;data: &quot;) &gt; 3
+    assert body.endswith(&quot;event: done\ndata: {}\n\n&quot;)
+
+
+@pytest.mark.usefixtures(&quot;clean_overrides&quot;)
+def test_a_failure_in_the_middle_becomes_an_error_event() -&gt; None:
+    app.dependency_overrides[get_llm_client] = lambda: FakeLlmClient(reply=&quot;one two three four&quot;, fail_after=2)
+    body = read_events(&quot;What is E101?&quot;)
+    assert body.startswith(&#x27;data: &quot;one &quot;\n\ndata: &quot;two &quot;\n\n&#x27;)
+    assert &#x27;event: error\ndata: &quot;the model call failed&quot;&#x27; in body
+    assert &quot;event: done&quot; not in body
+
+
+def test_the_real_client_streams_text_from_a_pretend_server() -&gt; None:
+    def sse(event: str, data: str) -&gt; str:
+        return f&quot;event: {event}\ndata: {data}\n\n&quot;
+
+    def handler(request: httpx2.Request) -&gt; httpx2.Response:
+        text = sse(&quot;message_start&quot;, &#x27;{&quot;type&quot;:&quot;message_start&quot;,&quot;message&quot;:{&quot;id&quot;:&quot;m&quot;,&quot;type&quot;:&quot;message&quot;,&quot;role&quot;:&quot;assistant&quot;,&quot;model&quot;:&quot;x&quot;,&quot;content&quot;:[],&quot;stop_reason&quot;:null,&quot;stop_sequence&quot;:null,&quot;usage&quot;:{&quot;input_tokens&quot;:5,&quot;output_tokens&quot;:1}}}&#x27;)
+        text += sse(&quot;content_block_start&quot;, &#x27;{&quot;type&quot;:&quot;content_block_start&quot;,&quot;index&quot;:0,&quot;content_block&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;&quot;}}&#x27;)
+        for piece in (&quot;E101 &quot;, &quot;means &quot;, &quot;timeout.&quot;):
+            text += sse(&quot;content_block_delta&quot;, &#x27;{&quot;type&quot;:&quot;content_block_delta&quot;,&quot;index&quot;:0,&quot;delta&quot;:{&quot;type&quot;:&quot;text_delta&quot;,&quot;text&quot;:&quot;%s&quot;}}&#x27; % piece)
+        text += sse(&quot;content_block_stop&quot;, &#x27;{&quot;type&quot;:&quot;content_block_stop&quot;,&quot;index&quot;:0}&#x27;)
+        text += sse(&quot;message_delta&quot;, &#x27;{&quot;type&quot;:&quot;message_delta&quot;,&quot;delta&quot;:{&quot;stop_reason&quot;:&quot;end_turn&quot;,&quot;stop_sequence&quot;:null},&quot;usage&quot;:{&quot;output_tokens&quot;:4}}&#x27;)
+        text += sse(&quot;message_stop&quot;, &#x27;{&quot;type&quot;:&quot;message_stop&quot;}&#x27;)
+        return httpx2.Response(200, headers={&quot;content-type&quot;: &quot;text/event-stream&quot;}, content=text.encode())
+
+    real = AnthropicClient(api_key=&quot;test-key&quot;, http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+    assert list(real.stream(&quot;What is E101?&quot;)) == [&quot;E101 &quot;, &quot;means &quot;, &quot;timeout.&quot;]</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Streaming does not make the answer finish sooner. Why does it still feel faster?</li><li>Why can your API not turn a failure in the middle of a stream into a <code>502</code>?</li><li>Why does the stream end with <code>event: done</code>?</li></ol><details><summary>Answers</summary><ol><li>The user sees the first words after a fraction of a second instead of waiting for the whole answer. The wait for the first word is what people notice most.</li><li>The status code is sent before the first piece, so the client already has a <code>200</code> and some text when the error happens. Your only tool is a signal inside the stream, such as an <code>error</code> event.</li><li>So the client can tell a finished answer from a stream that was cut. Without it a broken connection and a complete answer would look the same.</li></ol></details></section>
+<section id="game-day46" class="game"><h2><span class="n">+</span> &middot; Game: Stream Watcher <span class="t">5 min</span></h2>
+<p><p>You stream an answer piece by piece. Read what you run, pick what you expect, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day46-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day46-play">Start the game</button></div>
+<div id="day46-round" hidden><div class="gtop"><span id="day46-num">Round 1</span><span id="day46-score">Score 0</span></div>
+<pre hidden><code id="day46-code"></code></pre><div class="q" id="day46-q"></div><div class="choices" id="day46-opts"></div>
+<div class="fb" id="day46-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day46-next" hidden>Next round</button></p></div>
+<div id="day46-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day46",[{"c": "with client.messages.stream(model=MODEL, max_tokens=100, messages=[...]) as stream:\n    for text in stream.text_stream:\n        print(repr(text))", "q": "What does the loop give you?", "o": ["Small pieces of text, one after another", "The whole answer at once", "Only the token counts"], "a": 0, "out": "'E101 '\n'means '\n'the '\n'sensor '\n'timed '\n'out.'\nstop reason: end_turn | tokens out: 9", "why": "Each text delta is a few words. The stop reason and token counts come in the last events."}, {"c": "curl -s -N -i -X POST http://127.0.0.1:8000/api/chat/stream ...", "q": "What is the content type of the response?", "o": ["text/event-stream", "application/json", "text/plain only"], "a": 0, "out": "HTTP/1.1 200 OK\ncontent-type: text/event-stream; charset=utf-8\nTransfer-Encoding: chunked", "why": "Server-sent events use text/event-stream, and the body is sent in chunks as it is produced."}, {"c": "data: \"(fake) \"\n\ndata: \"What \"\n\n...\nevent: done\ndata: {}", "q": "What is the last event of a stream that went well?", "o": ["event: done", "event: error", "Nothing: the connection just closes"], "a": 0, "out": "event: done\ndata: {}", "why": "The done event lets the client tell a finished answer from a stream that was cut."}, {"c": "def events():\n    yield 'data: \"one \"\\n\\n'\n    yield 'data: \"two \"\\n\\n'\n    raise RuntimeError(\"the model call failed\")   # no try/except", "q": "What status code does the client see?", "o": ["200: it was sent before the first piece", "502", "500"], "a": 0, "out": "HTTP/1.1 200 OK\ncontent-type: text/event-stream; charset=utf-8\nTransfer-Encoding: chunked\n\ndata: \"one \"\n\ndata: \"two \"", "why": "The status goes out before the first piece, so a later failure cannot change it."}, {"c": "# same broken stream\ncurl -s -N localhost:8045/broken > /dev/null; echo $?", "q": "What does curl say when the stream ends in a failure?", "o": ["Exit code 18: a partial transfer", "Exit code 0: all fine", "Exit code 7"], "a": 0, "out": "curl exit code: 18", "why": "The connection ended before the response was complete. A client cannot tell that from a normal end, unless you send an error or done event."}, {"c": "yield f\"data: {json.dumps(piece)}\\n\\n\"", "q": "Why is each piece sent as a JSON string?", "o": ["So spaces and new lines inside a piece are kept safe", "To make it shorter", "Because SSE requires JSON"], "a": 0, "out": "data: \"What \"\n\ndata: \"is \"", "why": "The quotes protect leading and trailing spaces and any new line in the piece."}],["Stream rookie", "Stream watcher", "Stream builder"],"A stream is many small events, the status code is sent first, so a failure in the middle needs an error event, and a done event tells the client it finished.");</script>
+<p><small>Tick &ldquo;Play the Stream Watcher game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> an endpoint that streams the answer piece by piece, a client that reads it as it arrives, a way to signal an error in the middle, and tests for all of it with no key and no network.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 46 checklist.</li><li>Share one line in the comments: what did <code>curl</code> without <code>-N</code> show?</li><li><strong>Next:</strong> Thursday is mixed practice: structured output and streaming together, in one endpoint.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 44 - Structured output with JSON Schema</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 44 &middot; LEVEL 4: LLM APPS</div><h1>Structured output with JSON Schema</h1>
+<div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to ask a model for JSON in a fixed shape, validate it with Pydantic, and retry with the exact problem.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a model call need the whole history on every turn?</li><li>What does <code>stop_reason: max_tokens</code> tell you about the answer?</li></ol><details><summary>Answers</summary><ol><li>A call is stateless: the model keeps nothing between calls, so your code sends the earlier user and assistant messages again.</li><li>That the answer was cut off at your limit, so it may be incomplete (for example a JSON object with no closing brace).</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You ask a model for JSON that your code will read. Nine times out of ten it works. The tenth time it starts with &ldquo;Sure! Here is the JSON:&rdquo;, or wraps it in a code fence, or invents a value that is not allowed. What does your app do?</strong></p><details><summary>Guess first, then open</summary><p>If you did nothing, it crashes or, worse, passes a wrong value on. A model gives you <em>text that usually looks like</em> what you asked for. So you need three things: a clear description of the shape you want, a check of what comes back, and a plan for when the check fails. Today you build all three.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: describe the shape with a JSON Schema</h3>
+<p>A <strong>JSON Schema</strong> is a standard way to say what a JSON object must look like: which fields, which types, which values are allowed, which fields are required. You already have this: your Pydantic model <em>is</em> a schema, and <code>Extraction.model_json_schema()</code> prints it. You put the schema in the prompt, so the model knows the exact shape.</p>
+<h3>Piece 2: the reply is untrusted text, so find the JSON and validate it</h3>
+<p>Models often add words around the JSON or wrap it in a code fence. A small function finds the first <code>{</code> and the last <code>}</code>. Then <code>model_validate_json</code> checks the fields, the types and the allowed values. Nothing leaves this step unless it is valid.</p>
+<h3>Piece 3: retry with the error, then fail loudly</h3>
+<p>When validation fails, ask again <em>and tell the model what was wrong</em> (&ldquo;severity: Input should be low, medium or high&rdquo;). Models fix this well. Allow a small number of attempts (two or three), because every attempt costs tokens and time. If the last attempt still fails, raise an error: do not guess and do not pass the text on.</p>
+<p>Some providers can also <strong>force</strong> the shape with their own feature, for example <em>tool use</em> with a schema, which makes bad shapes rarer. It is a helpful extra, not a replacement: you still validate.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>model_validate_json</code> is <code>JsonSerializer.Deserialize&lt;T&gt;</code> plus validation attributes in one call, and the JSON Schema is what Swagger generates for a DTO. The retry loop is a small resilience policy, like a Polly retry that also changes the request.</div>
+<div class="box cap"><strong>Capstone:</strong> your assistant will return <code>answer</code>, <code>sources</code> and <code>confidence</code> in a fixed shape that a front end can rely on. Saturday you put exactly this into <code>/api/chat</code>.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. First, the schema that your <code>Extraction</code> model from Lab 2 already gives you (<code>show_schema.py</code>):</p><pre><code>import json
+
+from my_ai_project.extractor import Extraction
+
+print(json.dumps(Extraction.model_json_schema(), indent=2))</code></pre><div class="out"><b>You should see</b><br>{<br>&nbsp;&nbsp;"properties": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"error_code": {<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"anyOf": [{"type": "string"}, {"type": "null"}],<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"title": "Error Code"<br>&nbsp;&nbsp;&nbsp;&nbsp;},<br>&nbsp;&nbsp;&nbsp;&nbsp;"severity": {<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"enum": ["low", "medium", "high"],<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"title": "Severity",<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"type": "string"<br>&nbsp;&nbsp;&nbsp;&nbsp;},<br>&nbsp;&nbsp;&nbsp;&nbsp;"action": {"title": "Action", "type": "string"}<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"required": ["error_code", "severity", "action"],<br>&nbsp;&nbsp;"title": "Extraction",<br>&nbsp;&nbsp;"type": "object"<br>}</div><p><small>The real output is a little longer, because Pydantic prints each list on its own lines. The content is the same.</small></p><p>Now the helper. <code>src/my_ai_project/structured.py</code> builds the prompt from the schema, finds the JSON in a reply, validates it, retries with the problem, and raises <code>StructuredOutputError</code> at the end:</p><pre><code>import json
+import logging
+import re
+from typing import Protocol, TypeVar
+
+from pydantic import BaseModel, ValidationError
+
+logger = logging.getLogger(&quot;structured&quot;)
+
+T = TypeVar(&quot;T&quot;, bound=BaseModel)
+
+
+class LlmClient(Protocol):
+    def complete(self, prompt: str) -&gt; str: ...
+
+
+class StructuredOutputError(Exception):
+    &quot;&quot;&quot;Raised when the model never gives an answer that matches the schema.&quot;&quot;&quot;
+
+
+def schema_prompt(task: str, model: type[BaseModel]) -&gt; str:
+    schema = json.dumps(model.model_json_schema(), indent=2)
+    return f&quot;{task}\n\nReturn only JSON that matches this JSON Schema, with no other text:\n{schema}&quot;
+
+
+def describe(err: Exception) -&gt; str:
+    if isinstance(err, ValidationError):
+        return &quot;; &quot;.join(f&quot;{&#x27;.&#x27;.join(str(part) for part in e[&#x27;loc&#x27;])}: {e[&#x27;msg&#x27;]}&quot; for e in err.errors())
+    return str(err)
+
+
+def extract_json(reply: str) -&gt; str:
+    fenced = re.search(r&quot;```(?:json)?\s*(.*?)```&quot;, reply, re.DOTALL)
+    text = fenced.group(1) if fenced else reply
+    start, end = text.find(&quot;{&quot;), text.rfind(&quot;}&quot;)
+    if start == -1 or end &lt; start:
+        raise StructuredOutputError(&quot;no JSON object in the reply&quot;)
+    return text[start : end + 1]
+
+
+def ask_structured(client: LlmClient, task: str, model: type[T], max_attempts: int = 2) -&gt; T:
+    prompt = schema_prompt(task, model)
+    problem = &quot;&quot;
+    for attempt in range(1, max_attempts + 1):
+        if attempt == 1:
+            reply = client.complete(prompt)
+        else:
+            reply = client.complete(f&quot;{prompt}\n\nYour last answer was not valid: {problem}\nReturn only the corrected JSON.&quot;)
+        try:
+            return model.model_validate_json(extract_json(reply))
+        except (ValidationError, StructuredOutputError) as err:
+            problem = describe(err)
+            logger.warning(&quot;attempt %d of %d failed: %s&quot;, attempt, max_attempts, problem)
+    raise StructuredOutputError(f&quot;no valid answer after {max_attempts} attempts: {problem}&quot;)</code></pre><p>To see it work without a model, this script plays back replies that you choose (a <em>scripted</em> client). <code>try_structured.py</code>:</p><pre><code>import logging
+
+from my_ai_project.extractor import Extraction
+from my_ai_project.structured import StructuredOutputError, ask_structured
+
+logging.basicConfig(level=logging.WARNING, format=&quot;%(levelname)s %(message)s&quot;)
+
+GOOD = &#x27;{&quot;error_code&quot;: &quot;E101&quot;, &quot;severity&quot;: &quot;medium&quot;, &quot;action&quot;: &quot;Check the sensor cable&quot;}&#x27;
+
+
+class ScriptedClient:
+    &quot;&quot;&quot;Plays back the replies you give it, one per call.&quot;&quot;&quot;
+
+    def __init__(self, *replies: str) -&gt; None:
+        self.replies = list(replies)
+        self.prompts: list[str] = []
+
+    def complete(self, prompt: str) -&gt; str:
+        self.prompts.append(prompt)
+        return self.replies.pop(0)
+
+
+cases = {
+    &quot;clean JSON&quot;: [GOOD],
+    &quot;JSON in a code fence&quot;: [&quot;```json\n&quot; + GOOD + &quot;\n```&quot;],
+    &quot;chatty text around the JSON&quot;: [&quot;Sure! Here is the JSON you asked for: &quot; + GOOD + &quot; Hope this helps!&quot;],
+    &quot;wrong value, then fixed&quot;: [&#x27;{&quot;error_code&quot;: &quot;E101&quot;, &quot;severity&quot;: &quot;urgent&quot;, &quot;action&quot;: &quot;Check the cable&quot;}&#x27;, GOOD],
+    &quot;never valid&quot;: [&quot;I cannot do that.&quot;, &quot;Still no JSON, sorry.&quot;],
+}
+for name, replies in cases.items():
+    client = ScriptedClient(*replies)
+    try:
+        result = ask_structured(client, &quot;Extract the error from: The sensor shows E101 again.&quot;, Extraction)
+        print(f&quot;{name}: OK -&gt;&quot;, result.model_dump(), f&quot;({len(client.prompts)} call(s))&quot;)
+    except StructuredOutputError as err:
+        print(f&quot;{name}: FAILED -&gt;&quot;, err)</code></pre><div class="out"><b>You should see</b><br>WARNING attempt 1 of 2 failed: severity: Input should be 'low', 'medium' or 'high'<br>WARNING attempt 1 of 2 failed: no JSON object in the reply<br>WARNING attempt 2 of 2 failed: no JSON object in the reply<br>clean JSON: OK -> {'error_code': 'E101', 'severity': 'medium', 'action': 'Check the sensor cable'} (1 call(s))<br>JSON in a code fence: OK -> {'error_code': 'E101', 'severity': 'medium', 'action': 'Check the sensor cable'} (1 call(s))<br>chatty text around the JSON: OK -> {'error_code': 'E101', 'severity': 'medium', 'action': 'Check the sensor cable'} (1 call(s))<br>wrong value, then fixed: OK -> {'error_code': 'E101', 'severity': 'medium', 'action': 'Check the sensor cable'} (2 call(s))<br>never valid: FAILED -> no valid answer after 2 attempts: no JSON object in the reply</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c structured</code>). You need <code>Extraction</code> from Lab 2 (<code>extractor.py</code>). No key and no network are needed today.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Save <code>show_schema.py</code>, <code>structured.py</code> and <code>try_structured.py</code>. Run the schema first, and find <code>enum</code> and <code>required</code> in it. Then run <code>try_structured.py</code> and match the five scenarios, including the warning lines in your terminal.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Change <code>max_attempts</code> to <code>1</code> in the call inside <code>try_structured.py</code>. <strong>Predict:</strong> which of the five scenarios change, and what does the error say? Run it and check. What does that tell you about the retry?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Skip <code>extract_json</code> and give the chatty reply straight to Pydantic:</p><pre><code>from my_ai_project.extractor import Extraction
+
+Extraction.model_validate_json(&#x27;Sure! Here is the JSON: {&quot;error_code&quot;: &quot;E101&quot;, &quot;severity&quot;: &quot;medium&quot;, &quot;action&quot;: &quot;Check the cable&quot;}&#x27;)</code></pre>
+<p>Read the last lines of the error. Then do the same with the reply inside a code fence. Which two real-world habits of models does this show?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Write your own model <code>TicketSummary</code> with a <code>title</code> (at most 60 characters), a <code>priority</code> (<code>low</code>, <code>normal</code> or <code>urgent</code>) and a list of <code>tags</code>. Use a scripted client with two replies: one with a title that is too long, and one that is correct. Call <code>ask_structured</code> and check that the second reply is used, and that your terminal shows a warning that names the field.</p>
+<p>Then run the tool-use demo (<code>show_tool_request.py</code>, in Stuck). It uses a pretend server and needs no key. Read what the request contains, and notice what Pydantic still says about the reply.</p>
+<p>Finally, write the four tests (template in Stuck) and commit: <code>git add .</code> and <code>git commit -m "Ask for structured output and validate it"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;no JSON object in the reply&rdquo;</strong> for a reply that has JSON: the object must start with <code>{</code> and end with <code>}</code>. A list at the top (<code>[ ... ]</code>) is not found by this helper.</li><li><strong>The retry never happens</strong>: check <code>max_attempts</code> (it must be at least 2) and that your scripted client has a second reply.</li><li><strong>&ldquo;IndexError: pop from empty list&rdquo;</strong> in your scripted client: the code asked the client more times than you gave replies. Add replies, or lower <code>max_attempts</code>.</li><li><strong>Pydantic accepts a value you expected to fail</strong>: check the type. A <code>str</code> accepts any text, and only a <code>Literal</code> or an <code>enum</code> limits the values.</li><li><strong>mypy complains about <code>T</code></strong>: the <code>TypeVar</code> must be bound to <code>BaseModel</code>, and the function takes <code>type[T]</code>, as in the worked example.</li></ul><details><summary>Hint: Step 4</summary><p>The scripted client is a small class with a list of replies and a <code>complete</code> method that returns the next one. Your <code>TicketSummary</code> works with <code>ask_structured(client, &quot;Summarize the ticket.&quot;, TicketSummary)</code> without any change to the helper: it is generic.</p></details><details><summary>Solution: Step 4</summary><pre><code>import logging
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from my_ai_project.structured import ask_structured
+
+logging.basicConfig(level=logging.WARNING, format=&quot;%(levelname)s %(message)s&quot;)
+
+
+class TicketSummary(BaseModel):
+    title: str = Field(max_length=60)
+    priority: Literal[&quot;low&quot;, &quot;normal&quot;, &quot;urgent&quot;]
+    tags: list[str]
+
+
+class ScriptedClient:
+    def __init__(self, *replies: str) -&gt; None:
+        self.replies = list(replies)
+
+    def complete(self, prompt: str) -&gt; str:
+        return self.replies.pop(0)
+
+
+good = &#x27;{&quot;title&quot;: &quot;Sensor times out&quot;, &quot;priority&quot;: &quot;normal&quot;, &quot;tags&quot;: [&quot;sensor&quot;, &quot;e101&quot;]}&#x27;
+too_long = &#x27;{&quot;title&quot;: &quot;&#x27; + &quot;x&quot; * 80 + &#x27;&quot;, &quot;priority&quot;: &quot;normal&quot;, &quot;tags&quot;: []}&#x27;
+print(ask_structured(ScriptedClient(good), &quot;Summarize the ticket.&quot;, TicketSummary))
+print(ask_structured(ScriptedClient(too_long, good), &quot;Summarize the ticket.&quot;, TicketSummary).title)</code></pre><div class="out"><b>You should see</b><br>WARNING attempt 1 of 2 failed: title: String should have at most 60 characters<br>title='Sensor times out' priority='normal' tags=['sensor', 'e101']<br>Sensor times out</div></details><details><summary>Solution: Step 2</summary><div class="out"><b>You should see</b><br>wrong value, then fixed: FAILED -> no valid answer after 1 attempts: severity: Input should be 'low', 'medium' or 'high'<br>never valid: FAILED -> no valid answer after 1 attempts: no JSON object in the reply</div><p>With one attempt, the scenario &ldquo;wrong value, then fixed&rdquo; fails, because the helper never gets the chance to ask again. The retry is what turns a rare mistake into a success.</p></details><details><summary>Solution: Step 3</summary><div class="out"><b>You should see</b><br>pydantic_core._pydantic_core.ValidationError: 1 validation error for Extraction<br>  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='Sure! Here is the JSON: ...on": "Check the cable"}', input_type=str]</div><p>Both the chatty reply and the code fence give <code>Invalid JSON</code> at line 1 column 1: Pydantic sees text that is not JSON. Models often add a polite sentence before the JSON, and many wrap it in a code fence, so <code>extract_json</code> is not a luxury.</p></details><details><summary>The tool-use way: show_tool_request.py</summary><pre><code>import json
+
+import anthropic
+import httpx2
+from pydantic import ValidationError
+
+from my_ai_project.extractor import Extraction
+
+TOOL = {
+    &quot;name&quot;: &quot;record_extraction&quot;,
+    &quot;description&quot;: &quot;Record the error code, severity and action found in a support message.&quot;,
+    &quot;input_schema&quot;: Extraction.model_json_schema(),
+}
+
+
+def handler(request: httpx2.Request) -&gt; httpx2.Response:
+    body = json.loads(request.content)
+    print(&quot;tools:      &quot;, [tool[&quot;name&quot;] for tool in body[&quot;tools&quot;]])
+    print(&quot;tool_choice:&quot;, body[&quot;tool_choice&quot;])
+    reply = {
+        &quot;id&quot;: &quot;msg_example&quot;, &quot;type&quot;: &quot;message&quot;, &quot;role&quot;: &quot;assistant&quot;, &quot;model&quot;: body[&quot;model&quot;],
+        &quot;content&quot;: [{&quot;type&quot;: &quot;tool_use&quot;, &quot;id&quot;: &quot;toolu_example&quot;, &quot;name&quot;: &quot;record_extraction&quot;,
+                     &quot;input&quot;: {&quot;error_code&quot;: &quot;E101&quot;, &quot;severity&quot;: &quot;urgent&quot;, &quot;action&quot;: &quot;Check the sensor cable&quot;}}],
+        &quot;stop_reason&quot;: &quot;tool_use&quot;, &quot;stop_sequence&quot;: None, &quot;usage&quot;: {&quot;input_tokens&quot;: 120, &quot;output_tokens&quot;: 30},
+    }
+    return httpx2.Response(200, json=reply)
+
+
+client = anthropic.Anthropic(api_key=&quot;not-a-real-key&quot;, http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+message = client.messages.create(
+    model=&quot;claude-haiku-4-5-20251001&quot;,
+    max_tokens=300,
+    tools=[TOOL],
+    tool_choice={&quot;type&quot;: &quot;tool&quot;, &quot;name&quot;: &quot;record_extraction&quot;},
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;The sensor shows E101 again.&quot;}],
+)
+block = message.content[0]
+print(&quot;stop reason:&quot;, message.stop_reason)
+if block.type == &quot;tool_use&quot;:
+    print(&quot;input:      &quot;, block.input)
+    try:
+        Extraction.model_validate(block.input)
+    except ValidationError as err:
+        first = err.errors()[0]
+        print(&quot;pydantic says:&quot;, &quot;.&quot;.join(str(part) for part in first[&quot;loc&quot;]), &quot;-&gt;&quot;, first[&quot;msg&quot;])</code></pre><div class="out"><b>You should see</b><br>tools:       ['record_extraction']<br>tool_choice: {'type': 'tool', 'name': 'record_extraction'}<br>stop reason: tool_use<br>input:       {'error_code': 'E101', 'severity': 'urgent', 'action': 'Check the sensor cable'}<br>pydantic says: severity -> Input should be 'low', 'medium' or 'high'</div><p>The request names one tool whose <code>input_schema</code> is your schema, and forces the model to call it with <code>tool_choice</code>. The reply then carries the data in <code>input</code>, already parsed. The pretend server in this demo returns the value <code>urgent</code> on purpose, to show that even a forced schema can be broken, so Pydantic still checks: it reports <code>severity</code>. Treat the provider feature as a first line of defence and your validation as the last.</p></details><details><summary>Template: Step 4 (tests)</summary><pre><code>import pytest
+
+from my_ai_project.extractor import Extraction
+from my_ai_project.structured import StructuredOutputError, ask_structured, extract_json
+
+GOOD = &#x27;{&quot;error_code&quot;: &quot;E101&quot;, &quot;severity&quot;: &quot;medium&quot;, &quot;action&quot;: &quot;Check the sensor cable&quot;}&#x27;
+
+
+class ScriptedClient:
+    def __init__(self, *replies: str) -&gt; None:
+        self.replies = list(replies)
+        self.prompts: list[str] = []
+
+    def complete(self, prompt: str) -&gt; str:
+        self.prompts.append(prompt)
+        return self.replies.pop(0)
+
+
+def test_json_inside_chatty_text_is_found() -&gt; None:
+    assert extract_json(&quot;Sure! Here you go: &quot; + GOOD + &quot; Hope it helps!&quot;) == GOOD
+
+
+def test_a_valid_answer_needs_one_call() -&gt; None:
+    client = ScriptedClient(GOOD)
+    result = ask_structured(client, &quot;Extract it.&quot;, Extraction)
+    assert result.severity == &quot;medium&quot;
+    assert len(client.prompts) == 1
+
+
+def test_an_invalid_answer_is_retried_with_the_problem() -&gt; None:
+    bad = &#x27;{&quot;error_code&quot;: &quot;E101&quot;, &quot;severity&quot;: &quot;urgent&quot;, &quot;action&quot;: &quot;x&quot;}&#x27;
+    client = ScriptedClient(bad, GOOD)
+    assert ask_structured(client, &quot;Extract it.&quot;, Extraction).error_code == &quot;E101&quot;
+    assert &quot;severity&quot; in client.prompts[1]
+
+
+def test_it_gives_up_after_the_attempts() -&gt; None:
+    client = ScriptedClient(&quot;no json&quot;, &quot;still no json&quot;)
+    with pytest.raises(StructuredOutputError, match=&quot;after 2 attempts&quot;):
+        ask_structured(client, &quot;Extract it.&quot;, Extraction)</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Where do you get a JSON Schema from, and where does it go?</li><li>Why do you tell the model <em>what was wrong</em> when you retry?</li><li>Why is a provider feature that forces a schema not a reason to skip validation?</li></ol><details><summary>Answers</summary><ol><li>From your Pydantic model, with <code>model_json_schema()</code>. It goes into the prompt, so the model knows the exact shape you want.</li><li>With the exact problem (&ldquo;severity: must be low, medium or high&rdquo;) the model can fix just that, and the second try usually works. A blind retry often repeats the same mistake.</li><li>It makes bad shapes rarer, but not impossible: the demo returned an invalid value even with a forced schema. Validation is your own guarantee, and it is cheap.</li></ol></details></section>
+<section id="game-day44" class="game"><h2><span class="n">+</span> &middot; Game: Schema Judge <span class="t">5 min</span></h2>
+<p><p>You ask a model for JSON and check what comes back. Read the reply, pick what your helper does, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day44-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day44-play">Start the game</button></div>
+<div id="day44-round" hidden><div class="gtop"><span id="day44-num">Round 1</span><span id="day44-score">Score 0</span></div>
+<pre hidden><code id="day44-code"></code></pre><div class="q" id="day44-q"></div><div class="choices" id="day44-opts"></div>
+<div class="fb" id="day44-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day44-next" hidden>Next round</button></p></div>
+<div id="day44-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day44",[{"c": "# the model replies:\nSure! Here is the JSON you asked for: {\"error_code\": \"E101\", \"severity\": \"medium\", \"action\": \"Check the sensor cable\"} Hope this helps!", "q": "What does ask_structured do?", "o": ["Finds the JSON between the first { and the last } and accepts it", "Fails: the reply is not JSON", "Asks the model again"], "a": 0, "out": "chatty text around the JSON: OK -> {'error_code': 'E101', 'severity': 'medium', 'action': 'Check the sensor cable'} (1 call(s))", "why": "extract_json cuts out the object, so a polite sentence around it does no harm, and one call is enough."}, {"c": "# first reply: {\"error_code\": \"E101\", \"severity\": \"urgent\", \"action\": \"Check the cable\"}\n# second reply: a correct object\nask_structured(client, task, Extraction)   # max_attempts=2", "q": "What happens?", "o": ["It retries with the problem and succeeds on the second call", "It fails after the first call", "It accepts urgent"], "a": 0, "out": "WARNING attempt 1 of 2 failed: severity: Input should be 'low', 'medium' or 'high'\nwrong value, then fixed: OK -> {'error_code': 'E101', 'severity': 'medium', 'action': 'Check the sensor cable'} (2 call(s))", "why": "The retry carries the exact problem, so the model can fix just that."}, {"c": "ask_structured(client, task, Extraction, max_attempts=1)   # the same two replies as before", "q": "What happens now?", "o": ["FAILED: there is no second chance", "It still succeeds", "It returns the first reply anyway"], "a": 0, "out": "wrong value, then fixed: FAILED -> no valid answer after 1 attempts: severity: Input should be 'low', 'medium' or 'high'", "why": "With one attempt the helper cannot ask again, so a rare mistake becomes a failure."}, {"c": "# both replies are: I cannot do that. / Still no JSON, sorry.", "q": "What does the helper do after 2 attempts?", "o": ["Raises StructuredOutputError", "Returns an empty object", "Returns the text"], "a": 0, "out": "never valid: FAILED -> no valid answer after 2 attempts: no JSON object in the reply", "why": "It fails loudly. Guessing or passing text on would hide the problem."}, {"c": "Extraction.model_validate_json('Sure! Here is the JSON: {\"error_code\": \"E101\", ...}')   # no extract_json", "q": "What does Pydantic say about the chatty reply?", "o": ["Invalid JSON: expected value at line 1 column 1", "It accepts it", "A missing field"], "a": 0, "out": "pydantic_core._pydantic_core.ValidationError: 1 validation error for Extraction\n  Invalid JSON: expected value at line 1 column 1 [type=json_invalid, input_value='Sure! Here is the JSON: ...on\": \"Check the cable\"}', input_type=str]", "why": "Pydantic expects JSON from the first character, so you must cut the JSON out first."}, {"c": "# the request forces a tool called record_extraction with the schema\n# the pretend server replies: severity = \"urgent\"", "q": "Even with a forced schema, what does Pydantic say?", "o": ["severity: Input should be 'low', 'medium' or 'high'", "Nothing: the schema guarantees the value", "The tool name is wrong"], "a": 0, "out": "tools:       ['record_extraction']\ntool_choice: {'type': 'tool', 'name': 'record_extraction'}\nstop reason: tool_use\ninput:       {'error_code': 'E101', 'severity': 'urgent', 'action': 'Check the sensor cable'}\npydantic says: severity -> Input should be 'low', 'medium' or 'high'", "why": "A provider feature makes bad shapes rarer, but you still validate. It is your own guarantee."}],["Schema rookie", "Schema judge", "Structured thinker"],"Describe the shape with a schema, cut the JSON out of the reply, validate it, retry with the exact problem, and fail loudly when it is still wrong.");</script>
+<p><small>Tick &ldquo;Play the Schema Judge game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a helper that asks a model for a fixed shape, finds the JSON in whatever comes back, validates it, retries with the exact problem, and fails loudly. It is tested without a model.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 44 checklist.</li><li>Share one line in the comments: which of the five scenarios surprised you most?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you stream an answer token by token, so the user does not wait for the whole reply.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

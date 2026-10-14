@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 47 - Mixed practice: streaming and structured output</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 47 &middot; LEVEL 4: LLM APPS &middot; MIXED PRACTICE</div><h1>Mixed practice: streaming and structured output</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to stream a JSON answer and validate it once at the end, with a result or an error event, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why can a streaming endpoint not answer <code>502</code> when the model fails halfway?</li><li>What does your structured helper do after an invalid answer?</li></ol><details><summary>Answers</summary><ol><li>The <code>200</code> status is sent before the first piece, so the only way to signal the failure is an <code>error</code> event inside the stream.</li><li>It asks again with the exact problem, up to a small number of attempts, and raises <code>StructuredOutputError</code> if none is valid.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Another blank file. You can stream text, and you can validate JSON. But validation needs the <em>whole</em> answer, and streaming gives you pieces. Can one endpoint do both, and when exactly can you validate?</strong></p><details><summary>Guess first, then open</summary><p>Yes: stream the pieces so the user sees progress, collect them as they pass, and validate <em>once, at the end</em>, then send the validated result as a final event. You cannot validate half of a JSON object, so the check has to wait for the last piece. If it fails, the last event is an error, not a result.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
+<p>No new ideas today. The map of what you reuse:</p>
+<h3>Piece 1: stream the pieces (Day 46)</h3>
+<p><code>client.stream(prompt)</code> gives pieces, and a generator sends each one as <code>data: ...</code>.</p>
+<h3>Piece 2: collect, then validate (Day 44)</h3>
+<p>Keep a string that grows with every piece. After the last piece, <code>extract_json</code> finds the JSON in it and <code>model_validate_json</code> checks it.</p>
+<h3>Piece 3: end with a result or an error event</h3>
+<p>The stream always ends with <strong>one</strong> final event: <code>result</code> (with the validated object) or <code>error</code> (with a short reason). The client never has to guess whether the answer is complete or valid.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> this is a pipeline with a buffer: you forward each chunk to the response and also append it to a <code>StringBuilder</code>, then you deserialize the buffer when the stream completes, like reading a response body with <code>Deserialize</code> after <code>ReadAsStream</code> finished.</div>
+<div class="box cap"><strong>Capstone:</strong> the assistant will show the text while it is written, and use the validated result (sources, confidence) at the end for the interface. Today is that pattern in its smallest form.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">3 min</span></h2><p>No code to copy today. This is the <strong>contract</strong>: what your finished endpoint must do.</p><table><tr><th>Part</th><th>What it does</th></tr><tr><td>Address</td><td><code>POST /api/extract/stream</code>, with the same body as <code>/api/extract</code>: <code>{&quot;text&quot;: &quot;...&quot;}</code></td></tr><tr><td>The prompt</td><td>Built with <code>schema_prompt</code> from the <code>Extraction</code> model</td></tr><tr><td>During the stream</td><td>One <code>data:</code> event per piece, each piece as a JSON string</td></tr><tr><td>At the end</td><td>One <code>event: result</code> with the validated object, or one <code>event: error</code> if the model call failed or the answer is not valid</td></tr></table><p>When it works (the fake client streams its JSON reply word by word), this call:</p><pre><code>curl -s -N -X POST http://127.0.0.1:8000/api/extract/stream -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;text&quot;: &quot;The sensor shows E101 again.&quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>data: "{\"error_code\": "<br><br>data: "\"E101\", "<br><br>data: "\"severity\": "<br><br>data: "\"medium\", "<br><br>data: "\"action\": "<br><br>data: "\"Check "<br><br>data: "the "<br><br>data: "sensor "<br><br>data: "cable\"} "<br><br>event: result<br>data: {"error_code":"E101","severity":"medium","action":"Check the sensor cable"}</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">25 min</span></h2>
+<p>Work in <code>my-ai-project</code> (you need <code>structured.py</code> from Day 44 and the streaming client from Day 46), on a branch if you like (<code>git switch -c extract-stream</code>).</p>
+<h3><span class="step">Step 1</span> The endpoint</h3>
+<p>Write the route from the contract, in <code>api.py</code>. Start the server and run the <code>curl</code> call. Match the output: nine pieces, then one <code>result</code>.</p>
+<h3><span class="step">Step 2</span> Two tests</h3>
+<p>Write two tests with <code>TestClient</code>: the good case (many <code>data:</code> events and a <code>result</code> event with the validated object), and the bad case (a fake that replies with <code>severity</code> set to <code>urgent</code> gives an <code>error</code> event and <strong>no</strong> <code>result</code>). Use <code>dependency_overrides</code> and clear it afterwards. Run <code>uv run pytest</code>.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Skip the validation and send the collected text as the result:</p><pre><code>            yield f&quot;event: result\ndata: {collected.strip()}\n\n&quot;   # no validation</code></pre>
+<p>Run your two tests. <strong>Which ones fail, and what does that show?</strong> Put the validation back.</p>
+<h3><span class="step">Step 4</span> Your turn: tell the client why</h3>
+<p>Right now the <code>error</code> event only says <code>ValidationError</code>. Make it say which field is wrong, for example <code>severity: Input should be 'low', 'medium' or 'high'</code>, using <code>describe</code> from your structured helper. Keep a different, generic message for a failed model call. Check the new message with a test or a small script.</p>
+<p>Finally, commit your work: <code>git add .</code> and <code>git commit -m "Stream a structured extract and validate it at the end"</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>No <code>result</code> event in the good case</strong>: the validation raised. Print <code>collected</code> and check that the pieces were added to it, and that the fake&rsquo;s reply is valid JSON.</li><li><strong>The <code>result</code> contains extra spaces or different quotes</strong>: send <code>result.model_dump_json()</code> (the validated object), not the raw text.</li><li><strong>An uncaught <code>ValidationError</code> breaks the stream</strong>: it is not a subclass of <code>LlmError</code>. Catch <code>ValidationError</code> and <code>StructuredOutputError</code> too.</li><li><strong>mypy says <code>ValidationError</code> is not defined</strong>: import it from <code>pydantic</code>.</li></ul><details><summary>Hint: Step 1</summary><p>Inside the generator keep <code>collected = &quot;&quot;</code>. For each piece add it to <code>collected</code> and <code>yield</code> the <code>data:</code> line. After the loop validate with <code>Extraction.model_validate_json(extract_json(collected))</code> and <code>yield</code> the <code>result</code> event. Put it all in a <code>try</code> that catches the three error types and yields the <code>error</code> event.</p></details><details><summary>Solution: Step 1</summary><p>Add <code>from pydantic import ValidationError</code> and <code>from my_ai_project.structured import StructuredOutputError, extract_json, schema_prompt</code> to <code>api.py</code>, then:</p><pre><code>@app.post(&quot;/api/extract/stream&quot;)
+def extract_stream(request: ExtractRequest, client: LlmDep) -&gt; StreamingResponse:
+    prompt = schema_prompt(f&quot;Extract the error code, severity and action: {request.text}&quot;, Extraction)
+
+    def events() -&gt; Iterator[str]:
+        collected = &quot;&quot;
+        try:
+            for piece in client.stream(prompt):
+                collected += piece
+                yield f&quot;data: {json.dumps(piece)}\n\n&quot;
+            result = Extraction.model_validate_json(extract_json(collected))
+            yield f&quot;event: result\ndata: {result.model_dump_json()}\n\n&quot;
+        except (LlmError, StructuredOutputError, ValidationError) as err:
+            yield f&quot;event: error\ndata: {json.dumps(type(err).__name__)}\n\n&quot;
+
+    return StreamingResponse(events(), media_type=&quot;text/event-stream&quot;)</code></pre></details><details><summary>Solution: Step 2</summary><pre><code>from collections.abc import Iterator
+
+import pytest
+from fastapi.testclient import TestClient
+
+from my_ai_project.api import app
+from my_ai_project.deps import get_llm_client
+from my_ai_project.llm import FakeLlmClient
+
+client = TestClient(app)
+
+
+@pytest.fixture
+def clean_overrides() -&gt; Iterator[None]:
+    yield
+    app.dependency_overrides.clear()
+
+
+def read_events(text: str) -&gt; str:
+    with client.stream(&quot;POST&quot;, &quot;/api/extract/stream&quot;, json={&quot;text&quot;: text}) as response:
+        return &quot;&quot;.join(response.iter_text())
+
+
+def test_the_json_streams_and_the_result_is_validated() -&gt; None:
+    body = read_events(&quot;The sensor shows E101 again.&quot;)
+    assert body.count(&quot;data: &quot;) &gt; 5
+    assert &#x27;event: result\ndata: {&quot;error_code&quot;:&quot;E101&quot;,&quot;severity&quot;:&quot;medium&quot;,&quot;action&quot;:&quot;Check the sensor cable&quot;}&#x27; in body
+
+
+@pytest.mark.usefixtures(&quot;clean_overrides&quot;)
+def test_an_invalid_final_answer_becomes_an_error_event() -&gt; None:
+    bad = &#x27;{&quot;error_code&quot;: &quot;E101&quot;, &quot;severity&quot;: &quot;urgent&quot;, &quot;action&quot;: &quot;x&quot;}&#x27;
+    app.dependency_overrides[get_llm_client] = lambda: FakeLlmClient(reply=bad)
+    body = read_events(&quot;The sensor shows E101 again.&quot;)
+    assert &#x27;event: error\ndata: &quot;ValidationError&quot;&#x27; in body
+    assert &quot;event: result&quot; not in body</code></pre></details><details><summary>Solution: Step 3</summary><div class="out"><b>You should see</b><br>FAILED tests/test_extract_stream.py::test_the_json_streams_and_the_result_is_validated<br>FAILED tests/test_extract_stream.py::test_an_invalid_final_answer_becomes_an_error_event<br>2 failed</div><p>Both tests fail. The first fails because the raw text is not the same as the validated object (different spacing). The second is the important one: without the check, an invalid value goes out as a &ldquo;result&rdquo;, and the client would trust it. The stream makes it easy to forget, because the text <em>looks</em> fine while it arrives.</p></details><details><summary>Solution: Step 4</summary><p>Add <code>describe</code> to the import from <code>my_ai_project.structured</code>, and change the last part of the generator:</p><pre><code>@app.post(&quot;/api/extract/stream&quot;)
+def extract_stream(request: ExtractRequest, client: LlmDep) -&gt; StreamingResponse:
+    prompt = schema_prompt(f&quot;Extract the error code, severity and action: {request.text}&quot;, Extraction)
+
+    def events() -&gt; Iterator[str]:
+        collected = &quot;&quot;
+        try:
+            for piece in client.stream(prompt):
+                collected += piece
+                yield f&quot;data: {json.dumps(piece)}\n\n&quot;
+            result = Extraction.model_validate_json(extract_json(collected))
+            yield f&quot;event: result\ndata: {result.model_dump_json()}\n\n&quot;
+        except LlmError as err:
+            yield f&quot;event: error\ndata: {json.dumps(str(err))}\n\n&quot;
+        except (StructuredOutputError, ValidationError) as err:
+            yield f&quot;event: error\ndata: {json.dumps(describe(err))}\n\n&quot;
+
+    return StreamingResponse(events(), media_type=&quot;text/event-stream&quot;)</code></pre><div class="out"><b>You should see</b><br>event: error<br>data: "severity: Input should be 'low', 'medium' or 'high'"</div><p>That is the last event for a reply with <code>severity</code> set to <code>urgent</code>. Be careful what you send to a client: field names and messages are fine, a raw traceback or the whole prompt is not.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why can you only validate at the end of the stream?</li><li>Why does the stream end with exactly one <code>result</code> or one <code>error</code>?</li><li>Why is it dangerous to send the collected text as the result, without validating?</li></ol><details><summary>Answers</summary><ol><li>A JSON object is only valid when it is complete. Half of an object cannot be checked.</li><li>So the client always knows how it ended: a result it can trust, or an error it can show. Without it the client would have to guess.</li><li>The text can look right and still break the schema (a wrong value, a missing field). A client that trusts it may show or store wrong data.</li></ol></details></section>
+<section id="game-day47" class="game"><h2><span class="n">+</span> &middot; Game: Stream and Check <span class="t">5 min</span></h2>
+<p><p>One endpoint streams a JSON answer and validates it at the end. Read the situation, pick what the client sees, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day47-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day47-play">Start the game</button></div>
+<div id="day47-round" hidden><div class="gtop"><span id="day47-num">Round 1</span><span id="day47-score">Score 0</span></div>
+<pre hidden><code id="day47-code"></code></pre><div class="q" id="day47-q"></div><div class="choices" id="day47-opts"></div>
+<div class="fb" id="day47-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day47-next" hidden>Next round</button></p></div>
+<div id="day47-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day47",[{"c": "POST /api/extract/stream\n{\"text\": \"The sensor shows E101 again.\"}   # the fake model replies with valid JSON", "q": "How does the stream end?", "o": ["event: result with the validated object", "event: done with nothing", "event: error"], "a": 0, "out": "data: \"cable\\\"} \"\n\nevent: result\ndata: {\"error_code\":\"E101\",\"severity\":\"medium\",\"action\":\"Check the sensor cable\"}", "why": "After the last piece the whole text is validated, and the result is the checked object."}, {"c": "# the pieces are: {\"error_code\": / \"E101\", / \"severity\": / \"medium\", / ...", "q": "Can you validate after the third piece?", "o": ["No: half of a JSON object is not valid", "Yes, validate every piece", "Yes, but only the first field"], "a": 0, "out": "", "why": "A JSON object is only valid when it is complete, so the check waits for the last piece."}, {"c": "# the fake replies with severity = urgent\nPOST /api/extract/stream", "q": "What is the last event?", "o": ["event: error, and no result", "event: result with urgent", "event: done"], "a": 0, "out": "event: error\ndata: \"ValidationError\"", "why": "The check fails, so the stream ends with an error event and the client never gets a result it should not trust."}, {"c": "yield f\"event: result\\ndata: {collected.strip()}\\n\\n\"   # no validation", "q": "The model replied with urgent. What do the tests say about this version?", "o": ["The error-event test fails: an invalid value went out as a result", "Everything passes", "Only a style check fails"], "a": 0, "out": "FAILED tests/test_extract_stream.py::test_the_json_streams_and_the_result_is_validated\nFAILED tests/test_extract_stream.py::test_an_invalid_final_answer_becomes_an_error_event\n2 failed", "why": "Without the check, an invalid value looks like a normal result. The client would trust it."}, {"c": "except (StructuredOutputError, ValidationError) as err:\n    yield f\"event: error\\ndata: {json.dumps(describe(err))}\\n\\n\"", "q": "With a reply that has severity = urgent, what does the client read now?", "o": ["The field and the problem: severity: Input should be 'low', 'medium' or 'high'", "Only the word error", "A full traceback"], "a": 0, "out": "event: error\ndata: \"severity: Input should be 'low', 'medium' or 'high'\"", "why": "A field name and a message help the client. A traceback or the prompt must never be sent."}, {"c": "", "q": "Why does the stream end with exactly one result or one error?", "o": ["So the client always knows how it ended and can trust a result", "To save bandwidth", "Because SSE needs it"], "a": 0, "out": "", "why": "A client should never have to guess whether the answer is complete and valid."}],["Stream rookie", "Stream checker", "Pipeline builder"],"Stream the pieces, keep them, validate once at the end, and finish with exactly one result or one error, so the client never has to guess.");</script>
+<p><small>Tick &ldquo;Play the Stream and Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> one endpoint that shows progress while the model writes and still guarantees that the final result is valid, or tells the client why it is not.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 47 checklist.</li><li>Share one line in the comments: what was the message of your improved error event?</li><li><strong>Next:</strong> Friday is a teach-back: explain why model output must be validated. Saturday you put structured output and streaming into <code>/api/chat</code>.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
