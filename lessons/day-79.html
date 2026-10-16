@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 79 - Permission-aware retrieval and production RAG</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 79 &middot; LEVEL 6: RAG</div><h1>Permission-aware retrieval and production RAG</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to filter retrieval by role, so a forbidden page is never retrieved, and name what production RAG needs.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Name three of the four reasons your pipeline turns an answer into a refusal.</li><li>What does a citation prove, and what does it not prove?</li></ol><details><summary>Answers</summary><ol><li>The best similarity is under the minimum; the writer finds no answer; the answer cites a source that was not retrieved; the answer cites no source.</li><li>It proves the source exists and was retrieved. It does not prove that the source answers the question (the price question cited the warranty page).</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your knowledge base has error pages with internal service notes. A customer types a question about an error. Your assistant answers from the service notes. How do you stop it, and where in the code?</strong></p><details><summary>Guess first, then open</summary><p>Not with a sentence in the prompt (&ldquo;do not tell customers&rdquo;). A prompt is a request, and a model can be asked in clever ways to ignore it. The only safe place is <strong>before</strong> the model: the customer&rsquo;s search must never <em>return</em> the staff pages. A model cannot leak what it never received.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: write down who may see what</h3>
+<p>Start with a table, on paper, before any code. Who are the roles (<code>customer</code>, <code>staff</code>), and which pages may each one read? For your knowledge base the rule is simple: manuals and FAQs are for everyone; error pages hold service notes, so they are for staff. The table becomes one small dictionary in code.</p>
+<h3>Piece 2: filter in the query, everywhere you search</h3>
+<p>The filter goes into the SQL <code>WHERE</code> clause, so a forbidden row is never ranked, never returned and never sent to a model. Every other way of finding pages must obey the same rule: the <strong>keyword index</strong> of Day 74, and any <strong>cache</strong> you add later (a cached answer for staff must not be served to a customer: cache by question <em>and</em> role). Filtering after the answer is written is too late: the text is already in the model&rsquo;s head.</p>
+<h3>Piece 3: fail closed, and take the role from a login</h3>
+<p>An unknown role must give an error, never &ldquo;everything&rdquo;. No role at all means the <em>least</em> powerful one. And the role must come from something the caller cannot choose: a login. Today a header stands in for it, only so you can try both roles; in Module 8 you replace it with real authentication. Notice also what the customer sees: &ldquo;not found&rdquo;, not &ldquo;forbidden&rdquo;. Saying &ldquo;this exists but you may not read it&rdquo; would already leak something.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> this is row-level security done in the query, like a global query filter in EF Core (<code>HasQueryFilter</code>) that every query gets automatically. The lesson is the same: put the rule in the data access, not in each caller. And a header you read yourself is like trusting a cookie value: fine for a demo, never for production.</div>
+<div class="box cap"><strong>Capstone:</strong> the real <code>ai-knowledge-assistant</code> will have users, and Module 8 adds the login. Today you build the part that the login will plug into.</div></section>
+<section><h2><span class="n">4</span> &middot; Production RAG: the overview <span class="t">5 min</span></h2><p>This is a map, not a task. Five things separate a demo from a service. You do the first today, and the others when you need them:</p><pre><code>concern                what goes wrong without it                 the idea in one line
+permissions            a customer reads staff-only notes          filter by role inside the query, before ranking
+incremental indexing   one changed page means a full re-embed     store a hash of each page, re-embed only what changed
+tenant isolation       company A sees company B&#x27;s pages           the same filter, with a tenant id on every row
+retrieval caching      the same question is embedded again        cache by question and role, never by question alone
+evaluation and logs    you cannot tell if a change made it worse  a fixed set of questions, and a log of what was retrieved</code></pre><p>You will not build all of them in this course. What matters is that you know they exist, and that the first one (permissions) is the one you cannot add late: every route, index and cache must already pass the role down.</p></section>
+<section><h2><span class="n">5</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. The policy, in <code>src/my_ai_project/access.py</code>:</p><pre><code>from typing import Literal
+
+Role = Literal[&quot;customer&quot;, &quot;staff&quot;]
+
+# Who may read which kind of page. Error pages hold service notes, so only staff may see them.
+ALLOWED_KINDS: dict[str, tuple[str, ...]] = {
+    &quot;customer&quot;: (&quot;manual&quot;, &quot;faq&quot;),
+    &quot;staff&quot;: (&quot;manual&quot;, &quot;faq&quot;, &quot;error&quot;),
+}
+
+
+def allowed_kinds(role: str) -&gt; tuple[str, ...]:
+    &quot;&quot;&quot;The kinds of page a role may see. An unknown role is an error, never &#x27;everything&#x27;: fail closed.&quot;&quot;&quot;
+    try:
+        return ALLOWED_KINDS[role]
+    except KeyError:
+        raise ValueError(f&quot;unknown role {role!r}: use one of {&#x27;, &#x27;.join(ALLOWED_KINDS)}&quot;) from None</code></pre><p>The store search takes <code>allowed_kinds</code> and puts it in the SQL (in <code>store.py</code>; the <code>kind</code> filter of Day 67 still works):</p><pre><code>    def search(self, query_vector: np.ndarray, top_k: int = 3, kind: str | None = None, allowed_kinds: Sequence[str] | None = None) -&gt; list[Found]:
+        if kind is not None and kind not in KINDS:
+            raise ValueError(f&quot;unknown kind {kind!r}: use one of {&#x27;, &#x27;.join(KINDS)}&quot;)
+        # The permission filter is part of the SQL: rows a user may not see are never ranked, never returned, never sent to a model.
+        conditions: list[sql.Composable] = []
+        filters: list[object] = []
+        if kind is not None:
+            conditions.append(sql.SQL(&quot;kind = %s&quot;))
+            filters.append(kind)
+        if allowed_kinds is not None:
+            conditions.append(sql.SQL(&quot;kind = ANY(%s)&quot;))
+            filters.append(list(allowed_kinds))
+        where = sql.SQL(&quot;WHERE &quot;) + sql.SQL(&quot; AND &quot;).join(conditions) + sql.SQL(&quot; &quot;) if conditions else sql.SQL(&quot;&quot;)
+        query = sql.SQL(
+            &quot;SELECT doc_id, chunk_index, title, kind, text, 1 - (embedding &lt;=&gt; %s) AS similarity FROM {table} &quot;
+        ).format(table=self.table) + where + sql.SQL(&quot;ORDER BY embedding &lt;=&gt; %s LIMIT %s&quot;)
+        params: tuple[object, ...] = (query_vector, *filters, query_vector, top_k)
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [Found(d, i, t, k, x, round(float(s), 2)) for d, i, t, k, x, s in rows]</code></pre><p>The keyword index and the hybrid search pass it down too. The same filter, in two places:</p><pre><code># hybrid.py: the keyword index must obey the same permissions as the database
+    def search(self, query: str, top_k: int = 10, allowed_kinds: Sequence[str] | None = None) -&gt; list[Found]:
+        scored = []
+        for chunk, words, length in zip(self.chunks, self.words, self.lengths):
+            if allowed_kinds is not None and chunk.kind not in allowed_kinds:
+                continue
+            ...
+
+def hybrid_search(question, embedder, store, keywords, top_k=3, pool=10, allowed_kinds=None):
+    by_meaning = store.search(embedder.embed([question])[0], top_k=pool, allowed_kinds=allowed_kinds)
+    by_words = keywords.search(question, top_k=pool, allowed_kinds=allowed_kinds)
+    ...</code></pre><p>The role comes from a dependency (demo only), in <code>deps.py</code>:</p><pre><code>def get_role(x_demo_role: Annotated[str, Header()] = &quot;customer&quot;) -&gt; str:
+    &quot;&quot;&quot;DEMO ONLY: the role comes from a header so that you can try both. A real service reads it from a login (Module 8),
+    because a caller could write any header. With no header, the least powerful role is used.&quot;&quot;&quot;
+    if x_demo_role not in ALLOWED_KINDS:
+        raise HTTPException(status_code=422, detail=f&quot;unknown role {x_demo_role!r}: use one of {&#x27;, &#x27;.join(ALLOWED_KINDS)}&quot;)
+    return x_demo_role
+
+
+RoleDep = Annotated[str, Depends(get_role)]</code></pre><p>The routes use it:</p><pre><code># api.py: every route that reads the knowledge base takes the role, and passes the allowed kinds down
+@app.post(&quot;/api/ask&quot;)
+def ask(request: AskRequest, embedder: EmbedderDep, store: StoreDep, keywords: KeywordsDep, writer: WriterDep, role: RoleDep) -&gt; AskResponse:
+    result = answer_question(..., allowed_kinds=allowed_kinds(role))
+
+# /api/search gets the same: retrieve(q, embedder, store, top_k=top_k, kind=kind, allowed_kinds=allowed_kinds(role))</code></pre><p>A script that asks the same questions as both roles. <code>permissions_demo.py</code>:</p><pre><code>import os
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.hybrid import KeywordIndex
+from my_ai_project.rag import answer_question
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkStore
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+embedder = FastEmbedder()
+keywords = KeywordIndex(store.all_chunks())
+writer = SimulatedWriter()   # NOT a real model
+
+for question in [&quot;What does error E104 mean?&quot;, &quot;How often should I calibrate the sensor?&quot;]:
+    print(question)
+    for role in (&quot;customer&quot;, &quot;staff&quot;):
+        result = answer_question(question, embedder, store, keywords, writer, allowed_kinds=allowed_kinds(role))
+        sources = &quot;, &quot;.join(s.citation for s in result.sources) or &quot;no source&quot;
+        print(f&quot;  {role:&lt;9}{result.text}  sources: {sources}&quot;)</code></pre><div class="out"><b>You should see</b><br>What does error E104 mean?<br>&nbsp;&nbsp;customer I could not find that in the knowledge base.&nbsp;&nbsp;sources: no source<br>&nbsp;&nbsp;staff&nbsp;&nbsp;&nbsp;&nbsp;The storage is above 95 percent [error-e104#0].&nbsp;&nbsp;sources: [error-e104#0]<br>How often should I calibrate the sensor?<br>&nbsp;&nbsp;customer Calibrate the sensor once a month [manual-calibration#0].&nbsp;&nbsp;sources: [manual-calibration#0]<br>&nbsp;&nbsp;staff&nbsp;&nbsp;&nbsp;&nbsp;Calibrate the sensor once a month [manual-calibration#0].&nbsp;&nbsp;sources: [manual-calibration#0]</div><p>The calibration question gives the same answer to both roles. The E104 question is answered for staff and is &ldquo;not found&rdquo; for a customer, because the error page is never retrieved for a customer.</p></section>
+<section><h2><span class="n">6</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c permissions</code>). The database must be running with the chunks of Day 67. The simulated writer is used, so no key is needed.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Write the policy table first (on paper), then add <code>access.py</code>, change <code>store.py</code>, <code>hybrid.py</code>, <code>pipeline.py</code>, <code>rag.py</code>, <code>deps.py</code> and <code>api.py</code> as shown, and run <code>permissions_demo.py</code>. Match the four lines. Your Day 70 and Day 77 test fakes need the new <code>allowed_kinds</code> parameter in their <code>search</code> too: let mypy tell you where.</p>
+<h3><span class="step">Step 2</span> Ask through the API</h3>
+<p>Start the API and ask the E104 question three ways: with no header, with <code>x-demo-role: staff</code>, and with <code>x-demo-role: admin</code>. <strong>Predict first:</strong> what status and what answer for each?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Take the permission check out of <code>KeywordIndex.search</code> only (leave the SQL filter). Run <code>pytest</code>. Which tests fail, and which page would a customer now be able to reach through the hybrid search?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Add a third role, <code>trainee</code>, who may read manuals only. Add it to the policy and write the tests of the template for it (what a trainee can and cannot reach). Then answer in one sentence: where would a <code>tenant_id</code> go, if two companies shared this knowledge base?</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Filter retrieval by role&quot;</code>.</p></section>
+<section><h2><span class="n">7</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>mypy: the fake store does not match <code>Searcher</code></strong>: add <code>allowed_kinds: Sequence[str] | None = None</code> to its <code>search</code> and filter by it.</li><li><strong>A customer still sees an error page</strong>: one path ignores the role. Search for every call of <code>search</code> and check that each passes <code>allowed_kinds</code>.</li><li><strong>Every question is refused for a customer</strong>: check the kinds in your policy. Kinds are lower case: <code>manual</code>, <code>faq</code>, <code>error</code>.</li><li><strong>A 422 on every request</strong>: the header must be named <code>x-demo-role</code> and hold <code>customer</code> or <code>staff</code>.</li></ul><details><summary>Solution: Step 2</summary><div class="out"><b>You should see</b><br>{"question":"What does error E104 mean?","answer":"I could not find that in the knowledge base.","refused":true,"reason":"best similarity 0.56 is under 0.6","sources":[]}</div><div class="out"><b>You should see</b><br>{"question":"What does error E104 mean?","answer":"The storage is above 95 percent [error-e104#0].","refused":false,"reason":"",
+ "sources":[{"citation":"[error-e104#0]","doc_id":"error-e104", ... "kind":"error", ... "similarity":0.63}]}</div><div class="out"><b>You should see</b><br>{"detail":"unknown role 'admin': use one of customer, staff"}   (HTTP 422)</div><p>The customer gets &ldquo;not found&rdquo; with a best similarity of 0.56 (the best page <em>they</em> may read is only loosely related). Staff get the error page. An unknown role is an error, not a guess. The same holds for <code>/api/search</code>:</p><div class="out"><b>You should see</b><br>GET /api/search?q=E104&top_k=3<br>&nbsp;&nbsp;no header (customer): [manual-maintenance#0]&nbsp;&nbsp;[faq-data-export#0]&nbsp;&nbsp;[manual-install#1]<br>&nbsp;&nbsp;x-demo-role: staff:&nbsp;&nbsp; [error-e101#1]&nbsp;&nbsp;[error-e102#1]&nbsp;&nbsp;[error-e104#0]</div></details><details><summary>Solution: Step 3</summary><p>At least the tests of the keyword index and of the hybrid search fail: they ask for a customer and find an <code>error</code> page. Without the check in the keyword index, the exact word <code>E104</code> would bring the staff page back to a customer through the keyword list, even though the SQL filter was right. Two search paths mean two places to enforce the rule.</p></details><details><summary>Solution: Step 4 (the tenant)</summary><p>On every row of <code>chunks</code> (a <code>tenant_id</code> column), in the same <code>WHERE</code> clause, in the keyword index, and in the cache key. It is the same filter as the role, with a different column.</p></details><details><summary>Template: tests</summary><pre><code>from collections.abc import Iterator
+
+import pytest
+from fastapi.testclient import TestClient
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.api import app
+from my_ai_project.deps import get_embedder, get_keywords, get_store, get_writer
+from my_ai_project.embedder import FakeEmbedder
+from my_ai_project.hybrid import KeywordIndex, hybrid_search
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import Found
+from test_ask_api import CHUNKS, InMemoryStore
+
+
+def test_a_customer_cannot_read_error_pages_and_staff_can() -&gt; None:
+    assert allowed_kinds(&quot;customer&quot;) == (&quot;manual&quot;, &quot;faq&quot;)
+    assert &quot;error&quot; in allowed_kinds(&quot;staff&quot;)
+
+
+def test_an_unknown_role_fails_closed() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;unknown role &#x27;admin&#x27;&quot;):
+        allowed_kinds(&quot;admin&quot;)
+
+
+def test_the_keyword_index_obeys_the_same_permissions() -&gt; None:
+    index = KeywordIndex(CHUNKS)
+    assert [f.kind for f in index.search(&quot;sensor cable&quot;, allowed_kinds=(&quot;faq&quot;,))] == []
+    assert any(f.kind == &quot;error&quot; for f in index.search(&quot;sensor cable&quot;, allowed_kinds=(&quot;error&quot;,)))
+
+
+def test_hybrid_search_never_returns_a_page_the_role_may_not_see() -&gt; None:
+    found: list[Found] = hybrid_search(&quot;sensor cable&quot;, FakeEmbedder(), InMemoryStore(), KeywordIndex(CHUNKS), allowed_kinds=allowed_kinds(&quot;customer&quot;))
+    assert found
+    assert all(f.kind in (&quot;manual&quot;, &quot;faq&quot;) for f in found)
+
+
+@pytest.fixture
+def client() -&gt; Iterator[TestClient]:
+    app.dependency_overrides[get_embedder] = FakeEmbedder
+    app.dependency_overrides[get_store] = InMemoryStore
+    app.dependency_overrides[get_keywords] = lambda: KeywordIndex(CHUNKS)
+    app.dependency_overrides[get_writer] = SimulatedWriter
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+QUESTION = {&quot;question&quot;: &quot;E101 Sensor timeout. The sensor did not answer. Check the sensor cable and restart the monitor.&quot;}
+
+
+def test_staff_get_the_error_page_and_a_customer_does_not(client: TestClient) -&gt; None:
+    staff = client.post(&quot;/api/ask&quot;, json=QUESTION, headers={&quot;x-demo-role&quot;: &quot;staff&quot;}).json()
+    assert staff[&quot;refused&quot;] is False
+    assert [s[&quot;doc_id&quot;] for s in staff[&quot;sources&quot;]] == [&quot;error-e101&quot;]
+    customer = client.post(&quot;/api/ask&quot;, json=QUESTION).json()   # no header: the least powerful role
+    assert &quot;error-e101&quot; not in [s[&quot;doc_id&quot;] for s in customer[&quot;sources&quot;]]
+    assert &quot;error-e101&quot; not in customer[&quot;answer&quot;]
+
+
+def test_search_obeys_the_role_too(client: TestClient) -&gt; None:
+    kinds = {r[&quot;kind&quot;] for r in client.get(&quot;/api/search&quot;, params={&quot;q&quot;: &quot;sensor cable&quot;, &quot;top_k&quot;: 5}).json()[&quot;results&quot;]}
+    assert &quot;error&quot; not in kinds
+
+
+def test_an_unknown_role_is_a_422(client: TestClient) -&gt; None:
+    assert client.post(&quot;/api/ask&quot;, json=QUESTION, headers={&quot;x-demo-role&quot;: &quot;admin&quot;}).status_code == 422</code></pre></details></section>
+<section><h2><span class="n">8</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is a prompt rule not enough to keep staff pages from customers?</li><li>Why must the keyword index get the same filter?</li><li>Why does a customer see &ldquo;not found&rdquo; and not &ldquo;forbidden&rdquo;?</li></ol><details><summary>Answers</summary><ol><li>A prompt is a request, not a lock; the model has already received the text. The safe place is before the model: the search must not return the page.</li><li>It is a second way to find pages. If only the SQL is filtered, an exact word can bring a forbidden page back through the keyword list.</li><li>&ldquo;Forbidden&rdquo; would tell the user that the page exists. Refusing in the same way as for a missing page leaks nothing.</li></ol></details></section>
+<section id="game-day79" class="game"><h2><span class="n">+</span> &middot; Game: Permission Check <span class="t">5 min</span></h2>
+<p><p>You filter retrieval by role. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day79-start"><p>Ready? 8 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day79-play">Start the game</button></div>
+<div id="day79-round" hidden><div class="gtop"><span id="day79-num">Round 1</span><span id="day79-score">Score 0</span></div>
+<pre hidden><code id="day79-code"></code></pre><div class="q" id="day79-q"></div><div class="choices" id="day79-opts"></div>
+<div class="fb" id="day79-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day79-next" hidden>Next round</button></p></div>
+<div id="day79-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day79",[{"c": "answer_question('What does error E104 mean?', ..., allowed_kinds=allowed_kinds('customer'))", "q": "What does a customer get?", "o": ["Not found: error pages are never retrieved for a customer", "The E104 answer", "A 403 error"], "a": 0, "out": "  customer I could not find that in the knowledge base.  sources: no source", "why": "Refusing like a missing page leaks nothing about what exists."}, {"c": "answer_question('What does error E104 mean?', ..., allowed_kinds=allowed_kinds('staff'))", "q": "What does staff get?", "o": ["The answer with [error-e104#0]", "Not found", "An error"], "a": 0, "out": "  staff    The storage is above 95 percent [error-e104#0].  sources: [error-e104#0]", "why": "Staff may read the error pages, so the page is retrieved."}, {"c": "How often should I calibrate the sensor?   # customer and staff", "q": "How do the two answers differ?", "o": ["They are the same: manuals are for everyone", "Staff get more", "The customer is refused"], "a": 0, "out": "  customer Calibrate the sensor once a month [manual-calibration#0].  sources: [manual-calibration#0]\n  staff    Calibrate the sensor once a month [manual-calibration#0].  sources: [manual-calibration#0]", "why": "The policy only restricts the error pages."}, {"c": "allowed_kinds('admin')", "q": "What happens?", "o": ["ValueError: unknown role 'admin'", "It returns every kind", "It returns no kinds"], "a": 0, "out": "{\"detail\":\"unknown role 'admin': use one of customer, staff\"}   (HTTP 422 from the API)", "why": "Fail closed: an unknown role is an error, never everything."}, {"c": "POST /api/ask with no x-demo-role header", "q": "Which role is used?", "o": ["customer, the least powerful", "staff", "none, so no filter"], "a": 0, "out": "{\"question\":\"What does error E104 mean?\",\"answer\":\"I could not find that in the knowledge base.\",\"refused\":true,\"reason\":\"best similarity 0.56 is under 0.6\",\"sources\":[]}", "why": "A missing role must never mean more power."}, {"c": "GET /api/search?q=E104&top_k=3   # staff vs customer", "q": "Is the E104 page in the customer's list?", "o": ["No: manual-maintenance#0, faq-data-export#0, manual-install#1", "Yes, first", "Yes, third"], "a": 0, "out": "  no header (customer): [manual-maintenance#0]  [faq-data-export#0]  [manual-install#1]\n  x-demo-role: staff:   [error-e101#1]  [error-e102#1]  [error-e104#0]", "why": "The filter is in the SQL, so the page is never ranked for a customer."}, {"c": "Filter the SQL but not the keyword index", "q": "What can a customer reach?", "o": ["A staff page through the keyword list, with an exact word like E104", "Nothing", "Only manuals"], "a": 0, "out": "(the tests of the keyword index and of the hybrid search fail)", "why": "Two search paths mean two places to enforce the rule."}, {"c": "Decision: add 'Do not tell customers about errors' to the prompt.", "q": "Is that enough?", "o": ["No: a prompt is a request, and the model already has the text", "Yes", "Only for long prompts"], "a": 0, "out": "(a judgement, no output)", "why": "Keep forbidden text away from the model."}],["Permission rookie", "Permission regular", "Access builder"],"Decide who may see what, filter in the query for every search path, fail closed on an unknown role, and take the role from a login, not from the caller.");</script>
+<p><small>Tick &ldquo;Play the Permission Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">9</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a policy of who may see which pages, a filter inside the SQL and the keyword index, a role that fails closed, and tests that a customer never reaches a staff page. You also have a map of what production RAG needs.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 79 checklist.</li><li>Share one line in the comments: which of your own documents should not be for everyone?</li><li><strong>Next:</strong> Tuesday is a class day: the end of Module 6 and the start of Module 7. On Wednesday a model calls your first function.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

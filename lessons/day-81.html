@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 81 - Tool calling: your first function call</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 81 &middot; LEVEL 7: TOOLS</div><h1>Tool calling: your first function call</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to let a model ask for a function, run it in your code, and send the result back.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a customer get &ldquo;not found&rdquo; and not &ldquo;forbidden&rdquo;?</li><li>Where is the role filter applied, and where is it too late?</li></ol><details><summary>Answers</summary><ol><li>&ldquo;Forbidden&rdquo; would tell the user that the page exists.</li><li>In the query (SQL and keyword index), before ranking. After the answer is written it is too late.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A user asks: <em>What does error E104 mean?</em> Your incident database has the exact record. Could the model look it up itself, instead of you guessing when to search?</strong></p><details><summary>Guess first, then open</summary><p>Yes, with <strong>tool calling</strong>. You describe a function to the model. If it decides it needs the function, it does not run anything: it answers with a request, &ldquo;please call <code>lookup_error</code> with <code>code=E104</code>&rdquo;. <em>Your</em> code runs the function and sends the result back. The model then writes the final answer.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: a tool is a name, a description and a schema</h3>
+<p>You send the model a list of <strong>tools</strong>. Each one has a <code>name</code>, a <code>description</code> (when to use it, written for the model) and an <code>input_schema</code> (a JSON Schema: which arguments, which types). The description is a prompt: a vague one gives wrong calls.</p>
+<h3>Piece 2: the model asks, your code acts</h3>
+<p>If the model wants the tool, the reply has <code>stop_reason: "tool_use"</code> and a <code>tool_use</code> block with an <code>id</code>, the tool <code>name</code> and the <code>input</code>. <strong>Nothing has run yet.</strong> You call your own function with that input. Then you send a new request that has the whole conversation so far plus a <code>tool_result</code> block with the <em>same id</em> and your function&rsquo;s output.</p>
+<h3>Piece 3: repeat until the model stops asking</h3>
+<p>The model reads the result and either asks for another tool or writes the final text (<code>stop_reason: "end_turn"</code>). Today there is one tool and one round. A loop for several rounds comes later, with agents.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> the model is a caller that can only send you a description of a method call, like a JSON-RPC request. You are the server that dispatches it: a <code>switch</code> on the name, deserialise the input, call the method, serialise the result. Nothing is reflection-magic, and the model cannot call anything you did not list.</div>
+<div class="box cap"><strong>Capstone:</strong> the Module 7 checkpoint is one real tool for <code>ai-knowledge-assistant</code>: &ldquo;query the mock incident database by error code&rdquo;. Today is the first half: the call and the loop.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. The &ldquo;incident database&rdquo; is your error pages, read into records (<code>src/my_ai_project/incident.py</code>):</p><pre><code>import re
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+
+from my_ai_project.knowledge_base import load_knowledge_base
+
+
+class UnknownErrorCode(Exception):
+    &quot;&quot;&quot;Raised when the incident database has no such error code.&quot;&quot;&quot;
+
+
+@dataclass(frozen=True)
+class Incident:
+    code: str
+    name: str
+    severity: str
+    action: str
+
+
+@lru_cache
+def load_incidents(root: str = &quot;data/kb&quot;) -&gt; dict[str, Incident]:
+    &quot;&quot;&quot;The mock incident database: one record for every error page of the knowledge base.&quot;&quot;&quot;
+    incidents: dict[str, Incident] = {}
+    for document in load_knowledge_base(Path(root)):
+        if document.kind != &quot;error&quot;:
+            continue
+        code, _, name = document.title.partition(&quot; &quot;)
+        action, _, severity = document.body.partition(&quot;Severity:&quot;)
+        incidents[code] = Incident(code, name, severity.strip().rstrip(&quot;.&quot;).lower() or &quot;unknown&quot;, re.sub(r&quot;\s+&quot;, &quot; &quot;, action).strip())
+    return incidents
+
+
+def lookup_error(code: str) -&gt; Incident:
+    try:
+        return load_incidents()[code.upper()]
+    except KeyError:
+        raise UnknownErrorCode(f&quot;no error with code {code!r}&quot;) from None</code></pre><p>The tool: its schema for the model, and a function that runs it (<code>src/my_ai_project/tools.py</code>):</p><pre><code>import json
+from dataclasses import asdict
+from typing import Any
+
+from my_ai_project.incident import lookup_error
+
+LOOKUP_TOOL: dict[str, Any] = {
+    &quot;name&quot;: &quot;lookup_error&quot;,
+    &quot;description&quot;: &quot;Look up a PumpGuard error code, such as E104, in the incident database. &quot;
+    &quot;Returns its name, severity and the recommended action. Use it when the user mentions an error code.&quot;,
+    &quot;input_schema&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {&quot;code&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;The error code, like E104&quot;}},
+        &quot;required&quot;: [&quot;code&quot;],
+    },
+}
+
+
+def run_tool(name: str, tool_input: dict[str, Any]) -&gt; str:
+    &quot;&quot;&quot;Run the function the model asked for, and return its result as text. The model never runs anything itself.&quot;&quot;&quot;
+    if name == &quot;lookup_error&quot;:
+        return json.dumps(asdict(lookup_error(tool_input[&quot;code&quot;])))
+    raise ValueError(f&quot;unknown tool {name!r}&quot;)</code></pre><div class="box"><strong>This model is a stand-in.</strong> We have no key here, so <code>tool_call_demo.py</code> sends real requests with the real SDK to a small <em>pretend</em> server that returns two canned replies: first a <code>tool_use</code> for E104, then a final text built from your tool result. It is <strong>not a real model</strong>. With a real key a real model chooses the tool and the input itself, and it may word the final answer differently. The loop, the message shapes and your function are the real part.</div><pre><code>import json
+
+import anthropic
+import httpx2
+
+from my_ai_project.tools import LOOKUP_TOOL, run_tool
+
+requests: list[dict] = []
+
+
+def pretend_model(request: httpx2.Request) -&gt; httpx2.Response:
+    &quot;&quot;&quot;NOT a real model: a stand-in server with two canned replies, so the loop runs with no key and no cost.&quot;&quot;&quot;
+    body = json.loads(request.content)
+    requests.append(body)
+    if len(requests) == 1:
+        content = [{&quot;type&quot;: &quot;tool_use&quot;, &quot;id&quot;: &quot;toolu_demo1&quot;, &quot;name&quot;: &quot;lookup_error&quot;, &quot;input&quot;: {&quot;code&quot;: &quot;E104&quot;}}]
+        stop = &quot;tool_use&quot;
+    else:
+        result = json.loads(body[&quot;messages&quot;][-1][&quot;content&quot;][0][&quot;content&quot;])
+        content = [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: f&quot;{result[&#x27;code&#x27;]} means {result[&#x27;name&#x27;]} (severity {result[&#x27;severity&#x27;]}). {result[&#x27;action&#x27;]}&quot;}]
+        stop = &quot;end_turn&quot;
+    reply = {&quot;id&quot;: &quot;msg_demo&quot;, &quot;type&quot;: &quot;message&quot;, &quot;role&quot;: &quot;assistant&quot;, &quot;model&quot;: body[&quot;model&quot;], &quot;content&quot;: content,
+             &quot;stop_reason&quot;: stop, &quot;stop_sequence&quot;: None, &quot;usage&quot;: {&quot;input_tokens&quot;: 100, &quot;output_tokens&quot;: 20}}
+    return httpx2.Response(200, json=reply)
+
+
+client = anthropic.Anthropic(api_key=&quot;not-a-real-key&quot;, http_client=httpx2.Client(transport=httpx2.MockTransport(pretend_model)))
+messages: list[dict] = [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What does error E104 mean?&quot;}]
+
+first = client.messages.create(model=&quot;claude-haiku-4-5-20251001&quot;, max_tokens=300, tools=[LOOKUP_TOOL], messages=messages)
+print(&quot;1. we sent tools:&quot;, [t[&quot;name&quot;] for t in requests[0][&quot;tools&quot;]])
+print(&quot;2. stop reason: &quot;, first.stop_reason)
+call = next(block for block in first.content if block.type == &quot;tool_use&quot;)
+print(&quot;3. the model asks for:&quot;, call.name, call.input)
+
+result = run_tool(call.name, dict(call.input))
+print(&quot;4. our function returned:&quot;, result)
+
+messages.append({&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: first.content})
+messages.append({&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: [{&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: call.id, &quot;content&quot;: result}]})
+final = client.messages.create(model=&quot;claude-haiku-4-5-20251001&quot;, max_tokens=300, tools=[LOOKUP_TOOL], messages=messages)
+print(&quot;5. second request has&quot;, len(requests[1][&quot;messages&quot;]), &quot;messages; the last one is a&quot;, requests[1][&quot;messages&quot;][-1][&quot;content&quot;][0][&quot;type&quot;])
+print(&quot;6. stop reason: &quot;, final.stop_reason)
+print(&quot;7. final answer:&quot;, final.content[0].text)</code></pre><div class="out"><b>You should see</b><br>1. we sent tools: ['lookup_error']<br>2. stop reason:  tool_use<br>3. the model asks for: lookup_error {'code': 'E104'}<br>4. our function returned: {"code": "E104", "name": "Disk full", "severity": "high", "action": "The storage is above 95 percent. Export your readings from the web dashboard and then delete the old ones in Settings."}<br>5. second request has 3 messages; the last one is a tool_result<br>6. stop reason:  end_turn<br>7. final answer: E104 means Disk full (severity high). The storage is above 95 percent. Export your readings from the web dashboard and then delete the old ones in Settings.</div><p>Read the numbers. Steps 2 and 3 are the model asking; step 4 is your code acting; step 5 shows the shape of the second request:</p><pre><code>messages = [
+  {&quot;role&quot;: &quot;user&quot;,      &quot;content&quot;: &quot;What does error E104 mean?&quot;},
+  {&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: [ {&quot;type&quot;: &quot;tool_use&quot;, &quot;id&quot;: &quot;toolu_demo1&quot;, &quot;name&quot;: &quot;lookup_error&quot;, &quot;input&quot;: {&quot;code&quot;: &quot;E104&quot;}} ]},
+  {&quot;role&quot;: &quot;user&quot;,      &quot;content&quot;: [ {&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: &quot;toolu_demo1&quot;, &quot;content&quot;: &quot;{...the result...}&quot;} ]},
+]</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c tools</code>). You need no database today: the incident records are read from the error pages in <code>data/kb/errors</code>.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>incident.py</code> and <code>tools.py</code>, add <code>tool_call_demo.py</code>, and run it. Match the seven lines.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>In the pretend reply, ask for the lower case <code>e104</code> instead. <strong>Predict first:</strong> does your function still find the record? Where is that handled?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Make the pretend model ask for <code>E999</code> (a code that does not exist). Run it and read the last line of the error. Which function raised it, and what would a user of your assistant see? (You fix this properly on Thursday.)</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Print the whole second request (<code>requests[1]</code>) as indented JSON and find the <code>tool_use_id</code> in <em>two</em> places. Why must they be equal? Then add a test that <code>run_tool(&quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;})</code> returns JSON with the name <code>Disk full</code>.</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Add the first tool and a tool-call loop&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;ModuleNotFoundError: httpx2&rdquo;</strong>: the mock transport comes from the test dependencies of your project: <code>uv add --dev httpx2</code>.</li><li><strong>The SDK complains about the message format</strong>: after a <code>tool_use</code>, the next user message must hold a <code>tool_result</code> whose <code>tool_use_id</code> matches. Check the id.</li><li><strong>&ldquo;no error with code ...&rdquo;</strong>: the record is missing. Check that <code>data/kb/errors</code> holds the pages and that the title starts with the code (<code>E104 Disk full</code>).</li><li><strong>You want to try a real model</strong>: use the real client and drop the mock (below). Your result will differ from the lesson, and that is the point.</li></ul><details><summary>Real client</summary><pre><code>client = anthropic.Anthropic(api_key=os.environ[&quot;ANTHROPIC_API_KEY&quot;])   # the real client: no mock transport
+# the rest of the script stays the same: the loop does not care who is on the other side</code></pre></details><details><summary>Solution: Step 2</summary><p>It still finds it: <code>lookup_error</code> calls <code>code.upper()</code> before the lookup. A model may well send lower case or a space, so the function should be forgiving about format and strict about meaning. On Thursday you add a rule for the format.</p></details><details><summary>Solution: Step 3</summary><p>The last line names <code>UnknownErrorCode: no error with code 'E999'</code>, raised by <code>lookup_error</code> and passed up through <code>run_tool</code>. The loop stops with a traceback. A user would see a crash, and the model never learns that the code does not exist, so it cannot say so. A tool error should go <em>back to the model</em> as a result.</p></details><details><summary>Solution: Step 4</summary><p>The id appears in the assistant&rsquo;s <code>tool_use</code> block and in your <code>tool_result</code>. It must be equal because it links the answer to the request: a model may ask for several tools at once, and the id says which result belongs to which call.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Who runs the function: the model or your code?</li><li>What does the <code>tool_use_id</code> do?</li><li>What is the difference between <code>stop_reason</code> <code>tool_use</code> and <code>end_turn</code>?</li></ol><details><summary>Answers</summary><ol><li>Your code. The model only sends a request that names the tool and the input.</li><li>It links a <code>tool_result</code> to the <code>tool_use</code> it answers, which matters when there are several calls.</li><li><code>tool_use</code> means the model wants a tool result before it can go on. <code>end_turn</code> means the model has finished its answer.</li></ol></details></section>
+<section id="game-day81" class="game"><h2><span class="n">+</span> &middot; Game: First Tool Call <span class="t">5 min</span></h2>
+<p><p>You run a tool-call loop. Read the step, pick what happens, then see the real output. (The model here is a stand-in, not a real model.)</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day81-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day81-play">Start the game</button></div>
+<div id="day81-round" hidden><div class="gtop"><span id="day81-num">Round 1</span><span id="day81-score">Score 0</span></div>
+<pre hidden><code id="day81-code"></code></pre><div class="q" id="day81-q"></div><div class="choices" id="day81-opts"></div>
+<div class="fb" id="day81-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day81-next" hidden>Next round</button></p></div>
+<div id="day81-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day81",[{"c": "first = client.messages.create(..., tools=[LOOKUP_TOOL], messages=messages)", "q": "What is the stop reason?", "o": ["tool_use: the model wants a result first", "end_turn", "max_tokens"], "a": 0, "out": "2. stop reason:  tool_use", "why": "The model has asked for a function; nothing has run yet."}, {"c": "call = next(b for b in first.content if b.type == 'tool_use')", "q": "What does the block hold?", "o": ["The tool name and the input: lookup_error {'code': 'E104'}", "The result of the function", "The final answer"], "a": 0, "out": "3. the model asks for: lookup_error {'code': 'E104'}", "why": "It is only a request."}, {"c": "result = run_tool(call.name, dict(call.input))", "q": "Who runs the function?", "o": ["Your code", "The model", "The API server"], "a": 0, "out": "4. our function returned: {\"code\": \"E104\", \"name\": \"Disk full\", \"severity\": \"high\", \"action\": \"The storage is above 95 percent. ...\"}", "why": "The model cannot run code."}, {"c": "messages.append({'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': call.id, 'content': result}]})", "q": "What does the second request contain?", "o": ["3 messages: the question, the tool_use, the tool_result", "Only the result", "Only the question"], "a": 0, "out": "5. second request has 3 messages; the last one is a tool_result", "why": "The model sees the whole conversation so far."}, {"c": "final = client.messages.create(...)", "q": "What is the stop reason now?", "o": ["end_turn", "tool_use", "error"], "a": 0, "out": "6. stop reason:  end_turn", "why": "The model has what it needs and writes the answer."}, {"c": "tool_use_id", "q": "Why must the ids match?", "o": ["They link a result to the request it answers", "They are the password", "They count the rounds"], "a": 0, "out": "(call.id is in the tool_use block and in the tool_result)", "why": "A model may ask for several tools at once."}, {"c": "pretend_model(request)   # in tool_call_demo.py", "q": "What is it?", "o": ["A stand-in server with two canned replies, NOT a real model", "The real model", "A database"], "a": 0, "out": "(it always asks for E104, then composes the final text from the tool result)", "why": "The shapes are real; a real model chooses the tool and input itself."}],["Tool rookie", "Tool regular", "Loop builder"],"A model only asks for a tool; your code runs it and sends back a result with the same id; the loop ends when the model stops asking.");</script>
+<p><small>Tick &ldquo;Play the First Tool Call game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a tool with a schema, a function that looks up an error code, and a full call loop: the model asks, your code runs the function, the result goes back, and an answer comes out. You also know which part of the lesson was a stand-in.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 81 checklist.</li><li>Share one line in the comments: which function of your own would you give a model?</li><li><strong>Next:</strong> Thursday is mixed practice: you add validation and an error case to the tool, from a blank file.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

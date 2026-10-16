@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 82 - Mixed practice: tool schema, validation and errors</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 82 &middot; LEVEL 7: TOOLS &middot; MIXED PRACTICE</div><h1>Mixed practice: tool schema, validation and errors</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to validate a tool's input and return a clear error result, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>stop_reason: tool_use</code> mean?</li><li>What happened in the loop when the model asked for <code>E999</code>?</li></ol><details><summary>Answers</summary><ol><li>The model wants a tool result before it can go on. It has asked for a function; nothing has run yet.</li><li>The function raised <code>UnknownErrorCode</code>, nothing caught it, and the loop crashed with a traceback. The model never learned that the code does not exist.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You get a contract, and you write the module yourself, from a blank file. Use <code>incident.py</code> from Wednesday and Pydantic.</p><pre><code>tool_executor.py
+  input : a tool_use from the model: its id, its name and its input (a dict)
+  does  : check the name; check the input with a Pydantic model (the code is the letter E and three digits);
+          look the code up; never raise to the caller
+  returns: a tool_result dict: {&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: ..., &quot;content&quot;: ...}
+           on any problem the content is a short message and &quot;is_error&quot; is True
+
+run_cases.py prints the tool&#x27;s input schema (made from the Pydantic model), then runs these six calls:
+  lookup_error {&quot;code&quot;: &quot;E104&quot;}   lookup_error {&quot;code&quot;: &quot;e104&quot;}   lookup_error {&quot;code&quot;: &quot;104&quot;}
+  lookup_error {&quot;code&quot;: &quot;E999&quot;}   lookup_error {}                 delete_everything {&quot;code&quot;: &quot;E104&quot;}</code></pre><p><strong>Predict first</strong>, before you run anything: which of the six calls will be errors? Write your guess, and the message you expect for each.</p></section>
+<section><h2><span class="n">3</span> &middot; Do it <span class="t">25 min</span></h2><ol><li>Write <code>tool_executor.py</code> and <code>run_cases.py</code> in <code>my-ai-project</code>. Do not open the solution until you have tried for 15 minutes.</li><li>Run it. Compare your six results with your prediction.</li><li>Write the tests: one for a good call, one for each kind of error. A test must never need a model.</li><li>Run <code>uv run pytest</code> and <code>uv run mypy src tests</code>. Commit: <code>git add .</code> and <code>git commit -m &quot;Validate tool input and return tool errors&quot;</code>.</li></ol><details><summary>Hint: where to start</summary><p>A Pydantic model <code>LookupInput</code> with one field <code>code</code> and a <code>pattern</code>. Its <code>model_json_schema()</code> is the tool&rsquo;s <code>input_schema</code>. In <code>execute</code>: check the tool name first, then <code>LookupInput.model_validate(tool_input)</code> inside <code>try</code>, catch <code>ValidationError</code> and <code>UnknownErrorCode</code>, and build the result block.</p></details><details><summary>Solution</summary><pre><code>import json
+from dataclasses import asdict
+from typing import Any
+
+from pydantic import BaseModel, Field, ValidationError
+
+from my_ai_project.incident import UnknownErrorCode, lookup_error
+
+
+class LookupInput(BaseModel):
+    code: str = Field(pattern=r&quot;^[Ee]\d{3}$&quot;, description=&quot;The error code: the letter E and three digits, like E104&quot;)
+
+
+LOOKUP_TOOL: dict[str, Any] = {
+    &quot;name&quot;: &quot;lookup_error&quot;,
+    &quot;description&quot;: &quot;Look up a PumpGuard error code, such as E104, in the incident database. &quot;
+    &quot;Returns its name, severity and the recommended action. Use it when the user mentions an error code.&quot;,
+    &quot;input_schema&quot;: LookupInput.model_json_schema(),
+}
+
+
+def tool_error(tool_use_id: str, message: str) -&gt; dict[str, Any]:
+    &quot;&quot;&quot;An error goes back to the model as a result, so it can fix the input or tell the user. It does not crash the loop.&quot;&quot;&quot;
+    return {&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: tool_use_id, &quot;content&quot;: message, &quot;is_error&quot;: True}
+
+
+def execute(tool_use_id: str, name: str, tool_input: dict[str, Any]) -&gt; dict[str, Any]:
+    &quot;&quot;&quot;Validate what the model sent, run the function, and always return a tool_result block.&quot;&quot;&quot;
+    if name != &quot;lookup_error&quot;:
+        return tool_error(tool_use_id, f&quot;unknown tool {name!r}&quot;)
+    try:
+        args = LookupInput.model_validate(tool_input)
+        incident = lookup_error(args.code)
+    except ValidationError as err:
+        first = err.errors()[0]
+        return tool_error(tool_use_id, f&quot;invalid input for {&#x27;.&#x27;.join(str(p) for p in first[&#x27;loc&#x27;])}: {first[&#x27;msg&#x27;]}&quot;)
+    except UnknownErrorCode as err:
+        return tool_error(tool_use_id, str(err))
+    return {&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: tool_use_id, &quot;content&quot;: json.dumps(asdict(incident))}</code></pre><p><code>run_cases.py</code>:</p><pre><code>import json
+
+from my_ai_project.tool_executor import LOOKUP_TOOL, execute
+
+print(json.dumps(LOOKUP_TOOL[&quot;input_schema&quot;], indent=2))
+print()
+CASES = [
+    (&quot;toolu_1&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;}),
+    (&quot;toolu_2&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;e104&quot;}),
+    (&quot;toolu_3&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;104&quot;}),
+    (&quot;toolu_4&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E999&quot;}),
+    (&quot;toolu_5&quot;, &quot;lookup_error&quot;, {}),
+    (&quot;toolu_6&quot;, &quot;delete_everything&quot;, {&quot;code&quot;: &quot;E104&quot;}),
+]
+for tool_use_id, name, tool_input in CASES:
+    result = execute(tool_use_id, name, tool_input)
+    print(f&quot;{name} {tool_input}&quot;)
+    print(f&quot;   is_error={result.get(&#x27;is_error&#x27;, False)}  content={result[&#x27;content&#x27;]}&quot;)</code></pre><p>The schema it prints (made from the model, not typed by hand):</p><div class="out"><b>You should see</b><br>{<br>&nbsp;&nbsp;"properties": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"code": {<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"description": "The error code: the letter E and three digits, like E104",<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"pattern": "^[Ee]\\d{3}$",<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"title": "Code",<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"type": "string"<br>&nbsp;&nbsp;&nbsp;&nbsp;}<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"required": [<br>&nbsp;&nbsp;&nbsp;&nbsp;"code"<br>&nbsp;&nbsp;],<br>&nbsp;&nbsp;"title": "LookupInput",<br>&nbsp;&nbsp;"type": "object"<br>}</div><div class="out"><b>You should see</b><br>lookup_error {'code': 'E104'}<br>&nbsp;&nbsp; is_error=False&nbsp;&nbsp;content={"code": "E104", "name": "Disk full", "severity": "high", "action": "The storage is above 95 percent. Export your readings from the web dashboard and then delete the old ones in Settings."}<br>lookup_error {'code': 'e104'}<br>&nbsp;&nbsp; is_error=False&nbsp;&nbsp;content={"code": "E104", "name": "Disk full", "severity": "high", "action": "The storage is above 95 percent. Export your readings from the web dashboard and then delete the old ones in Settings."}<br>lookup_error {'code': '104'}<br>&nbsp;&nbsp; is_error=True&nbsp;&nbsp;content=invalid input for code: String should match pattern '^[Ee]\d{3}$'<br>lookup_error {'code': 'E999'}<br>&nbsp;&nbsp; is_error=True&nbsp;&nbsp;content=no error with code 'E999'<br>lookup_error {}<br>&nbsp;&nbsp; is_error=True&nbsp;&nbsp;content=invalid input for code: Field required<br>delete_everything {'code': 'E104'}<br>&nbsp;&nbsp; is_error=True&nbsp;&nbsp;content=unknown tool 'delete_everything'</div></details><details><summary>Read the six results</summary><p>Four of the six are errors, and none of them raised. <code>e104</code> is fine because the pattern allows both cases and the lookup upper-cases it. <code>104</code> and the missing field fail the <em>format</em>, before any lookup. <code>E999</code> has the right format but no record. <code>delete_everything</code> is not a tool you listed, and a model can only call tools you gave it, but a mistaken or hostile request must still be answered safely.</p><p>Why return the error as a result? The model can read &ldquo;no error with code E999&rdquo; and tell the user, or fix the input and try again. A crash tells nobody anything.</p></details><details><summary>Template: tests</summary><pre><code>import json
+
+import pytest
+
+from my_ai_project.tool_executor import LOOKUP_TOOL, execute
+
+
+def test_a_valid_call_returns_the_incident() -&gt; None:
+    result = execute(&quot;toolu_1&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;})
+    assert result[&quot;type&quot;] == &quot;tool_result&quot;
+    assert result[&quot;tool_use_id&quot;] == &quot;toolu_1&quot;
+    assert &quot;is_error&quot; not in result
+    assert json.loads(result[&quot;content&quot;])[&quot;name&quot;] == &quot;Disk full&quot;
+
+
+def test_the_code_is_case_insensitive() -&gt; None:
+    assert json.loads(execute(&quot;t&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;e104&quot;})[&quot;content&quot;])[&quot;code&quot;] == &quot;E104&quot;
+
+
+@pytest.mark.parametrize(&quot;tool_input&quot;, [{&quot;code&quot;: &quot;104&quot;}, {&quot;code&quot;: &quot;E10&quot;}, {&quot;code&quot;: 104}, {}])
+def test_bad_input_is_an_error_result_not_a_crash(tool_input: dict[str, object]) -&gt; None:
+    result = execute(&quot;t&quot;, &quot;lookup_error&quot;, tool_input)
+    assert result[&quot;is_error&quot;] is True
+    assert result[&quot;content&quot;].startswith(&quot;invalid input for code&quot;)
+
+
+def test_an_unknown_code_is_an_error_result() -&gt; None:
+    result = execute(&quot;t&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E999&quot;})
+    assert result[&quot;is_error&quot;] is True
+    assert &quot;E999&quot; in result[&quot;content&quot;]
+
+
+def test_an_unknown_tool_is_an_error_result() -&gt; None:
+    assert execute(&quot;t&quot;, &quot;delete_everything&quot;, {})[&quot;is_error&quot;] is True
+
+
+def test_the_schema_comes_from_the_model_class() -&gt; None:
+    assert LOOKUP_TOOL[&quot;input_schema&quot;][&quot;required&quot;] == [&quot;code&quot;]
+    assert &quot;pattern&quot; in LOOKUP_TOOL[&quot;input_schema&quot;][&quot;properties&quot;][&quot;code&quot;]</code></pre></details></section>
+<section><h2><span class="n">4</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does the executor validate the input even though the schema is in the tool description?</li><li>Why return an error result instead of raising?</li><li>Why is the schema made from the Pydantic model?</li></ol><details><summary>Answers</summary><ol><li>The schema is a hint to the model, not a guarantee. A model can still send the wrong shape, so your code must check.</li><li>The model can read the error and recover or explain it. An exception ends the loop and leaves everyone in the dark.</li><li>One definition: the check and the description cannot disagree.</li></ol></details></section>
+<section id="game-day82" class="game"><h2><span class="n">+</span> &middot; Game: Tool Error Check <span class="t">5 min</span></h2>
+<p><p>You validate tool input. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day82-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day82-play">Start the game</button></div>
+<div id="day82-round" hidden><div class="gtop"><span id="day82-num">Round 1</span><span id="day82-score">Score 0</span></div>
+<pre hidden><code id="day82-code"></code></pre><div class="q" id="day82-q"></div><div class="choices" id="day82-opts"></div>
+<div class="fb" id="day82-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day82-next" hidden>Next round</button></p></div>
+<div id="day82-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day82",[{"c": "execute('toolu_1', 'lookup_error', {'code': 'E104'})", "q": "Is it an error?", "o": ["No: it returns the record", "Yes", "It raises"], "a": 0, "out": "is_error=False  content={\"code\": \"E104\", \"name\": \"Disk full\", \"severity\": \"high\", ...}", "why": "Good format, known code."}, {"c": "execute('toolu_2', 'lookup_error', {'code': 'e104'})", "q": "What happens?", "o": ["It works: the pattern allows both cases", "invalid input", "unknown code"], "a": 0, "out": "is_error=False  content={\"code\": \"E104\", \"name\": \"Disk full\", ...}", "why": "Forgiving about case, strict about meaning."}, {"c": "execute('toolu_3', 'lookup_error', {'code': '104'})", "q": "What is the content?", "o": ["invalid input for code: String should match pattern '^[Ee]\\d{3}$'", "no error with code '104'", "The record of E104"], "a": 0, "out": "is_error=True  content=invalid input for code: String should match pattern '^[Ee]\\d{3}$'", "why": "The format is checked before any lookup."}, {"c": "execute('toolu_4', 'lookup_error', {'code': 'E999'})", "q": "What is the content?", "o": ["no error with code 'E999'", "invalid input", "Nothing: it raises"], "a": 0, "out": "is_error=True  content=no error with code 'E999'", "why": "The format is fine but the record does not exist. It still returns a result."}, {"c": "execute('toolu_5', 'lookup_error', {})", "q": "What is the content?", "o": ["invalid input for code: Field required", "no error with code ''", "A crash"], "a": 0, "out": "is_error=True  content=invalid input for code: Field required", "why": "A missing field is a validation error."}, {"c": "execute('toolu_6', 'delete_everything', {'code': 'E104'})", "q": "What happens?", "o": ["unknown tool 'delete_everything', as an error result", "It deletes", "It raises"], "a": 0, "out": "is_error=True  content=unknown tool 'delete_everything'", "why": "Only listed tools run, and a bad request is still answered safely."}, {"c": "LOOKUP_TOOL['input_schema'] = LookupInput.model_json_schema()", "q": "Why generate the schema?", "o": ["The check and the description cannot disagree", "It is faster", "The model requires it"], "a": 0, "out": "\"pattern\": \"^[Ee]\\\\d{3}$\"  (made from the Pydantic model)", "why": "One definition."}],["Validation rookie", "Validation regular", "Tool guard"],"Validate every tool input, return errors as results the model can read, only run listed tools, and generate the schema from the model class.");</script>
+<p><small>Tick &ldquo;Play the Tool Error Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a tool executor that validates input, handles an unknown code and an unknown tool, and always answers with a result block, with tests that need no model.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 82 checklist.</li><li>Share one line in the comments: which of the six results surprised you?</li><li><strong>Next:</strong> Friday is a teach-back: you explain how a model &ldquo;calls&rdquo; a function.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
