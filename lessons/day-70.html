@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 70 - Project Lab 10: the search endpoint</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 70 &middot; LEVEL 6: RAG &middot; PROJECT LAB</div><h1>Project Lab 10: the search endpoint</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to index the knowledge base with metadata, and serve /api/search that returns cited chunks, with tests that need no database.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does an unknown <code>kind</code> raise an error?</li><li>What did the table of Thursday say about chunk size 25 and 120?</li></ol><details><summary>Answers</summary><ol><li>An empty list looks like &ldquo;nothing exists&rdquo;; an error shows the typo.</li><li>25 tokens confused two similar errors (E103 and E104); 120 tokens held several topics in one chunk and sent 326 tokens.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p>Today <code>ai-knowledge-assistant</code> gets its first <strong>real retrieval</strong>. By the end:</p><ul><li>The knowledge base and the user guide are chunked, embedded and stored with <code>title</code> and <code>kind</code>.</li><li><code>GET /api/search?q=...</code> returns the top chunks with a <strong>citation</strong> like <code>[error-e101#0]</code>, so a later answer can say where it came from.</li><li>It can filter by <code>kind</code>, checks its parameters, and returns a clean <code>503</code> when the database is down.</li><li>The tests need <strong>no database and no model</strong>.</li></ul><div class="box cap"><strong>Capstone:</strong> this endpoint is the <em>R</em> in RAG. Next week the answer is built from these chunks, and it must cite them.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Cut the work in small pieces, and commit after each one:</p><ol><li><strong>Index</strong>: run the ingest of Day 67 over all the knowledge base files. Check the counts.</li><li><strong>Endpoint</strong>: add the models and the route.</li><li><strong>Dependencies</strong>: the embedder and the store come from <code>Depends</code>, so tests can replace them.</li><li><strong>Tests</strong>: a fake embedder and an in-memory store.</li><li><strong>Run it</strong> with the real database and with the database stopped.</li><li><strong>README</strong> and push.</li></ol></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2><h3>Step 1: index</h3><p>Start the database (<code>docker compose up -d</code>), run <code>ingest.py</code> from Day 67, and match the line below. If you also want the user guide in the index, add it as <code>kind=manual</code> with its own <code>doc_id</code>, and note that the counts change.</p><div class="out"><b>You should see</b><br>stored 26 chunks; rows: 26 (manual 10, faq 7, error 9)</div><h3>Step 2: the route</h3><p>Add these to <code>api.py</code>. <code>Literal</code> and the limits make FastAPI check the parameters for you:</p><pre><code>class SearchHit(BaseModel):
+    citation: str
+    doc_id: str
+    chunk_index: int
+    title: str
+    kind: str
+    text: str
+    similarity: float
+
+
+class SearchResponse(BaseModel):
+    question: str
+    kind: str | None
+    results: list[SearchHit]
+
+
+@app.get(&quot;/api/search&quot;)
+def search(
+    q: Annotated[str, Query(min_length=1, max_length=500)],
+    embedder: EmbedderDep,
+    store: StoreDep,
+    top_k: Annotated[int, Query(ge=1, le=10)] = 3,
+    kind: Literal[&quot;manual&quot;, &quot;faq&quot;, &quot;error&quot;] | None = None,
+) -&gt; SearchResponse:
+    try:
+        found = retrieve(q, embedder, store, top_k=top_k, kind=kind)
+    except psycopg.OperationalError as err:
+        raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
+    hits = [
+        SearchHit(citation=f.citation, doc_id=f.doc_id, chunk_index=f.chunk_index, title=f.title, kind=f.kind, text=f.text, similarity=f.similarity)
+        for f in found
+    ]
+    return SearchResponse(question=q, kind=kind, results=hits)</code></pre><h3>Step 3: dependencies</h3><p>In <code>deps.py</code>. The model loads once (<code>lru_cache</code>), and the store is built per request from <code>DATABASE_URL</code>:</p><pre><code>@lru_cache
+def get_embedder() -&gt; Embedder:
+    return FastEmbedder()   # loads the model once, then every request reuses it
+
+
+def get_store() -&gt; Searcher:
+    return ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+
+
+EmbedderDep = Annotated[Embedder, Depends(get_embedder)]
+StoreDep = Annotated[Searcher, Depends(get_store)]</code></pre><h3>Step 4: tests</h3><p>The tests replace both dependencies, so they run in milliseconds without a model or a database:</p><pre><code>from collections.abc import Iterator
+
+import numpy as np
+import psycopg
+import pytest
+from fastapi.testclient import TestClient
+
+from my_ai_project.api import app
+from my_ai_project.deps import get_embedder, get_store
+from my_ai_project.embedder import FakeEmbedder
+from my_ai_project.retrieval import normalize
+from my_ai_project.store import ChunkRecord, Found
+
+RECORDS = [
+    ChunkRecord(&quot;error-e101&quot;, 0, &quot;E101 Sensor timeout&quot;, &quot;error&quot;, &quot;Check the sensor cable and restart the monitor.&quot;, 9),
+    ChunkRecord(&quot;faq-battery&quot;, 0, &quot;Battery life&quot;, &quot;faq&quot;, &quot;The battery lasts about eight hours.&quot;, 7),
+    ChunkRecord(&quot;manual-install&quot;, 0, &quot;Installation guide&quot;, &quot;manual&quot;, &quot;Mount the sensor on a flat wall and connect the cable.&quot;, 10),
+]
+
+
+class InMemoryStore:
+    &quot;&quot;&quot;The same search as the database store, in memory, so the API tests need no database.&quot;&quot;&quot;
+
+    def __init__(self) -&gt; None:
+        self.vectors = normalize(FakeEmbedder().embed([f&quot;{r.title}. {r.text}&quot; for r in RECORDS]))
+
+    def search(self, query_vector: np.ndarray, top_k: int = 3, kind: str | None = None) -&gt; list[Found]:
+        scores = self.vectors @ (query_vector / np.linalg.norm(query_vector))
+        order = [i for i in scores.argsort()[::-1] if kind is None or RECORDS[i].kind == kind][:top_k]
+        return [Found(RECORDS[i].doc_id, RECORDS[i].chunk_index, RECORDS[i].title, RECORDS[i].kind, RECORDS[i].text, round(float(scores[i]), 2)) for i in order]
+
+
+class BrokenStore:
+    def search(self, query_vector: np.ndarray, top_k: int = 3, kind: str | None = None) -&gt; list[Found]:
+        raise psycopg.OperationalError(&quot;connection refused&quot;)
+
+
+@pytest.fixture
+def client() -&gt; Iterator[TestClient]:
+    app.dependency_overrides[get_embedder] = FakeEmbedder
+    app.dependency_overrides[get_store] = InMemoryStore
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def test_a_search_returns_cited_chunks(client: TestClient) -&gt; None:
+    response = client.get(&quot;/api/search&quot;, params={&quot;q&quot;: &quot;sensor cable&quot;, &quot;top_k&quot;: 2})
+    assert response.status_code == 200
+    body = response.json()
+    assert body[&quot;question&quot;] == &quot;sensor cable&quot;
+    assert len(body[&quot;results&quot;]) == 2
+    first = body[&quot;results&quot;][0]
+    assert first[&quot;citation&quot;] == f&quot;[{first[&#x27;doc_id&#x27;]}#{first[&#x27;chunk_index&#x27;]}]&quot;
+    assert set(first) == {&quot;citation&quot;, &quot;doc_id&quot;, &quot;chunk_index&quot;, &quot;title&quot;, &quot;kind&quot;, &quot;text&quot;, &quot;similarity&quot;}
+
+
+def test_the_kind_filter_keeps_only_that_kind(client: TestClient) -&gt; None:
+    body = client.get(&quot;/api/search&quot;, params={&quot;q&quot;: &quot;sensor cable&quot;, &quot;kind&quot;: &quot;manual&quot;}).json()
+    assert [r[&quot;doc_id&quot;] for r in body[&quot;results&quot;]] == [&quot;manual-install&quot;]
+    assert body[&quot;kind&quot;] == &quot;manual&quot;
+
+
+@pytest.mark.parametrize(
+    &quot;params&quot;,
+    [{&quot;q&quot;: &quot;&quot;}, {&quot;q&quot;: &quot;x&quot;, &quot;kind&quot;: &quot;errors&quot;}, {&quot;q&quot;: &quot;x&quot;, &quot;top_k&quot;: 0}, {&quot;q&quot;: &quot;x&quot;, &quot;top_k&quot;: 11}],
+)
+def test_bad_parameters_are_a_422(client: TestClient, params: dict[str, object]) -&gt; None:
+    assert client.get(&quot;/api/search&quot;, params=params).status_code == 422  # type: ignore[arg-type]
+
+
+def test_a_database_that_is_down_is_a_503(client: TestClient) -&gt; None:
+    app.dependency_overrides[get_store] = BrokenStore
+    response = client.get(&quot;/api/search&quot;, params={&quot;q&quot;: &quot;sensor cable&quot;})
+    assert response.status_code == 503
+    assert response.json() == {&quot;detail&quot;: &quot;the database is not available&quot;}</code></pre><p>Run <code>uv run pytest</code>, <code>uv run mypy src tests</code> and <code>uv run ruff check</code>. Fix what they say.</p></section>
+<section><h2><span class="n">5</span> &middot; Run it <span class="t">15 min</span></h2><p>Start the API (<code>uv run uvicorn my_ai_project.api:app</code>) and ask:</p><pre><code>curl &quot;http://localhost:8000/api/search?q=My%20monitor%20stopped%20responding&amp;top_k=2&quot;</code></pre><div class="out"><b>You should see</b><br>{"question":"My monitor stopped responding","kind":null,"results":[
+ {"citation":"[error-e101#0]","doc_id":"error-e101","chunk_index":0,"title":"E101 Sensor timeout","kind":"error",
+  "text":"The sensor did not answer within 10 seconds. Check that the sensor cable is firmly connected and not damaged. Restart the monitor. If the error comes back, replace the sensor cable.","similarity":0.75},
+ {"citation":"[faq-reset#0]", ... "kind":"faq", ... "similarity":0.7}]}</div><p>Now break things on purpose. A kind that does not exist, and <code>top_k=50</code>, are both a <code>422</code>:</p><div class="out"><b>You should see</b><br>{"detail":[{"type":"literal_error", ... "msg":"Input should be 'manual', 'faq' or 'error'", ...}]}</div><p>Stop the database (<code>docker compose stop</code>) and ask again. The API must not crash:</p><div class="out"><b>You should see</b><br>{"detail":"the database is not available"}   (HTTP 503)</div><p>Start the database again with <code>docker compose start</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The first request is slow</strong>: the model loads once. The second is fast.</li><li><strong>A 500 instead of a 503</strong>: the error you catch must be <code>psycopg.OperationalError</code>, and the store must connect inside the request.</li><li><strong>Tests try to reach the database</strong>: the override of <code>get_store</code> is missing, or it was cleared before the request.</li><li><strong>mypy complains about the fake store</strong>: its <code>search</code> must match the <code>Searcher</code> protocol.</li><li><strong>An empty result list</strong>: check the kind, and check that the ingest ran after the migration.</li></ul></section>
+<section><h2><span class="n">7</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Add the README section, run the checklist, and push.</p><pre><code>## Search
+
+    docker compose up -d
+    uv run python ingest.py        # chunk, embed, store with metadata
+    uv run uvicorn my_ai_project.api:app
+
+    GET /api/search?q=...&amp;top_k=3&amp;kind=manual|faq|error
+    -&gt; {&quot;question&quot;, &quot;kind&quot;, &quot;results&quot;: [{&quot;citation&quot;, &quot;doc_id&quot;, &quot;chunk_index&quot;, &quot;title&quot;, &quot;kind&quot;, &quot;text&quot;, &quot;similarity&quot;}]}
+    503 if the database is down, 422 if a parameter is wrong.</code></pre><pre><code>[ ] ingest.py: stored 26 chunks, with kind and title
+[ ] GET /api/search returns cited chunks (citation, text, similarity)
+[ ] kind filter works, a wrong kind is a 422, top_k outside 1 to 10 is a 422
+[ ] database stopped -&gt; 503, not a crash
+[ ] tests pass without a database; mypy and ruff are clean
+[ ] README has the 3 commands and the endpoint
+[ ] committed and pushed</code></pre><p><code>git add .</code>, <code>git commit -m &quot;Add /api/search with cited chunks&quot;</code>, <code>git push</code>.</p></section>
+<section><h2><span class="n">8</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why are the embedder and the store dependencies and not global variables?</li><li>Why is a database that is down a 503 and a wrong <code>kind</code> a 422?</li><li>What would the citation be used for next week?</li></ol><details><summary>Answers</summary><ol><li>A dependency can be replaced in a test, so the tests need no model and no database, and the model is loaded once and shared.</li><li>A 422 means the caller sent something wrong; a 503 means the service cannot work right now, and the caller may try again later.</li><li>The answer will quote a chunk and show its citation, so a reader can check where each claim came from.</li></ol></details></section>
+<section id="game-day70" class="game"><h2><span class="n">+</span> &middot; Game: Search Endpoint Check <span class="t">5 min</span></h2>
+<p><p>You test GET /api/search. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day70-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day70-play">Start the game</button></div>
+<div id="day70-round" hidden><div class="gtop"><span id="day70-num">Round 1</span><span id="day70-score">Score 0</span></div>
+<pre hidden><code id="day70-code"></code></pre><div class="q" id="day70-q"></div><div class="choices" id="day70-opts"></div>
+<div class="fb" id="day70-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day70-next" hidden>Next round</button></p></div>
+<div id="day70-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day70",[{"c": "curl \".../api/search?q=My%20monitor%20stopped%20responding&top_k=2\"", "q": "What is the first citation?", "o": ["[error-e101#0] with similarity 0.75", "[faq-reset#0]", "[manual-safety#0]"], "a": 0, "out": "{\"question\":\"My monitor stopped responding\",\"kind\":null,\"results\":[{\"citation\":\"[error-e101#0]\",\"doc_id\":\"error-e101\",\"chunk_index\":0,\"title\":\"E101 Sensor timeout\",\"kind\":\"error\", ...,\"similarity\":0.75}, ...]}", "why": "The citation is [doc_id#chunk_index], so a later answer can point to its source."}, {"c": "curl \".../api/search?q=x&kind=errors\"", "q": "What status do you get?", "o": ["422, Input should be 'manual', 'faq' or 'error'", "200 with an empty list", "500"], "a": 0, "out": "{\"detail\":[{\"type\":\"literal_error\", ... \"msg\":\"Input should be 'manual', 'faq' or 'error'\", ...}]}", "why": "Literal lets FastAPI check the value for you."}, {"c": "curl \".../api/search?q=x&top_k=50\"", "q": "What status do you get?", "o": ["422, because top_k is limited to 10", "200 with 26 results", "500"], "a": 0, "out": "HTTP 422 (top_k must be at most 10)", "why": "Limits protect the service from huge requests."}, {"c": "docker compose stop   # then ask again", "q": "What does the API return?", "o": ["503, the database is not available", "A crash and a stack trace", "200 with an empty list"], "a": 0, "out": "{\"detail\":\"the database is not available\"}   (HTTP 503)", "why": "The service cannot work right now, and the caller may try again."}, {"c": "app.dependency_overrides[get_store] = InMemoryStore", "q": "What does this let the tests do?", "o": ["Run without a database and without the model", "Skip the route", "Use a faster index"], "a": 0, "out": "(tests use FakeEmbedder and InMemoryStore)", "why": "A dependency can be replaced, so the tests need nothing running."}, {"c": "def get_embedder(): return FastEmbedder()   # @lru_cache", "q": "Why lru_cache?", "o": ["The model loads once and every request reuses it", "It makes answers shorter", "It stores the answers"], "a": 0, "out": "(first request slow, later requests fast)", "why": "Loading a model on every request would be very slow."}, {"c": "raise HTTPException(status_code=503) ... from err", "q": "Which error do you catch?", "o": ["psycopg.OperationalError", "ValueError", "KeyError"], "a": 0, "out": "psycopg.OperationalError: connection refused", "why": "That is the error of a database you cannot reach."}],["Endpoint rookie", "Endpoint regular", "Search builder"],"A search endpoint returns cited chunks, checks its parameters (422), answers 503 when the database is down, and its tests replace the embedder and the store.");</script>
+<p><small>Tick &ldquo;Play the Search Endpoint Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">9</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> an indexed knowledge base with metadata, a search endpoint that returns cited chunks, filters and checks on its parameters, a clean 503, and tests that need nothing running.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 70 checklist.</li><li>Share one line in the comments: what was the first thing that broke?</li><li><strong>Next:</strong> Sunday is the review: a self-test on chunking and retrieval, a cold start, and the plan for week 11.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

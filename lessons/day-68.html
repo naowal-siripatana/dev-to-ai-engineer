@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 68 - Mixed practice: compare 3 chunk sizes</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 68 &middot; LEVEL 6: RAG &middot; MIXED PRACTICE</div><h1>Mixed practice: compare 3 chunk sizes</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to compare three chunk sizes on five questions, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are the three steps of the retrieval pipeline?</li><li>What does a metadata filter do to the best similarity?</li></ol><details><summary>Answers</summary><ol><li>Embed the question, search the store, filter by what you know.</li><li>It can only keep it the same or lower it, because it removes candidates.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You get a contract, and you write the script yourself, from a blank file. Use your earlier files (<code>strategies.py</code>, <code>embedder.py</code>, <code>retrieval.py</code>, <code>tokens.py</code>).</p><pre><code>compare_sizes.py
+  input : data/long/user-guide.md and these 5 questions, each with a phrase that must be in the answer chunk
+  does  : for sizes 25, 60 and 120 tokens, cut the guide into whole sentences,
+          embed the chunks and the questions, rank by cosine similarity
+  prints: one row per size: the number of chunks, how many questions have the phrase in the
+          top 1, in the top 3, and the average number of tokens in the top 3</code></pre><p>The five questions:</p><pre><code>How often should I calibrate the sensor?     -&gt; once a month
+Which Wi-Fi band does the monitor support?   -&gt; 2.4 GHz
+What does the error E104 mean?               -&gt; 95 percent
+How do I silence the alarm?                  -&gt; Silent
+How long does the battery last?              -&gt; three years</code></pre><p><strong>Predict first</strong>, before you run anything: which size will find the most answers in the top 1? Which will send the most tokens to the model? Write your guess.</p></section>
+<section><h2><span class="n">3</span> &middot; Do it <span class="t">25 min</span></h2><ol><li>Write <code>compare_sizes.py</code> in <code>my-ai-project</code>. Do not open the solution until you have tried for 15 minutes.</li><li>Run it. Does your table have the same shape as the one in the solution? (Your numbers may differ a little if you cut differently.)</li><li>Find a question that fails at some size. Print the top 3 chunks for it and read them. <strong>Why</strong> did it fail?</li><li>Commit: <code>git add .</code> and <code>git commit -m &quot;Compare three chunk sizes&quot;</code>.</li></ol><details><summary>Hint: where to start</summary><p>Loop over the sizes. For each: <code>by_sentences(text, size)</code>, embed and normalise the chunks, then for each question take the dot product with the normalised question vector, sort in descending order, and test whether the phrase is in the chunk at the top, or in one of the first three.</p></details><details><summary>Solution</summary><pre><code>from pathlib import Path
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.retrieval import normalize
+from my_ai_project.strategies import by_sentences
+from my_ai_project.tokens import count_tokens
+
+QUESTIONS = [
+    (&quot;How often should I calibrate the sensor?&quot;, &quot;once a month&quot;),
+    (&quot;Which Wi-Fi band does the monitor support?&quot;, &quot;2.4 GHz&quot;),
+    (&quot;What does the error E104 mean?&quot;, &quot;95 percent&quot;),
+    (&quot;How do I silence the alarm?&quot;, &quot;Silent&quot;),
+    (&quot;How long does the battery last?&quot;, &quot;three years&quot;),
+]
+text = Path(&quot;data/long/user-guide.md&quot;).read_text(encoding=&quot;utf-8&quot;)
+embedder = FastEmbedder()
+query_vectors = normalize(embedder.embed([q for q, _ in QUESTIONS]))
+
+print(&quot;size  chunks  top 1  top 3  tokens sent (top 3, average)&quot;)
+for size in (25, 60, 120):
+    chunks = by_sentences(text, size)
+    vectors = normalize(embedder.embed(chunks))
+    first = third = sent = 0
+    for (question, marker), query in zip(QUESTIONS, query_vectors):
+        order = (vectors @ query).argsort()[::-1]
+        first += marker in chunks[order[0]]
+        third += any(marker in chunks[i] for i in order[:3])
+        sent += sum(count_tokens(chunks[i]) for i in order[:3])
+    print(f&quot;{size:&gt;4}  {len(chunks):&gt;6}  {first} of 5  {third} of 5  {sent / len(QUESTIONS):.0f}&quot;)</code></pre><div class="out"><b>You should see</b><br>size&nbsp;&nbsp;chunks&nbsp;&nbsp;top 1&nbsp;&nbsp;top 3&nbsp;&nbsp;tokens sent (top 3, average)<br>&nbsp;&nbsp;25&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;29&nbsp;&nbsp;4 of 5&nbsp;&nbsp;5 of 5&nbsp;&nbsp;58<br>&nbsp;&nbsp;60&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;11&nbsp;&nbsp;5 of 5&nbsp;&nbsp;5 of 5&nbsp;&nbsp;153<br> 120&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 5&nbsp;&nbsp;4 of 5&nbsp;&nbsp;5 of 5&nbsp;&nbsp;326</div></details><details><summary>Read the two failures</summary><p>Two questions fail, one at each end. At size 25, for <em>What does the error E104 mean?</em>, the top 1 is the chunk about E103, a similar error. At size 120, for <em>Which Wi-Fi band does the monitor support?</em>, the top 1 is a chunk that starts &ldquo;When the unit is ready, the status light turns green...&rdquo;, which is about something else.</p><p>At 25 tokens, the E103 chunk is nearly the same sentence as the E104 chunk, and a tiny chunk has few words to tell them apart. At 120 tokens, one chunk holds several topics, so its vector is a blur, and a chunk about something else won. In the middle (60) all five are in the top 1. The cost: 153 tokens sent in the top 3, against 58 for size 25 and 326 for size 120.</p><p>This is five questions on one short guide: it is a hint, not a law. Your documents and your questions decide.</p></details></section>
+<section><h2><span class="n">4</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Which size gave the best top 1, and which sent the most tokens?</li><li>Why can a very small chunk find the wrong answer?</li><li>Why can a very big chunk find the wrong answer?</li></ol><details><summary>Answers</summary><ol><li>Size 60 (5 of 5). Size 120 sent the most (326 tokens on average).</li><li>It has few words, so two neighbouring topics look nearly the same to the embedding (E103 and E104).</li><li>It holds many topics, so its vector is an average that matches no single question well.</li></ol></details></section>
+<section id="game-day68" class="game"><h2><span class="n">+</span> &middot; Game: Chunk Size Check <span class="t">5 min</span></h2>
+<p><p>You compare three chunk sizes on five questions. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day68-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day68-play">Start the game</button></div>
+<div id="day68-round" hidden><div class="gtop"><span id="day68-num">Round 1</span><span id="day68-score">Score 0</span></div>
+<pre hidden><code id="day68-code"></code></pre><div class="q" id="day68-q"></div><div class="choices" id="day68-opts"></div>
+<div class="fb" id="day68-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day68-next" hidden>Next round</button></p></div>
+<div id="day68-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day68",[{"c": "python compare_sizes.py   # size 25", "q": "How many chunks, and how many questions have the answer in the top 1?", "o": ["29 chunks, 4 of 5", "5 chunks, 5 of 5", "11 chunks, 4 of 5"], "a": 0, "out": "size  chunks  top 1  top 3  tokens sent (top 3, average)\n  25      29  4 of 5  5 of 5  58", "why": "Many tiny chunks, and cheap to send."}, {"c": "python compare_sizes.py   # size 60", "q": "What is the top 1?", "o": ["5 of 5", "4 of 5", "3 of 5"], "a": 0, "out": "  60      11  5 of 5  5 of 5  153", "why": "The middle size found every answer first."}, {"c": "python compare_sizes.py   # size 120", "q": "How many tokens are sent on average?", "o": ["326", "58", "153"], "a": 0, "out": " 120       5  4 of 5  5 of 5  326", "why": "The tokens grow with the chunk size: 58, 153, 326."}, {"c": "size 25: What does the error E104 mean?", "q": "Why did it fail?", "o": ["The top 1 was the chunk about E103, a similar error", "The embedding was broken", "E104 is not in the guide"], "a": 0, "out": "(top 1 is the E103 chunk; the phrase 95 percent is in the E104 chunk)", "why": "Tiny chunks have few words, so similar errors look alike."}, {"c": "size 120: Which Wi-Fi band does the monitor support?", "q": "Why did it fail?", "o": ["A big chunk holds several topics, and another chunk won", "The question was too short", "The model is too small"], "a": 0, "out": "(top 1 starts: When the unit is ready, the status light turns green...)", "why": "A chunk with many topics has a blurred vector."}, {"c": "top 3 at every size", "q": "How many of the five answers are in the top 3?", "o": ["5 of 5 at all three sizes", "Only at size 60", "Only at size 120"], "a": 0, "out": "  25  ...  5 of 5\n  60  ...  5 of 5\n 120  ...  5 of 5", "why": "If you send the top 3 to the model, all sizes work here. Only the top 1 and the cost differ."}, {"c": "Decision: size 60 is the best", "q": "How sure can you be?", "o": ["Only a hint: five questions on one short guide", "Certain", "It is a law"], "a": 0, "out": "(a judgement, no output)", "why": "Test on your own questions and read the failures."}],["Size rookie", "Size regular", "Chunk comparer"],"Small chunks look alike, big chunks blur topics and cost tokens, a middle size worked here, and five questions are a hint, not a law.");</script>
+<p><small>Tick &ldquo;Play the Chunk Size Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a script that compares three chunk sizes on five questions, from a blank file, and you read the two failures instead of only the score.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 68 checklist.</li><li>Share one line in the comments: which size won for your guess, and was it right?</li><li><strong>Next:</strong> Friday is a teach-back: you explain why chunk size matters, with this table as evidence.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

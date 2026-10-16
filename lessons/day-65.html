@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 65 - Chunking strategies</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 65 &middot; LEVEL 6: RAG</div><h1>Chunking strategies</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to cut one document three ways, and compare the pieces and what overlap costs.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a <code>CREATE INDEX ... hnsw</code> not help a table of 26 rows?</li><li>Which two things does a chunk need to carry, so that an answer can say where it came from?</li></ol><details><summary>Answers</summary><ol><li>For so few rows reading all of them is cheaper than using the index, and the planner knows it. An index pays off on big tables.</li><li>The document id and its position in the document (the chunk index). That is metadata about the text.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You have one long manual and you must cut it into pieces for search. Cut it every 80 tokens, like slicing bread? Or at sentences? Or at the headings the author wrote? Does it matter?</strong></p><details><summary>Guess first, then open</summary><p>It matters. A piece that starts in the middle of a sentence, or loses its heading, may not make sense on its own, and a search can only return what a piece says. There is no best way for every document, so today you cut one document three ways and look at the pieces.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: fixed windows are simple, and blind</h3>
+<p>A <strong>fixed window</strong> cuts the text every N tokens, whatever the text says. It is easy and predictable, but it cuts through sentences and headings. To soften that, you let neighbouring windows <strong>overlap</strong>: each one repeats the last few tokens of the one before. Overlap helps a sentence that falls on a border, and it costs extra tokens, because the overlapping text is stored and searched twice.</p>
+<h3>Piece 2: cut where the text already breaks</h3>
+<p>Text has natural breaks: sentences and paragraphs. Packing <strong>whole sentences</strong> into chunks of at most N tokens (your splitter from Day 35) never cuts a sentence. Cutting by <strong>sections</strong> (a heading and the text under it) keeps a topic together and keeps the heading, which is a very good clue for search. A section that is too long falls back to sentences.</p>
+<h3>Piece 3: compare strategies on your own data</h3>
+<p>No strategy is best for all documents. You choose by looking at the pieces (do they make sense alone?), by their sizes, and by testing whether a search finds the answers. Small numbers of questions only give hints, but looking at real chunks is always worth the five minutes.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> fixed windows with overlap are a sliding window over a stream (like <code>Chunk</code> and <code>Window</code> in LINQ libraries), and cutting by headings is a <code>Split</code> on a delimiter. The trade-off is the usual one: the dumb approach is predictable, the structure-aware one needs the structure to exist.</div>
+<div class="box cap"><strong>Capstone:</strong> your knowledge base is short pages today, but real manuals are long. This week you choose how <code>ai-knowledge-assistant</code> will cut them, and on Saturday you index the chunks with metadata.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. We use one longer document, a made-up user guide for the pump monitor. <a href="../assets/user-guide.md">Download user-guide.md</a> (about 460 words, 8 sections) and save it as <code>data/long/user-guide.md</code>. It is 546 tokens long. Three functions in <code>src/my_ai_project/strategies.py</code>:</p><pre><code>import re
+
+from my_ai_project.chunking import split_text
+from my_ai_project.tokens import ENCODING
+
+
+def fixed_windows(text: str, size: int, overlap: int) -&gt; list[str]:
+    &quot;&quot;&quot;Cut the token list into windows of `size` tokens, each starting `size - overlap` tokens after the last.&quot;&quot;&quot;
+    if not 0 &lt;= overlap &lt; size:
+        raise ValueError(&quot;overlap must be at least 0 and smaller than size&quot;)
+    ids = ENCODING.encode(text)
+    step = size - overlap
+    return [ENCODING.decode(ids[start : start + size]).strip() for start in range(0, max(len(ids) - overlap, 1), step)]
+
+
+def by_sentences(text: str, max_tokens: int) -&gt; list[str]:
+    &quot;&quot;&quot;Whole sentences packed into chunks of at most `max_tokens` tokens (the splitter from Day 35).&quot;&quot;&quot;
+    return split_text(re.sub(r&quot;^#+ &quot;, &quot;&quot;, text, flags=re.MULTILINE), max_tokens)
+
+
+def by_sections(text: str, max_tokens: int) -&gt; list[str]:
+    &quot;&quot;&quot;One chunk per section (a heading and its text). A section that is too long is cut by sentences.&quot;&quot;&quot;
+    chunks: list[str] = []
+    for section in re.split(r&quot;\n(?=#+ )&quot;, text.strip()):
+        heading, _, body = section.partition(&quot;\n&quot;)
+        title = heading.lstrip(&quot;# &quot;).strip()
+        body = body.strip()
+        if not body:
+            continue   # the document title has no text of its own
+        pieces = split_text(body, max_tokens - len(ENCODING.encode(title)) - 2)
+        chunks.extend(f&quot;{title}: {piece}&quot; for piece in pieces)
+    return chunks</code></pre><p>A script that cuts the guide three ways and shows sizes and borders. <code>compare_strategies.py</code>:</p><pre><code>from pathlib import Path
+
+from my_ai_project.strategies import by_sections, by_sentences, fixed_windows
+from my_ai_project.tokens import count_tokens
+
+text = Path(&quot;data/long/user-guide.md&quot;).read_text(encoding=&quot;utf-8&quot;)
+strategies = {
+    &quot;fixed windows (80, overlap 20)&quot;: fixed_windows(text, 80, 20),
+    &quot;whole sentences (max 80)&quot;: by_sentences(text, 80),
+    &quot;sections (max 120)&quot;: by_sections(text, 120),
+}
+for name, chunks in strategies.items():
+    sizes = [count_tokens(chunk) for chunk in chunks]
+    mid_cut = sum(1 for chunk in chunks if chunk[-1] not in &quot;.!?&quot;)
+    print(f&quot;{name:&lt;32} {len(chunks):&gt;2} chunks, {min(sizes)} to {max(sizes)} tokens, {mid_cut} end in the middle of a sentence&quot;)
+
+print()
+for name, chunks in strategies.items():
+    print(f&quot;--- {name}: chunks 3 and 4&quot;)
+    for chunk in chunks[2:4]:
+        print(&quot;   |&quot;, chunk.replace(&quot;\n&quot;, &quot; &quot;)[:110])</code></pre><div class="out"><b>You should see</b><br>fixed windows (80, overlap 20)&nbsp;&nbsp;&nbsp;&nbsp;9 chunks, 66 to 80 tokens, 8 end in the middle of a sentence<br>whole sentences (max 80)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8 chunks, 17 to 79 tokens, 0 end in the middle of a sentence<br>sections (max 120)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8 chunks, 43 to 92 tokens, 0 end in the middle of a sentence<br><br>--- fixed windows (80, overlap 20): chunks 3 and 4<br>&nbsp;&nbsp; | light turns green and the screen shows the home page.&nbsp;&nbsp;## Calibration&nbsp;&nbsp;Calibrate the sensor once a month, so t<br>&nbsp;&nbsp; | the last calibration on the home screen. If the last calibration is older than 30 days, the monitor shows the<br>--- whole sentences (max 80): chunks 3 and 4<br>&nbsp;&nbsp; | Open the menu, choose Calibrate, and keep the pump running at normal speed for two minutes. The monitor stores<br>&nbsp;&nbsp; | Enter the password and wait until the light turns solid green. The monitor works on 2.4 GHz networks only. If<br>--- sections (max 120): chunks 3 and 4<br>&nbsp;&nbsp; | Installation: Mount the monitor on a flat wall near the pump, at eye level. Use the four screws from the box a<br>&nbsp;&nbsp; | Calibration: Calibrate the sensor once a month, so that the readings stay accurate. Open the menu, choose Cali</div><p>The fixed windows start and end in the middle of sentences (8 of 9 end without a full stop), and they even contain the markup of the headings. The sentence chunks are clean but lose the heading words (look at chunk 3: nothing says it is about calibration). The section chunks keep the heading, here as a prefix like <code>Calibration:</code>.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c chunking</code>). You need <code>chunking.py</code> and <code>tokens.py</code> (Day 32 and 35) and, for Step 4, <code>embedder.py</code>.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Download the guide, add <code>strategies.py</code> and <code>compare_strategies.py</code> and run it. Match the three summary lines. Then read the six chunks it prints: which strategy would you want to read on its own?</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Change the overlap of the fixed windows from 20 to 0, then to 40. <strong>Predict:</strong> how many chunks, and how many tokens in all, compared with the 546 tokens of the document? Print the numbers and check.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Call <code>fixed_windows(text, 80, 80)</code> (overlap as big as the window). Read the error. Why would the code never finish without that check?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Which strategy finds the answers? Embed the chunks of each strategy and, for three questions with a phrase that must be in the answer chunk, check the top 1 and the top 3 (the script <code>retrieval_check.py</code> in Stuck does it). Then fill in this table in your own words, and decide which strategy you would pick for <em>this</em> guide, and why.</p><pre><code>strategy                 keeps whole sentences   keeps the heading with its text   cost
+fixed windows            ...                     ...                               ...
+whole sentences          ...                     ...                               ...
+by sections              ...                     ...                               ...</code></pre>
+<p>Write the five tests of the template, and commit: <code>git add .</code> and <code>git commit -m &quot;Cut a long document three ways&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The chunk counts differ from the lesson</strong>: check that your <code>user-guide.md</code> is the downloaded file (546 tokens) and that the sizes (80, 20, 120) are the ones in the script.</li><li><strong>A window is 81 or 82 tokens</strong>: decoding and trimming spaces can move a token. The test allows 82.</li><li><strong>The sections strategy gives one huge chunk</strong>: a section longer than the limit must fall back to sentences. Check that you pass the limit minus the heading size.</li><li><strong>&ldquo;ModuleNotFoundError ... chunking&rdquo;</strong>: the splitter from Day 35 must be in <code>src/my_ai_project/</code>.</li></ul><details><summary>Hint: Step 4</summary><p>For each strategy: embed all the chunks once, embed the question, take the dot product of normalised vectors, sort, and look at whether the phrase (for example <code>2.4 GHz</code>) is inside the first chunk, or inside one of the first three.</p></details><details><summary>Solution: Step 4</summary><pre><code>from pathlib import Path
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.retrieval import normalize
+from my_ai_project.strategies import by_sections, by_sentences, fixed_windows
+
+QUESTIONS = [
+    (&quot;How often should I calibrate the sensor?&quot;, &quot;once a month&quot;),
+    (&quot;Which Wi-Fi band does the monitor support?&quot;, &quot;2.4 GHz&quot;),
+    (&quot;What does the error E104 mean?&quot;, &quot;95 percent&quot;),
+]
+text = Path(&quot;data/long/user-guide.md&quot;).read_text(encoding=&quot;utf-8&quot;)
+embedder = FastEmbedder()
+strategies = {
+    &quot;fixed windows (80, overlap 20)&quot;: fixed_windows(text, 80, 20),
+    &quot;whole sentences (max 80)&quot;: by_sentences(text, 80),
+    &quot;sections (max 120)&quot;: by_sections(text, 120),
+}
+for name, chunks in strategies.items():
+    vectors = normalize(embedder.embed(chunks))
+    first, third = 0, 0
+    for question, marker in QUESTIONS:
+        scores = vectors @ normalize(embedder.embed([question]))[0]
+        order = scores.argsort()[::-1]
+        first += marker in chunks[order[0]]
+        third += any(marker in chunks[i] for i in order[:3])
+    print(f&quot;{name:&lt;32} answer in the top 1: {first} of {len(QUESTIONS)}, in the top 3: {third} of {len(QUESTIONS)}&quot;)</code></pre><div class="out"><b>You should see</b><br>fixed windows (80, overlap 20)   answer in the top 1: 3 of 3, in the top 3: 3 of 3
+whole sentences (max 80)         answer in the top 1: 2 of 3, in the top 3: 3 of 3
+sections (max 120)               answer in the top 1: 3 of 3, in the top 3: 3 of 3</div><p>With only three questions on a short document the differences are small. Whole sentences miss one top-1 answer because its chunks have lost the heading. Do not decide on three questions: on Thursday you compare sizes on five.</p></details><details><summary>Solution: Steps 2 and 3</summary><div class="out"><b>You should see</b><br>size 80, overlap 0: 7 chunks, 546 tokens in all<br>size 80, overlap 20: 9 chunks, 706 tokens in all<br>size 80, overlap 40: 13 chunks, 1025 tokens in all<br>document: 546 tokens</div><p>Overlap 0 gives 7 chunks and 546 tokens (no repeats). Overlap 20 repeats a quarter of every window (706 tokens, 29 percent more). Overlap 40 nearly doubles the stored text (1025 tokens, 88 percent more). Overlap is insurance with a price.</p><div class="out"><b>You should see</b><br>ValueError: overlap must be at least 0 and smaller than size</div><p>If the overlap equals the window, the step is zero and the loop would not move forward.</p><div class="out"><b>You should see</b><br>| # PumpGuard user guide  ## Overview  PumpGuard is a small monitor for water pumps. It reads the pressure and the tempera<br>| is a problem that needs your attention.  ## Installation  Mount the monitor on a flat wall near the pump, at eye level.<br>| light turns green and the screen shows the home page.  ## Calibration  Calibrate the sensor once a month, so that the re</div></details><details><summary>A model answer for the table</summary><p><strong>Fixed windows</strong>: no whole sentences; the heading is kept only by luck; cost grows with the overlap. <strong>Whole sentences</strong>: whole sentences; the heading is lost; no extra cost. <strong>By sections</strong>: whole sentences (inside a section); the heading is kept as a prefix; no extra cost, but it needs headings in the document. For this guide, sections: it has clear headings, each section is about one topic, and they fit in 120 tokens.</p></details><details><summary>Template: tests</summary><pre><code>from pathlib import Path
+
+import pytest
+
+from my_ai_project.strategies import by_sections, by_sentences, fixed_windows
+from my_ai_project.tokens import count_tokens
+
+TEXT = Path(&quot;data/long/user-guide.md&quot;).read_text(encoding=&quot;utf-8&quot;)
+
+
+def test_fixed_windows_never_go_over_the_size() -&gt; None:
+    chunks = fixed_windows(TEXT, 80, 20)
+    assert all(count_tokens(chunk) &lt;= 82 for chunk in chunks)   # decoding and stripping can move a token or two
+    assert len(chunks) &gt; 5
+
+
+def test_fixed_windows_overlap_by_a_few_words() -&gt; None:
+    chunks = fixed_windows(&quot;one two three four five six seven eight nine ten&quot;, 6, 2)
+    assert chunks[0].split()[-1] in chunks[1]
+
+
+def test_an_overlap_as_big_as_the_size_is_rejected() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;smaller than size&quot;):
+        fixed_windows(TEXT, 50, 50)
+
+
+def test_sentence_chunks_end_with_a_full_stop() -&gt; None:
+    assert all(chunk.endswith(&quot;.&quot;) for chunk in by_sentences(TEXT, 80))
+
+
+def test_each_section_chunk_starts_with_its_heading() -&gt; None:
+    chunks = by_sections(TEXT, 120)
+    assert chunks[0].startswith(&quot;Overview: &quot;)
+    assert any(chunk.startswith(&quot;Calibration: &quot;) for chunk in chunks)
+    assert all(count_tokens(chunk) &lt;= 120 for chunk in chunks)</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What does overlap do for fixed windows, and what does it cost?</li><li>Why can a chunk without its heading be harder to find?</li><li>Why is it risky to choose a strategy from three test questions?</li></ol><details><summary>Answers</summary><ol><li>It repeats the end of one window at the start of the next, so a sentence on a border is whole in at least one chunk. It costs extra tokens, because the repeated text is stored and searched twice.</li><li>The heading says what the text is about. Without it the chunk may be about &ldquo;the menu&rdquo; or &ldquo;two minutes&rdquo; with nothing to say which task it belongs to.</li><li>Three questions are too few to see a real difference, and one question changing sides moves the result a lot. Use more questions, and look at the chunks too.</li></ol></details></section>
+<section id="game-day65" class="game"><h2><span class="n">+</span> &middot; Game: Chunk Cutter <span class="t">5 min</span></h2>
+<p><p>You cut a 546-token guide into chunks. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day65-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day65-play">Start the game</button></div>
+<div id="day65-round" hidden><div class="gtop"><span id="day65-num">Round 1</span><span id="day65-score">Score 0</span></div>
+<pre hidden><code id="day65-code"></code></pre><div class="q" id="day65-q"></div><div class="choices" id="day65-opts"></div>
+<div class="fb" id="day65-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day65-next" hidden>Next round</button></p></div>
+<div id="day65-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day65",[{"c": "fixed_windows(text, 80, 20)   # compare_strategies.py", "q": "What do the chunk ends look like?", "o": ["8 of 9 end in the middle of a sentence", "All end at a full stop", "None are cut"], "a": 0, "out": "fixed windows (80, overlap 20)    9 chunks, 66 to 80 tokens, 8 end in the middle of a sentence", "why": "A fixed window cuts by count, so it does not care about sentences."}, {"c": "by_sentences(text, 80)", "q": "How many chunks end in the middle of a sentence?", "o": ["0", "About half", "All of them"], "a": 0, "out": "whole sentences (max 80)          8 chunks, 17 to 79 tokens, 0 end in the middle of a sentence", "why": "Whole sentences are packed until the limit, and a sentence is never split."}, {"c": "by_sections(text, 120)", "q": "What does each chunk start with?", "o": ["The heading, as in Calibration: Calibrate the sensor ...", "Nothing special", "A random word"], "a": 0, "out": "sections (max 120)                8 chunks, 43 to 92 tokens, 0 end in the middle of a sentence", "why": "The heading says what the text is about, and it helps the search."}, {"c": "size 80, overlap 0 / 20 / 40  (document: 546 tokens)", "q": "How many tokens do you store with overlap 40?", "o": ["1025, almost double", "546", "600"], "a": 0, "out": "size 80, overlap 0: 7 chunks, 546 tokens in all\nsize 80, overlap 20: 9 chunks, 706 tokens in all\nsize 80, overlap 40: 13 chunks, 1025 tokens in all", "why": "Overlap is insurance with a price: the repeated text is stored and searched twice."}, {"c": "fixed_windows(text, 80, 80)", "q": "What happens?", "o": ["ValueError: overlap must be at least 0 and smaller than size", "It returns one chunk", "It loops forever"], "a": 0, "out": "ValueError: overlap must be at least 0 and smaller than size", "why": "If the overlap equals the window, the step is zero. The check stops that."}, {"c": "answer in the top 1 (3 questions)", "q": "Which strategy missed one top-1 answer?", "o": ["Whole sentences: 2 of 3", "Sections", "Fixed windows"], "a": 0, "out": "fixed windows (80, overlap 20)   answer in the top 1: 3 of 3, in the top 3: 3 of 3\nwhole sentences (max 80)         answer in the top 1: 2 of 3, in the top 3: 3 of 3\nsections (max 120)               answer in the top 1: 3 of 3, in the top 3: 3 of 3", "why": "Its chunks lost the heading. But three questions are too few to decide."}, {"c": "Decision: pick a chunking strategy from 3 questions", "q": "What is the risk?", "o": ["Too few questions to see a real difference", "None", "The model gets slower"], "a": 0, "out": "(a judgement, no output)", "why": "Use more questions and look at the chunks themselves."}],["Window cutter", "Sentence keeper", "Section reader"],"Fixed windows are simple and blind, sentences and sections cut where the text breaks, overlap costs tokens, and a few questions are a hint, not a verdict.");</script>
+<p><small>Tick &ldquo;Play the Chunk Cutter game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> three ways to cut a long document, a look at what each does to sentences and headings, a measurement of what overlap costs, and a first retrieval check. You also know why three questions are not a verdict.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 65 checklist.</li><li>Share one line in the comments: which strategy would you pick for your own documents?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you build the retrieval pipeline with a metadata filter, and on Thursday you compare three chunk sizes on five questions.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

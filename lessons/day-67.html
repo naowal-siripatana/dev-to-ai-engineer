@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 67 - The retrieval pipeline: embed, search, filter</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 67 &middot; LEVEL 6: RAG</div><h1>The retrieval pipeline: embed, search, filter</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to retrieve chunks with a metadata filter, and make an unknown filter value fail loudly.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the risk of choosing a chunking strategy from three test questions?</li><li>What does overlap cost?</li></ol><details><summary>Answers</summary><ol><li>Three questions are too few to see a real difference, so a result can flip by chance. Use more questions and look at the chunks.</li><li>Extra tokens: the repeated text is stored and searched twice (29 percent more at overlap 20 of 80 in the lesson).</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A user asks a question about an <em>error</em> and your search returns a FAQ about the warranty, because it scored 0.65. You know the user wants an error page. How can you tell the search?</strong></p><details><summary>Guess first, then open</summary><p>With a <strong>filter</strong> on metadata: &ldquo;only pages of kind <code>error</code>&rdquo;. The search first narrows to the rows that match the filter, then ranks them by meaning. That is why you stored the metadata with every chunk: it lets you say what you <em>know</em> and let the vectors guess the rest.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: the pipeline has three steps</h3>
+<p>Retrieval is a small pipeline: <strong>embed</strong> the question into a vector, <strong>search</strong> the store for the nearest chunks, and <strong>filter</strong> by what you know (the kind of page, the product, the language). A function <code>retrieve(question, embedder, store, top_k, kind)</code> does all three, so every part of your app asks the same way.</p>
+<h3>Piece 2: metadata lives next to the vector</h3>
+<p>Each row of <code>chunks</code> carries the <code>title</code> and the <code>kind</code> of its page, next to the text and the embedding. A filter is then a plain SQL <code>WHERE kind = ...</code>. Adding a column to a table that already holds data is a <strong>migration</strong>: <code>ALTER TABLE ... ADD COLUMN IF NOT EXISTS</code> changes the table without losing rows, and you run the ingest again to fill the new columns.</p>
+<h3>Piece 3: a filter should fail loudly</h3>
+<p>If the allowed kinds are <code>manual</code>, <code>faq</code> and <code>error</code>, and someone asks for <code>errors</code>, a search that quietly returns an empty list hides the typo. Check the value and raise a clear error. (One thing for later: on a very big table with an approximate index, a filter is applied after the index search, so a very selective filter can return fewer rows than you asked for. For your 26 chunks it does not matter.)</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>retrieve</code> is a service method that composes a query, a repository call and a filter, and <code>Literal[&quot;manual&quot;, &quot;faq&quot;, &quot;error&quot;]</code> plays the role of an enum for the allowed kinds. <code>ALTER TABLE ... IF NOT EXISTS</code> is a very small EF Core migration.</div>
+<div class="box cap"><strong>Capstone:</strong> the assistant will route questions: an error code goes to the error pages, a how-to goes to the manuals. The filter is how it does that. On Saturday the same function sits behind a search endpoint.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. The store from Day 63, with three changes: a <code>ChunkRecord</code> that carries <code>title</code> and <code>kind</code>, a table that migrates itself, and a <code>search</code> with an optional <code>kind</code> filter that rejects unknown kinds. <code>src/my_ai_project/store.py</code>:</p><pre><code>import re
+from dataclasses import dataclass
+
+import numpy as np
+import psycopg
+from pgvector.psycopg import register_vector
+from psycopg import sql
+
+TABLE_NAME = re.compile(r&quot;^[a-z_][a-z0-9_]*$&quot;)
+KINDS = (&quot;manual&quot;, &quot;faq&quot;, &quot;error&quot;)
+
+
+@dataclass
+class ChunkRecord:
+    doc_id: str
+    chunk_index: int
+    title: str
+    kind: str
+    text: str
+    tokens: int
+
+
+@dataclass
+class Found:
+    doc_id: str
+    chunk_index: int
+    title: str
+    kind: str
+    text: str
+    similarity: float
+
+    @property
+    def citation(self) -&gt; str:
+        return f&quot;[{self.doc_id}#{self.chunk_index}]&quot;
+
+
+class ChunkStore:
+    def __init__(self, dsn: str, table: str = &quot;chunks&quot;, dims: int = 384) -&gt; None:
+        if not TABLE_NAME.match(table):
+            raise ValueError(f&quot;not a safe table name: {table!r}&quot;)
+        self.dsn = dsn
+        self.table = sql.Identifier(table)
+        self.index = sql.Identifier(f&quot;{table}_embedding_idx&quot;)
+        self.kind_index = sql.Identifier(f&quot;{table}_kind_idx&quot;)
+        self.dims = dims
+
+    def connect(self) -&gt; psycopg.Connection:
+        conn = psycopg.connect(self.dsn)
+        register_vector(conn)
+        return conn
+
+    def init_schema(self) -&gt; None:
+        with self.connect() as conn:
+            conn.execute(
+                sql.SQL(
+                    &quot;CREATE TABLE IF NOT EXISTS {table} (&quot;
+                    &quot;id bigserial PRIMARY KEY, doc_id text NOT NULL, chunk_index int NOT NULL, &quot;
+                    &quot;title text, kind text, text text NOT NULL, tokens int NOT NULL, &quot;
+                    &quot;embedding vector({dims}) NOT NULL, UNIQUE (doc_id, chunk_index))&quot;
+                ).format(table=self.table, dims=sql.Literal(self.dims))
+            )
+            # A table made by an earlier version has no metadata columns yet: add them (nothing happens if they exist).
+            conn.execute(sql.SQL(&quot;ALTER TABLE {table} ADD COLUMN IF NOT EXISTS title text, ADD COLUMN IF NOT EXISTS kind text&quot;).format(table=self.table))
+            conn.execute(sql.SQL(&quot;CREATE INDEX IF NOT EXISTS {kind_index} ON {table} (kind)&quot;).format(kind_index=self.kind_index, table=self.table))
+            conn.execute(
+                sql.SQL(&quot;CREATE INDEX IF NOT EXISTS {index} ON {table} USING hnsw (embedding vector_cosine_ops)&quot;).format(
+                    index=self.index, table=self.table
+                )
+            )
+
+    def add_chunks(self, records: list[ChunkRecord], vectors: np.ndarray) -&gt; int:
+        query = sql.SQL(
+            &quot;INSERT INTO {table} (doc_id, chunk_index, title, kind, text, tokens, embedding) VALUES (%s, %s, %s, %s, %s, %s, %s) &quot;
+            &quot;ON CONFLICT (doc_id, chunk_index) DO UPDATE SET title = EXCLUDED.title, kind = EXCLUDED.kind, &quot;
+            &quot;text = EXCLUDED.text, tokens = EXCLUDED.tokens, embedding = EXCLUDED.embedding&quot;
+        ).format(table=self.table)
+        with self.connect() as conn:
+            for record, vector in zip(records, vectors):
+                conn.execute(
+                    query,
+                    (record.doc_id, record.chunk_index, record.title, record.kind, record.text, record.tokens, vector),
+                )
+        return len(records)
+
+    def count(self, kind: str | None = None) -&gt; int:
+        where = sql.SQL(&quot; WHERE kind = %s&quot;) if kind else sql.SQL(&quot;&quot;)
+        with self.connect() as conn:
+            row = conn.execute(sql.SQL(&quot;SELECT count(*) FROM {table}&quot;).format(table=self.table) + where, (kind,) if kind else ()).fetchone()
+        return int(row[0]) if row else 0
+
+    def search(self, query_vector: np.ndarray, top_k: int = 3, kind: str | None = None) -&gt; list[Found]:
+        if kind is not None and kind not in KINDS:
+            raise ValueError(f&quot;unknown kind {kind!r}: use one of {&#x27;, &#x27;.join(KINDS)}&quot;)
+        where = sql.SQL(&quot;WHERE kind = %s &quot;) if kind else sql.SQL(&quot;&quot;)
+        query = sql.SQL(
+            &quot;SELECT doc_id, chunk_index, title, kind, text, 1 - (embedding &lt;=&gt; %s) AS similarity FROM {table} &quot;
+        ).format(table=self.table) + where + sql.SQL(&quot;ORDER BY embedding &lt;=&gt; %s LIMIT %s&quot;)
+        params: tuple[object, ...] = (query_vector, kind, query_vector, top_k) if kind else (query_vector, query_vector, top_k)
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [Found(d, i, t, k, x, round(float(s), 2)) for d, i, t, k, x, s in rows]
+
+    def drop(self) -&gt; None:
+        with self.connect() as conn:
+            conn.execute(sql.SQL(&quot;DROP TABLE IF EXISTS {table}&quot;).format(table=self.table))</code></pre><p>The pipeline function, in <code>src/my_ai_project/pipeline.py</code>. It only needs something that can <code>search</code>, so tests can pass a fake:</p><pre><code>from typing import Protocol
+
+import numpy as np
+
+from my_ai_project.embedder import Embedder
+from my_ai_project.store import Found
+
+
+class Searcher(Protocol):
+    def search(self, query_vector: np.ndarray, top_k: int = 3, kind: str | None = None) -&gt; list[Found]: ...
+
+
+def retrieve(question: str, embedder: Embedder, store: Searcher, top_k: int = 3, kind: str | None = None) -&gt; list[Found]:
+    &quot;&quot;&quot;The retrieval pipeline: embed the question, search the store (optionally only one kind of page), return cited chunks.&quot;&quot;&quot;
+    query_vector = embedder.embed([question])[0]
+    return store.search(query_vector, top_k=top_k, kind=kind)</code></pre><p>The ingest now fills the metadata. It also works on the old table: <code>init_schema</code> adds the missing columns first. <code>ingest.py</code>:</p><pre><code>import os
+from pathlib import Path
+
+from my_ai_project.chunking import chunk_documents
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.knowledge_base import load_knowledge_base
+from my_ai_project.store import ChunkRecord, ChunkStore
+
+DSN = os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)
+
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+by_id = {document.doc_id: document for document in documents}
+chunks = chunk_documents(documents, max_tokens=40)
+records = [
+    ChunkRecord(c.doc_id, c.index, by_id[c.doc_id].title, by_id[c.doc_id].kind, c.text, c.tokens) for c in chunks
+]
+vectors = FastEmbedder().embed([f&quot;{r.title}. {r.text}&quot; for r in records])
+
+store = ChunkStore(DSN)
+store.init_schema()
+store.add_chunks(records, vectors)
+print(f&quot;stored {len(records)} chunks; rows: {store.count()} (manual {store.count(&#x27;manual&#x27;)}, faq {store.count(&#x27;faq&#x27;)}, error {store.count(&#x27;error&#x27;)})&quot;)</code></pre><div class="out"><b>You should see</b><br>stored 26 chunks; rows: 26 (manual 10, faq 7, error 9)</div><p>Ask the same question without a filter, then with each kind. <code>search_filtered.py</code>:</p><pre><code>import os
+import sys
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.pipeline import retrieve
+from my_ai_project.store import ChunkStore
+
+DSN = os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)
+question = &quot;My monitor stopped responding&quot;
+store, embedder = ChunkStore(DSN), FastEmbedder()
+
+for kind in (None, &quot;error&quot;, &quot;faq&quot;, &quot;manual&quot;):
+    print(f&quot;filter: {kind or &#x27;none&#x27;}&quot;)
+    for found in retrieve(question, embedder, store, top_k=3, kind=kind):
+        print(f&quot;  {found.similarity:.2f}  {found.citation:&lt;24} {found.kind:&lt;7} {found.text[:44]}&quot;)</code></pre><div class="out"><b>You should see</b><br>filter: none<br>&nbsp;&nbsp;0.75&nbsp;&nbsp;[error-e101#0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; error&nbsp;&nbsp; The sensor did not answer within 10 seconds.<br>&nbsp;&nbsp;0.70&nbsp;&nbsp;[faq-reset#0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;faq&nbsp;&nbsp;&nbsp;&nbsp; Hold the power button for 5 seconds until th<br>&nbsp;&nbsp;0.68&nbsp;&nbsp;[error-e103#0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; error&nbsp;&nbsp; The internal temperature is above 45 degrees<br>filter: error<br>&nbsp;&nbsp;0.75&nbsp;&nbsp;[error-e101#0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; error&nbsp;&nbsp; The sensor did not answer within 10 seconds.<br>&nbsp;&nbsp;0.68&nbsp;&nbsp;[error-e103#0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; error&nbsp;&nbsp; The internal temperature is above 45 degrees<br>&nbsp;&nbsp;0.68&nbsp;&nbsp;[error-e102#0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; error&nbsp;&nbsp; The battery is under 15 percent. Connect the<br>filter: faq<br>&nbsp;&nbsp;0.70&nbsp;&nbsp;[faq-reset#0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;faq&nbsp;&nbsp;&nbsp;&nbsp; Hold the power button for 5 seconds until th<br>&nbsp;&nbsp;0.65&nbsp;&nbsp;[faq-warranty#0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; faq&nbsp;&nbsp;&nbsp;&nbsp; The monitor has a two year warranty on manuf<br>&nbsp;&nbsp;0.64&nbsp;&nbsp;[faq-wifi#0]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; faq&nbsp;&nbsp;&nbsp;&nbsp; The monitor supports 2.4 GHz networks only.<br>filter: manual<br>&nbsp;&nbsp;0.67&nbsp;&nbsp;[manual-firmware-update#0] manual&nbsp;&nbsp;Open Settings, choose Firmware, and press Ch<br>&nbsp;&nbsp;0.60&nbsp;&nbsp;[manual-maintenance#1]&nbsp;&nbsp; manual&nbsp;&nbsp;Check the sensor cable for cracks every thre<br>&nbsp;&nbsp;0.59&nbsp;&nbsp;[manual-network-setup#0] manual&nbsp;&nbsp;Choose Settings, then Network, and pick your</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c filter</code>). Start the database from Day 60 (<code>docker compose up -d</code>), and make sure the <code>chunks</code> table from Lab 9 exists.</p>
+<h3><span class="step">Step 1</span> Migrate and ingest again</h3>
+<p>Replace <code>store.py</code>, add <code>pipeline.py</code>, replace <code>ingest.py</code>, and run it. Your old table gets the new columns, and the ingest fills them. Match <code>stored 26 chunks ... (manual 10, faq 7, error 9)</code>. In <code>psql</code>, run <code>\d chunks</code> and find the new columns and the index on <code>kind</code>.</p>
+<h3><span class="step">Step 2</span> Search with a filter</h3>
+<p>Run <code>search_filtered.py</code>. Look at the four lists. <strong>Predict first:</strong> will the first result change when you filter on <code>error</code>? What about <code>manual</code>? What does the filter do to the third result of the unfiltered search?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Ask for <code>kind=&quot;errors&quot;</code> (a typo). Read the error. Then temporarily take the check out of <code>search</code> and ask again: what do you get, and why is that worse?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Allow a search over <strong>two kinds at once</strong> (for example <code>error</code> and <code>faq</code>): think about how the type, the check and the SQL must change (a hint is in Stuck). Then write the tests of the template: the filter keeps only that kind, an unknown kind is an error, the pipeline passes the kind on, and the old tests still pass. They need the database, and skip themselves if it is not running.</p>
+<p>Finally, commit: <code>git add .</code> and <code>git commit -m &quot;Add a kind filter to the search&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;column kind does not exist&rdquo;</strong>: <code>init_schema</code> was not run on the old table. Run the ingest, which calls it first.</li><li><strong>The filtered list is shorter than <code>top_k</code></strong>: fewer chunks of that kind exist. Check with <code>store.count(kind)</code>.</li><li><strong>The kinds of the chunks are all <code>NULL</code></strong>: the ingest did not run again after the migration, so the new columns are empty.</li><li><strong>mypy: the fake store does not match <code>Searcher</code></strong>: its <code>search</code> must take <code>query_vector</code>, <code>top_k</code> and <code>kind</code>.</li></ul><details><summary>Hint: Step 4</summary><p>Make <code>kind</code> a list of kinds (or <code>None</code>), check every item against <code>KINDS</code>, and use <code>WHERE kind = ANY(%s)</code> with the list as the parameter. The migration and the data stay the same.</p></details><details><summary>Solution: Steps 1 to 3</summary><pre><code>ALTER TABLE chunks ADD COLUMN IF NOT EXISTS title text, ADD COLUMN IF NOT EXISTS kind text;
+CREATE INDEX IF NOT EXISTS chunks_kind_idx ON chunks (kind);</code></pre><p>The SQL that <code>search</code> builds when you pass a kind:</p><pre><code>SELECT doc_id, chunk_index, text, 1 - (embedding &lt;=&gt; %s) AS similarity
+FROM chunks
+WHERE kind = %s
+ORDER BY embedding &lt;=&gt; %s
+LIMIT %s</code></pre><div class="out"><b>You should see</b><br>ValueError: unknown kind 'errors': use one of manual, faq, error</div><p>Without the check, the typo does not fail, it just finds nothing:</p><pre><code># without the check: a typo in the kind
+store.search(vector, kind=&quot;errors&quot;)      # -&gt; []   no error, just nothing</code></pre><p>An empty answer looks like &ldquo;no such page exists&rdquo;, so a typo would send your user away with a wrong &ldquo;not found&rdquo;. Fail loudly.</p></details><details><summary>Solution: Step 2 (what the filter does)</summary><p>With <code>error</code> the first result stays (<code>error-e101</code>), and the FAQ in second place is replaced by another error page. With <code>manual</code> the best manual page scores 0.67, lower than the best overall: a filter can only make the best result worse or equal, never better. It trades a little similarity for the certainty that the page is of the right kind.</p></details><details><summary>Solution: Step 4 (two kinds in SQL)</summary><pre><code>WHERE kind = ANY(%s)        -- and pass [&quot;error&quot;, &quot;faq&quot;] as the parameter</code></pre></details><details><summary>Template: Step 4 (tests)</summary><pre><code>import os
+from collections.abc import Iterator
+
+import numpy as np
+import psycopg
+import pytest
+
+from my_ai_project.embedder import FakeEmbedder
+from my_ai_project.pipeline import retrieve
+from my_ai_project.store import ChunkRecord, ChunkStore, Found
+
+DSN = os.environ.get(&quot;TEST_DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)
+
+RECORDS = [
+    ChunkRecord(&quot;error-e101&quot;, 0, &quot;E101 Sensor timeout&quot;, &quot;error&quot;, &quot;Check the sensor cable and restart the monitor.&quot;, 9),
+    ChunkRecord(&quot;faq-battery&quot;, 0, &quot;Battery life&quot;, &quot;faq&quot;, &quot;The battery lasts about eight hours.&quot;, 7),
+    ChunkRecord(&quot;manual-install&quot;, 0, &quot;Installation guide&quot;, &quot;manual&quot;, &quot;Mount the sensor on a flat wall and connect the cable.&quot;, 10),
+]
+
+
+@pytest.fixture
+def store() -&gt; Iterator[ChunkStore]:
+    chunk_store = ChunkStore(DSN, table=&quot;chunks_test&quot;, dims=64)
+    try:
+        chunk_store.drop()
+    except psycopg.OperationalError:
+        pytest.skip(&quot;the database is not running: start it with docker compose up -d&quot;)
+    chunk_store.init_schema()
+    chunk_store.add_chunks(RECORDS, FakeEmbedder().embed([f&quot;{r.title}. {r.text}&quot; for r in RECORDS]))
+    yield chunk_store
+    chunk_store.drop()
+
+
+def test_the_nearest_chunk_comes_first(store: ChunkStore) -&gt; None:
+    found = retrieve(&quot;sensor cable&quot;, FakeEmbedder(), store, top_k=3)
+    assert found[0].doc_id in {&quot;error-e101&quot;, &quot;manual-install&quot;}
+    assert len(found) == 3
+
+
+def test_a_kind_filter_keeps_only_that_kind(store: ChunkStore) -&gt; None:
+    found = retrieve(&quot;sensor cable&quot;, FakeEmbedder(), store, top_k=3, kind=&quot;manual&quot;)
+    assert [f.doc_id for f in found] == [&quot;manual-install&quot;]
+    assert store.count(&quot;faq&quot;) == 1
+
+
+def test_adding_the_same_chunks_twice_does_not_duplicate_them(store: ChunkStore) -&gt; None:
+    store.add_chunks(RECORDS, FakeEmbedder().embed([f&quot;{r.title}. {r.text}&quot; for r in RECORDS]))
+    assert store.count() == 3
+
+
+def test_a_found_chunk_knows_its_citation(store: ChunkStore) -&gt; None:
+    assert retrieve(&quot;battery&quot;, FakeEmbedder(), store, top_k=1)[0].citation == &quot;[faq-battery#0]&quot;
+
+
+def test_an_unknown_kind_is_an_error_not_an_empty_list() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;unknown kind &#x27;errors&#x27;&quot;):
+        ChunkStore(DSN, table=&quot;chunks_test&quot;, dims=64).search(np.zeros(64), kind=&quot;errors&quot;)
+
+
+def test_an_unsafe_table_name_is_rejected() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;not a safe table name&quot;):
+        ChunkStore(DSN, table=&quot;chunks; DROP TABLE chunks&quot;)
+
+
+def test_the_pipeline_passes_the_kind_on() -&gt; None:
+    calls: list[tuple[int, str | None]] = []
+
+    class RecordingSearcher:
+        def search(self, query_vector: np.ndarray, top_k: int = 3, kind: str | None = None) -&gt; list[Found]:
+            calls.append((top_k, kind))
+            return []
+
+    retrieve(&quot;anything&quot;, FakeEmbedder(), RecordingSearcher(), top_k=5, kind=&quot;faq&quot;)
+    assert calls == [(5, &quot;faq&quot;)]</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Name the three steps of the retrieval pipeline.</li><li>Why does an unknown kind raise an error and not return an empty list?</li><li>What does a filter do to the best similarity, and why is it still useful?</li></ol><details><summary>Answers</summary><ol><li>Embed the question, search the store for the nearest chunks, filter by what you know (the kind, the product, the language).</li><li>An empty list looks like &ldquo;nothing exists&rdquo;, so a typo would give a wrong answer without a sign of a problem. An error shows the mistake at once.</li><li>It can only keep the best score the same or lower it, because it removes candidates. It is useful because you know something the vectors do not (the user wants an error page), and the filter makes the search respect it.</li></ol></details></section>
+<section id="game-day67" class="game"><h2><span class="n">+</span> &middot; Game: Filter the Search <span class="t">5 min</span></h2>
+<p><p>You search 26 chunks with and without a filter on kind. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day67-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day67-play">Start the game</button></div>
+<div id="day67-round" hidden><div class="gtop"><span id="day67-num">Round 1</span><span id="day67-score">Score 0</span></div>
+<pre hidden><code id="day67-code"></code></pre><div class="q" id="day67-q"></div><div class="choices" id="day67-opts"></div>
+<div class="fb" id="day67-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day67-next" hidden>Next round</button></p></div>
+<div id="day67-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day67",[{"c": "python ingest.py   # on the old table, no metadata", "q": "What does it print?", "o": ["26 chunks, with manual 10, faq 7, error 9", "An error: column kind does not exist", "0 chunks"], "a": 0, "out": "stored 26 chunks; rows: 26 (manual 10, faq 7, error 9)", "why": "init_schema adds the missing columns first, then the ingest fills them."}, {"c": "retrieve('My monitor stopped responding', ..., kind=None)", "q": "Which chunk is first?", "o": ["error-e101#0 with 0.75", "faq-reset#0", "manual-firmware-update#0"], "a": 0, "out": "  0.75  [error-e101#0]           error   The sensor did not answer within 10 seconds.\n  0.70  [faq-reset#0]            faq     Hold the power button for 5 seconds until th\n  0.68  [error-e103#0]           error   The internal temperature is above 45 degrees", "why": "An FAQ and an error page both match, and the error page wins."}, {"c": "retrieve(..., kind='error')", "q": "What happens to the FAQ in second place?", "o": ["It is replaced by another error page", "It stays", "The search fails"], "a": 0, "out": "  0.75  [error-e101#0]           error   The sensor did not answer within 10 seconds.\n  0.68  [error-e103#0]           error   The internal temperature is above 45 degrees\n  0.68  [error-e102#0]           error   The battery is under 15 percent. Connect the", "why": "The filter removes the other kinds before the ranking."}, {"c": "retrieve(..., kind='manual')", "q": "What is the best score?", "o": ["0.67, lower than the best overall", "0.75, the same", "0.90"], "a": 0, "out": "  0.67  [manual-firmware-update#0] manual  Open Settings, choose Firmware, and press Ch\n  0.60  [manual-maintenance#1]   manual  Check the sensor cable for cracks every thre\n  0.59  [manual-network-setup#0] manual  Choose Settings, then Network, and pick your", "why": "A filter can only keep the best score or lower it, never raise it."}, {"c": "store.search(vector, kind='errors')", "q": "What happens?", "o": ["ValueError: unknown kind 'errors': use one of manual, faq, error", "An empty list", "It searches everything"], "a": 0, "out": "ValueError: unknown kind 'errors': use one of manual, faq, error", "why": "An empty list would look like nothing exists. Fail loudly."}, {"c": "ALTER TABLE chunks ADD COLUMN IF NOT EXISTS title text, ADD COLUMN IF NOT EXISTS kind text", "q": "What do the old rows have in the new columns until you ingest again?", "o": ["NULL", "The kind of their document", "An error"], "a": 0, "out": "(the old rows keep their data; the new columns are empty)", "why": "A migration adds columns. Filling them is the ingest's job."}, {"c": "WHERE kind = ANY(%s)", "q": "What is it for?", "o": ["A filter over several kinds at once", "Deleting rows", "A faster index"], "a": 0, "out": "(the list ['error', 'faq'] is passed as the parameter)", "why": "The same query, with a list instead of a single value."}],["Filter rookie", "Filter regular", "Retrieval builder"],"Retrieval is embed, search and filter; metadata lives next to the vector; a migration adds columns and you ingest again; and a filter should fail loudly on a typo.");</script>
+<p><small>Tick &ldquo;Play the Filter the Search game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a retrieval pipeline of three steps, a table that migrated without losing data, a search with a metadata filter that fails loudly on a typo, and tests that skip when the database is down.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 67 checklist.</li><li>Share one line in the comments: which filter would your users need first?</li><li><strong>Next:</strong> Thursday is mixed practice: you compare three chunk sizes on five questions, from a blank file.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
