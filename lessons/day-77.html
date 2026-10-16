@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 77 - Project Lab 11: the RAG pipeline</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 77 &middot; LEVEL 6: RAG &middot; PROJECT LAB</div><h1>Project Lab 11: the RAG pipeline</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to answer a question from your own knowledge base with cited sources through POST /api/ask, with tests that need no database, model or key.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why can a high similarity still end in &ldquo;not found&rdquo;?</li><li>What does hybrid search add to a vector search?</li></ol><details><summary>Answers</summary><ol><li>The score says something similar exists, not that the answer is in it. The right page may not have been retrieved (E104 with a vector search alone).</li><li>A keyword search that finds exact words, fused by rank, so a rare word like <code>e104</code> can bring its page to the top.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p>Today <code>ai-knowledge-assistant</code> gets its first <strong>real RAG pipeline</strong>. By the end:</p><ul><li><code>answer_question</code> takes a question and does it all: hybrid retrieval, a refusal when nothing is close, a grounded answer, and a check of the citations.</li><li><code>POST /api/ask</code> returns the answer, whether it was refused and why, and the <strong>sources</strong> it cites.</li><li>An answer with no citation, or with an invented one, is never shown: it becomes a refusal with a reason.</li><li>The tests need <strong>no database, no model and no key</strong>.</li><li>The <strong>checkpoint</strong> of the module: five questions answered with sources.</li></ul><div class="box cap"><strong>Capstone:</strong> this is the Module 6 checkpoint of the capstone: the assistant answers from its own knowledge base and shows where each answer came from.</div><div class="box"><strong>About the writer.</strong> In this lesson the answers come from a <strong>simulated writer</strong> (Day 72), because the lesson has no key. It is not a real model. The pipeline, the checks and the sources are real; the wording is not. To use a real model, set <code>LLM_MODE=real</code> and <code>ANTHROPIC_API_KEY</code>: your answers will be worded differently, and that is a good test of the checks.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Cut the work in small pieces, and commit after each one:</p><ol><li><strong>Pipeline</strong>: <code>rag.py</code> with <code>answer_question</code>.</li><li><strong>Dependencies</strong>: the keyword index and the writer come from <code>Depends</code>.</li><li><strong>Endpoint</strong>: <code>POST /api/ask</code>.</li><li><strong>Tests</strong>: fakes for the embedder, the store, the keyword index and the writer.</li><li><strong>The checkpoint</strong>: five questions, with the sources, saved to a file.</li><li><strong>Run it</strong> with the real database and with the database stopped.</li><li><strong>README</strong> and push.</li></ol></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2><h3>Step 1: the pipeline</h3><p>A new module <code>src/my_ai_project/rag.py</code>. The rule is simple: <strong>no source, no answer</strong>. Every way it can go wrong becomes a refusal with a <code>reason</code> a person can read:</p><pre><code>from dataclasses import dataclass, field
+
+from my_ai_project.embedder import Embedder
+from my_ai_project.grounding import GroundedAnswer, Writer, ground
+from my_ai_project.hybrid import KeywordIndex, hybrid_search
+from my_ai_project.pipeline import Searcher
+from my_ai_project.prompts import NO_ANSWER
+from my_ai_project.store import Found
+
+
+@dataclass
+class RagAnswer:
+    question: str
+    text: str
+    sources: list[Found] = field(default_factory=list)  # the chunks the answer cites
+    refused: bool = False
+    reason: str = &quot;&quot;
+
+
+def refuse(question: str, reason: str) -&gt; RagAnswer:
+    return RagAnswer(question, NO_ANSWER, [], True, reason)
+
+
+def answer_question(
+    question: str,
+    embedder: Embedder,
+    store: Searcher,
+    keywords: KeywordIndex,
+    writer: Writer,
+    top_k: int = 3,
+    min_score: float = 0.6,
+) -&gt; RagAnswer:
+    &quot;&quot;&quot;Question -&gt; retrieve -&gt; answer with cited sources. No source, or no valid citation, means no answer.&quot;&quot;&quot;
+    found = hybrid_search(question, embedder, store, keywords, top_k=top_k)
+    best = max((f.similarity for f in found), default=0.0)
+    if best &lt; min_score:
+        return refuse(question, f&quot;best similarity {best:.2f} is under {min_score}&quot;)
+    grounded: GroundedAnswer = ground(question, found, writer)
+    if grounded.refused:
+        return refuse(question, &quot;the writer found no answer in the sources&quot;)
+    if grounded.invented:
+        return refuse(question, f&quot;the answer cited {grounded.invented[0]}, which was not retrieved&quot;)
+    if not grounded.sources:
+        return refuse(question, &quot;the answer cited no source&quot;)
+    return RagAnswer(question, grounded.text, grounded.sources)</code></pre><h3>Step 2: dependencies</h3><p>In <code>deps.py</code>. The keyword index is built once from the stored chunks (restart the API after a new ingest). The writer is simulated unless <code>LLM_MODE=real</code>:</p><pre><code>@lru_cache
+def get_keywords() -&gt; KeywordIndex:
+    &quot;&quot;&quot;The keyword index is built once from the stored chunks. Restart the API after a new ingest.&quot;&quot;&quot;
+    try:
+        return KeywordIndex(ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)).all_chunks())
+    except psycopg.OperationalError as err:
+        raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
+
+
+def get_writer() -&gt; Writer:
+    if os.environ.get(&quot;LLM_MODE&quot;, &quot;fake&quot;) == &quot;real&quot;:
+        api_key = os.environ.get(&quot;ANTHROPIC_API_KEY&quot;)
+        if not api_key:
+            raise RuntimeError(&quot;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&quot;)
+        return RetryingClient(AnthropicClient(api_key=api_key, timeout=30.0), max_attempts=3)
+    return SimulatedWriter()   # NOT a real model: it lets you run and test the pipeline with no key
+
+
+KeywordsDep = Annotated[KeywordIndex, Depends(get_keywords)]
+WriterDep = Annotated[Writer, Depends(get_writer)]</code></pre><h3>Step 3: the endpoint</h3><p>Add these to <code>api.py</code> (and import <code>KeywordsDep</code>, <code>WriterDep</code> and <code>answer_question</code>). It reuses the <code>SearchHit</code> model of Day 70 for the sources:</p><pre><code>class AskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+    top_k: int = Field(default=3, ge=1, le=10)
+
+
+class AskResponse(BaseModel):
+    question: str
+    answer: str
+    refused: bool
+    reason: str
+    sources: list[SearchHit]
+
+
+@app.post(&quot;/api/ask&quot;)
+def ask(request: AskRequest, embedder: EmbedderDep, store: StoreDep, keywords: KeywordsDep, writer: WriterDep) -&gt; AskResponse:
+    try:
+        result = answer_question(request.question, embedder, store, keywords, writer, top_k=request.top_k)
+    except psycopg.OperationalError as err:
+        raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
+    sources = [
+        SearchHit(citation=f.citation, doc_id=f.doc_id, chunk_index=f.chunk_index, title=f.title, kind=f.kind, text=f.text, similarity=f.similarity)
+        for f in result.sources
+    ]
+    return AskResponse(question=request.question, answer=result.text, refused=result.refused, reason=result.reason, sources=sources)</code></pre><h3>Step 4: tests</h3><p>The tests replace all four dependencies, so they run in milliseconds. Notice the test with the careless writer: an invented citation must never reach the user.</p><pre><code>from collections.abc import Iterator
+
+import numpy as np
+import psycopg
+import pytest
+from fastapi.testclient import TestClient
+
+from my_ai_project.api import app
+from my_ai_project.deps import get_embedder, get_keywords, get_store, get_writer
+from my_ai_project.embedder import FakeEmbedder
+from my_ai_project.hybrid import KeywordIndex
+from my_ai_project.retrieval import normalize
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import Found
+
+CHUNKS = [
+    Found(&quot;error-e101&quot;, 0, &quot;E101 Sensor timeout&quot;, &quot;error&quot;, &quot;The sensor did not answer. Check the sensor cable and restart the monitor.&quot;, 0.0),
+    Found(&quot;faq-battery&quot;, 0, &quot;Battery life&quot;, &quot;faq&quot;, &quot;The battery lasts about eight hours. Charge it every night.&quot;, 0.0),
+    Found(&quot;manual-install&quot;, 0, &quot;Installation guide&quot;, &quot;manual&quot;, &quot;Mount the sensor on a flat wall. Connect the cable.&quot;, 0.0),
+]
+
+
+class InMemoryStore:
+    &quot;&quot;&quot;The same search as the database store, in memory, so the API tests need no database.&quot;&quot;&quot;
+
+    def __init__(self) -&gt; None:
+        self.vectors = normalize(FakeEmbedder().embed([f&quot;{c.title}. {c.text}&quot; for c in CHUNKS]))
+
+    def search(self, query_vector: np.ndarray, top_k: int = 3, kind: str | None = None) -&gt; list[Found]:
+        scores = self.vectors @ (query_vector / np.linalg.norm(query_vector))
+        order = scores.argsort()[::-1][:top_k]
+        return [Found(CHUNKS[i].doc_id, CHUNKS[i].chunk_index, CHUNKS[i].title, CHUNKS[i].kind, CHUNKS[i].text, round(float(scores[i]), 2)) for i in order]
+
+
+class BrokenStore:
+    def search(self, query_vector: np.ndarray, top_k: int = 3, kind: str | None = None) -&gt; list[Found]:
+        raise psycopg.OperationalError(&quot;connection refused&quot;)
+
+
+@pytest.fixture
+def client() -&gt; Iterator[TestClient]:
+    app.dependency_overrides[get_embedder] = FakeEmbedder
+    app.dependency_overrides[get_store] = InMemoryStore
+    app.dependency_overrides[get_keywords] = lambda: KeywordIndex(CHUNKS)
+    app.dependency_overrides[get_writer] = SimulatedWriter
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def test_an_answer_comes_with_its_source(client: TestClient) -&gt; None:
+    body = client.post(&quot;/api/ask&quot;, json={&quot;question&quot;: &quot;Is it true that the battery lasts about eight hours?&quot;}).json()
+    assert body[&quot;refused&quot;] is False
+    assert body[&quot;answer&quot;].endswith(&quot;[faq-battery#0].&quot;)
+    assert [s[&quot;citation&quot;] for s in body[&quot;sources&quot;]] == [&quot;[faq-battery#0]&quot;]
+
+
+def test_no_source_means_a_refusal(client: TestClient) -&gt; None:
+    body = client.post(&quot;/api/ask&quot;, json={&quot;question&quot;: &quot;Where can I buy a coffee?&quot;}).json()
+    assert body[&quot;refused&quot;] is True
+    assert body[&quot;answer&quot;] == &quot;I could not find that in the knowledge base.&quot;
+    assert body[&quot;sources&quot;] == []
+    assert &quot;under 0.6&quot; in body[&quot;reason&quot;]
+
+
+def test_an_invented_citation_is_not_shown(client: TestClient) -&gt; None:
+    app.dependency_overrides[get_writer] = lambda: SimulatedWriter(careless=True)
+    body = client.post(&quot;/api/ask&quot;, json={&quot;question&quot;: &quot;Is it true that the battery lasts about eight hours?&quot;}).json()
+    assert body[&quot;refused&quot;] is True
+    assert &quot;faq-support#0&quot; in body[&quot;reason&quot;]
+
+
+@pytest.mark.parametrize(&quot;payload&quot;, [{&quot;question&quot;: &quot;&quot;}, {&quot;question&quot;: &quot;x&quot;, &quot;top_k&quot;: 0}, {&quot;question&quot;: &quot;x&quot;, &quot;top_k&quot;: 11}, {}])
+def test_bad_requests_are_a_422(client: TestClient, payload: dict[str, object]) -&gt; None:
+    assert client.post(&quot;/api/ask&quot;, json=payload).status_code == 422
+
+
+def test_a_database_that_is_down_is_a_503(client: TestClient) -&gt; None:
+    app.dependency_overrides[get_store] = BrokenStore
+    response = client.post(&quot;/api/ask&quot;, json={&quot;question&quot;: &quot;Is it true that the battery lasts about eight hours?&quot;})
+    assert response.status_code == 503
+    assert response.json() == {&quot;detail&quot;: &quot;the database is not available&quot;}</code></pre><p>Run <code>uv run pytest</code>, <code>uv run mypy src tests</code> and fix what they say.</p><div class="out"><b>You should see</b><br>8 passed (for <code>test_ask_api.py</code>)</div><h3>Step 5: the checkpoint</h3><p>Write a script that asks your five questions and prints the answer and the sources. Use the five below, or your own (keep at least one that should be refused). <code>ask_five.py</code>:</p><pre><code>import os
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.hybrid import KeywordIndex
+from my_ai_project.rag import answer_question
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkStore
+
+QUESTIONS = [
+    &quot;How often should I calibrate the sensor?&quot;,
+    &quot;What does error E104 mean?&quot;,
+    &quot;Which Wi-Fi band does the monitor support?&quot;,
+    &quot;Where can I buy a coffee?&quot;,
+    &quot;How much does the monitor cost?&quot;,
+]
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+embedder = FastEmbedder()
+keywords = KeywordIndex(store.all_chunks())
+writer = SimulatedWriter()   # NOT a real model: set up a real one in the API with LLM_MODE=real
+
+for number, question in enumerate(QUESTIONS, start=1):
+    result = answer_question(question, embedder, store, keywords, writer)
+    sources = &quot;, &quot;.join(s.citation for s in result.sources) or &quot;no source&quot;
+    print(f&quot;{number}. {question}&quot;)
+    print(f&quot;   {result.text}&quot;)
+    print(f&quot;   sources: {sources}&quot; + (f&quot;   (refused: {result.reason})&quot; if result.refused else &quot;&quot;))</code></pre><div class="out"><b>You should see</b><br>1. How often should I calibrate the sensor?<br>&nbsp;&nbsp; Calibrate the sensor once a month [manual-calibration#0].<br>&nbsp;&nbsp; sources: [manual-calibration#0]<br>2. What does error E104 mean?<br>&nbsp;&nbsp; The storage is above 95 percent [error-e104#0].<br>&nbsp;&nbsp; sources: [error-e104#0]<br>3. Which Wi-Fi band does the monitor support?<br>&nbsp;&nbsp; The monitor supports 2.4 GHz networks only [faq-wifi#0].<br>&nbsp;&nbsp; sources: [faq-wifi#0]<br>4. Where can I buy a coffee?<br>&nbsp;&nbsp; I could not find that in the knowledge base.<br>&nbsp;&nbsp; sources: no source&nbsp;&nbsp; (refused: best similarity 0.46 is under 0.6)<br>5. How much does the monitor cost?<br>&nbsp;&nbsp; The monitor has a two year warranty on manufacturing faults [faq-warranty#0].<br>&nbsp;&nbsp; sources: [faq-warranty#0]</div><p>Save your output to <code>notes/week11-five.txt</code>. <strong>Read it carefully:</strong> are all five good? On Sunday you pick the worst three.</p></section>
+<section><h2><span class="n">5</span> &middot; Run it <span class="t">15 min</span></h2><p>Start the API (<code>uv run uvicorn my_ai_project.api:app</code>) and ask:</p><pre><code>curl -X POST http://localhost:8000/api/ask -H &quot;content-type: application/json&quot; -d &#x27;{&quot;question&quot;: &quot;What does error E104 mean?&quot;, &quot;top_k&quot;: 2}&#x27;</code></pre><div class="out"><b>You should see</b><br>{"question":"What does error E104 mean?","answer":"The storage is above 95 percent [error-e104#0].","refused":false,"reason":"",
+ "sources":[{"citation":"[error-e104#0]","doc_id":"error-e104","chunk_index":0,"title":"E104 Disk full","kind":"error",
+  "text":"The storage is above 95 percent. Export your readings from the web dashboard and then delete the old ones in Settings. Severity: high.","similarity":0.63}]}</div><p>A question with no source is refused, with the reason:</p><div class="out"><b>You should see</b><br>{"question":"Where can I buy a coffee?","answer":"I could not find that in the knowledge base.","refused":true,"reason":"best similarity 0.46 is under 0.6","sources":[]}</div><p>An empty question and <code>top_k: 50</code> are both a <code>422</code>:</p><div class="out"><b>You should see</b><br>HTTP 422: question: String should have at least 1 character; top_k: Input should be less than or equal to 10</div><p>Stop the database (<code>docker compose stop</code>), restart the API, and ask again. The API must not crash:</p><div class="out"><b>You should see</b><br>{"detail":"the database is not available"}   (HTTP 503)</div><p>Start the database again with <code>docker compose start</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>Everything is refused</strong>: check the best similarity in the <code>reason</code>. If your questions are good and the scores are under 0.6, look at your chunks; do not lower the number until you have read the chunks.</li><li><strong>A refusal with &ldquo;cited no source&rdquo;</strong>: the writer did not follow rule 3 of the prompt. Keep the rules exactly as in <code>grounding.py</code>.</li><li><strong>The first request is slow</strong>: the model and the keyword index load once.</li><li><strong>Tests try to reach the database</strong>: one of the four overrides is missing.</li></ul></section>
+<section><h2><span class="n">7</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Add the README section, run the checklist, and push.</p><pre><code>## Ask
+
+    docker compose up -d
+    uv run python ingest.py            # chunk, embed, store with metadata
+    uv run uvicorn my_ai_project.api:app
+
+    POST /api/ask   {&quot;question&quot;: &quot;...&quot;, &quot;top_k&quot;: 3}
+    -&gt; {&quot;question&quot;, &quot;answer&quot;, &quot;refused&quot;, &quot;reason&quot;, &quot;sources&quot;: [{&quot;citation&quot;, &quot;title&quot;, &quot;text&quot;, &quot;similarity&quot;}]}
+
+    LLM_MODE=real (and ANTHROPIC_API_KEY) uses a real model; by default a simulated writer is used.
+    503 if the database is down, 422 if the request is wrong. Restart the API after a new ingest.</code></pre><pre><code>[ ] ingest.py: 26 chunks with kind and title
+[ ] answer_question: gate on the best similarity, grounded answer, no citation or an invented one means refuse
+[ ] POST /api/ask returns answer, refused, reason and sources
+[ ] 5 questions answered with sources (the checkpoint), saved to notes/week11-five.txt
+[ ] database stopped -&gt; 503, wrong request -&gt; 422
+[ ] tests pass without a database, a model or a key; mypy is clean
+[ ] README has the commands and the endpoint
+[ ] committed and pushed</code></pre><p><code>git add .</code>, <code>git commit -m &quot;Add the RAG pipeline and /api/ask&quot;</code>, <code>git push</code>.</p></section>
+<section><h2><span class="n">8</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Name four ways an answer can become a refusal in <code>answer_question</code>.</li><li>Why does the gate use the best similarity of the whole list?</li><li>What would make you trust an answer from this API more than from a plain model call?</li></ol><details><summary>Answers</summary><ol><li>The best similarity is under the minimum; the writer says it found no answer; the answer cites a source that was not retrieved; the answer cites no source.</li><li>After fusion, the first chunk may come from the keyword list only and have a similarity of 0.0. The best of the list says whether something close exists.</li><li>It comes with sources you can open, the citations were checked by code, and it says &ldquo;not found&rdquo; instead of guessing.</li></ol></details></section>
+<section id="game-day77" class="game"><h2><span class="n">+</span> &middot; Game: RAG Pipeline Check <span class="t">5 min</span></h2>
+<p><p>You test the real RAG pipeline. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day77-start"><p>Ready? 8 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day77-play">Start the game</button></div>
+<div id="day77-round" hidden><div class="gtop"><span id="day77-num">Round 1</span><span id="day77-score">Score 0</span></div>
+<pre hidden><code id="day77-code"></code></pre><div class="q" id="day77-q"></div><div class="choices" id="day77-opts"></div>
+<div class="fb" id="day77-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day77-next" hidden>Next round</button></p></div>
+<div id="day77-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day77",[{"c": "ask_five.py: How often should I calibrate the sensor?", "q": "What are the sources?", "o": ["[manual-calibration#0]", "no source", "[faq-wifi#0]"], "a": 0, "out": "1. How often should I calibrate the sensor?\n   Calibrate the sensor once a month [manual-calibration#0].\n   sources: [manual-calibration#0]", "why": "A grounded answer, with the page it came from."}, {"c": "ask_five.py: What does error E104 mean?", "q": "Which page does the answer cite?", "o": ["[error-e104#0], because the hybrid search finds it", "[error-e101#1]", "no source"], "a": 0, "out": "2. What does error E104 mean?\n   The storage is above 95 percent [error-e104#0].\n   sources: [error-e104#0]", "why": "Exact words bring the page into the candidates."}, {"c": "ask_five.py: Where can I buy a coffee?", "q": "What does it print?", "o": ["Not found, refused: best similarity 0.46 is under 0.6", "A guess", "A citation"], "a": 0, "out": "4. Where can I buy a coffee?\n   I could not find that in the knowledge base.\n   sources: no source   (refused: best similarity 0.46 is under 0.6)", "why": "No source, no answer."}, {"c": "ask_five.py: How much does the monitor cost?", "q": "What is wrong with this answer?", "o": ["It cites the warranty page, which does not answer the question", "Nothing", "It has no citation"], "a": 0, "out": "5. How much does the monitor cost?\n   The monitor has a two year warranty on manufacturing faults [faq-warranty#0].\n   sources: [faq-warranty#0]", "why": "The best similarity passed the gate. A citation proves the source exists, not that it answers the question."}, {"c": "POST /api/ask with the database stopped", "q": "What does the API return?", "o": ["503: the database is not available", "A crash", "200 with an empty answer"], "a": 0, "out": "{\"detail\":\"the database is not available\"}   (HTTP 503)", "why": "The service cannot work right now."}, {"c": "POST /api/ask with {\"question\": \"\", \"top_k\": 50}", "q": "What status?", "o": ["422", "503", "200"], "a": 0, "out": "HTTP 422: question: String should have at least 1 character; top_k: Input should be less than or equal to 10", "why": "The caller sent something wrong."}, {"c": "test: SimulatedWriter(careless=True) on /api/ask", "q": "What must the user see?", "o": ["A refusal with the reason, not the invented citation", "The invented citation", "A 500"], "a": 0, "out": "refused: true   reason: the answer cited faq-support#0, which was not retrieved", "why": "An answer with an invented source is never shown."}, {"c": "pytest tests/test_ask_api.py", "q": "What do the tests need?", "o": ["No database, no model and no key", "A running database", "A real key"], "a": 0, "out": "8 passed", "why": "The embedder, the store, the keyword index and the writer are all dependencies that tests replace."}],["Pipeline rookie", "Pipeline regular", "RAG builder"],"The pipeline refuses without a source, checks every citation, shows only real sources, and a citation proves a source exists, not that it answers the question.");</script>
+<p><small>Tick &ldquo;Play the RAG Pipeline Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">9</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> the real RAG pipeline: hybrid retrieval, a refusal rule, a grounded answer with checked citations, an endpoint with the sources, tests that need nothing running, and five questions answered with sources.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 77 checklist.</li><li>Share one line in the comments: which of your five answers did you trust least?</li><li><strong>Next:</strong> Sunday is the Module 6 retrospective: you read your five answers, pick the three worst, and plan the next module.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

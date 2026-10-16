@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 74 - Hybrid search and reranking</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 74 &middot; LEVEL 6: RAG</div><h1>Hybrid search and reranking</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to combine a keyword search with a vector search by rank, so that an exact code finds its page.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does a citation like <code>[manual-calibration#0]</code> let your code check?</li><li>What goes in the system prompt, and what goes in the user message?</li></ol><details><summary>Answers</summary><ol><li>That every cited id is one of the chunks you retrieved. Ids that are not there are invented.</li><li>The rules go in the system prompt. The numbered sources and the question go in the user message.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A user types <em>What does error E104 mean?</em> The page <code>E104 Disk full</code> exists in your knowledge base. Your vector search does not return it in the top 3. Why, and what can find it?</strong></p><details><summary>Guess first, then open</summary><p>An embedding captures <em>meaning</em>, and it treats <code>E101</code>, <code>E102</code> and <code>E104</code> as nearly the same kind of thing: error codes. The exact characters <code>E104</code> do not weigh enough. A <strong>keyword search</strong> counts exact words, and a rare word like <code>e104</code> weighs a lot. Using both is called <strong>hybrid search</strong>.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: keyword search likes rare words</h3>
+<p><strong>BM25</strong> is the classic keyword score. For each query word that is in a chunk, it adds a weight. The weight is big when the word is <strong>rare</strong> in your chunks (<code>e104</code> is in one chunk) and small when it is common (<code>monitor</code> is in many). A chunk gets a higher score when the word appears more often, up to a point, and a long chunk is not favoured just for being long. Keyword search cannot see meaning: <em>battery</em> will not match <em>power</em>.</p>
+<h3>Piece 2: combine by rank, not by score</h3>
+<p>Vector similarity is 0 to 1. A keyword score is any positive number. You cannot just add them: the keyword score would win every time. <strong>Reciprocal rank fusion</strong> (RRF) uses only the <em>position</em> in each list: a chunk gets <code>1 / (60 + position)</code> from every list it is in, and the sums decide the order. A chunk near the top of either list rises, and a chunk in both rises most. This is the one trick you need.</p>
+<h3>Piece 3: reranking is a second, slower look</h3>
+<p><strong>Reranking</strong> takes the short list from the first search (say 10 candidates) and scores each one against the question again with a slower, more accurate model, then keeps the best few. It costs time on every question, so use it when you have a measured problem with the order of results, not before. Today you only learn the idea: you will measure first, in the evaluation weeks.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> hybrid search is like merging two <code>OrderBy</code> results with a stable rule: you do not compare the raw numbers of two different units, you compare the ranks. The keyword index is a <code>Dictionary&lt;string, int&gt;</code> per chunk, plus a formula.</div>
+<div class="box cap"><strong>Capstone:</strong> your users will type error codes, product names and exact phrases. Hybrid search is how <code>ai-knowledge-assistant</code> finds them, and Saturday&rsquo;s pipeline uses it.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. The store needs one more method, to load every chunk for the keyword index. In <code>store.py</code> (it is fine for a few thousand chunks; for more, you let the database do the keyword search):</p><pre><code>    def all_chunks(self) -&gt; list[Found]:
+        &quot;&quot;&quot;Every chunk, for a keyword index. Fine for a few thousand chunks; for more, let the database do the keyword search.&quot;&quot;&quot;
+        with self.connect() as conn:
+            rows = conn.execute(
+                sql.SQL(&quot;SELECT doc_id, chunk_index, title, kind, text FROM {table} ORDER BY doc_id, chunk_index&quot;).format(table=self.table)
+            ).fetchall()
+        return [Found(d, i, t, k, x, 0.0) for d, i, t, k, x in rows]</code></pre><p>A new module <code>src/my_ai_project/hybrid.py</code>: the BM25 index, the fusion, and one function that does both searches:</p><pre><code>import math
+import re
+from collections import Counter
+
+from my_ai_project.embedder import Embedder
+from my_ai_project.pipeline import Searcher
+from my_ai_project.store import Found
+
+WORD = re.compile(r&quot;[a-z0-9]+&quot;)
+
+
+def tokenize(text: str) -&gt; list[str]:
+    return WORD.findall(text.lower())
+
+
+class KeywordIndex:
+    &quot;&quot;&quot;BM25: a keyword score that likes rare words (E104) more than common ones (error).&quot;&quot;&quot;
+
+    def __init__(self, chunks: list[Found], k1: float = 1.5, b: float = 0.75) -&gt; None:
+        self.chunks = chunks
+        self.k1, self.b = k1, b
+        self.words = [Counter(tokenize(f&quot;{c.title} {c.text}&quot;)) for c in chunks]
+        self.lengths = [sum(w.values()) for w in self.words]
+        self.average = sum(self.lengths) / len(self.lengths)
+        self.chunks_with = Counter(word for w in self.words for word in w)
+
+    def idf(self, word: str) -&gt; float:
+        n, df = len(self.chunks), self.chunks_with.get(word, 0)
+        return math.log(1 + (n - df + 0.5) / (df + 0.5))
+
+    def search(self, query: str, top_k: int = 10) -&gt; list[Found]:
+        scored = []
+        for chunk, words, length in zip(self.chunks, self.words, self.lengths):
+            score = 0.0
+            for word in set(tokenize(query)):
+                count = words.get(word, 0)
+                if count:
+                    score += self.idf(word) * count * (self.k1 + 1) / (count + self.k1 * (1 - self.b + self.b * length / self.average))
+            if score &gt; 0:
+                scored.append(Found(chunk.doc_id, chunk.chunk_index, chunk.title, chunk.kind, chunk.text, round(score, 2)))
+        return sorted(scored, key=lambda f: f.similarity, reverse=True)[:top_k]
+
+
+def reciprocal_rank_fusion(rankings: list[list[Found]], k: int = 60) -&gt; list[Found]:
+    &quot;&quot;&quot;Combine ranked lists by position, not by score: a chunk near the top of either list rises.
+
+    The scores of the two lists cannot be added (a similarity is 0 to 1, a keyword score is not), but positions can.
+    The result keeps the vector similarity of the first list (0.0 if the chunk is not in it), so a refusal rule can still use it.&quot;&quot;&quot;
+    fused: dict[str, float] = {}
+    by_citation: dict[str, Found] = {}
+    for ranking in rankings:
+        for position, chunk in enumerate(ranking, start=1):
+            fused[chunk.citation] = fused.get(chunk.citation, 0.0) + 1 / (k + position)
+            by_citation.setdefault(chunk.citation, chunk)
+    vector_scores = {c.citation: c.similarity for c in rankings[0]}
+    order = sorted(fused, key=lambda c: fused[c], reverse=True)
+    return [
+        Found(by_citation[c].doc_id, by_citation[c].chunk_index, by_citation[c].title, by_citation[c].kind, by_citation[c].text, vector_scores.get(c, 0.0))
+        for c in order
+    ]
+
+
+def hybrid_search(question: str, embedder: Embedder, store: Searcher, keywords: KeywordIndex, top_k: int = 3, pool: int = 10) -&gt; list[Found]:
+    &quot;&quot;&quot;Vector search and keyword search, each with a pool of candidates, fused by rank.&quot;&quot;&quot;
+    by_meaning = store.search(embedder.embed([question])[0], top_k=pool)
+    by_words = keywords.search(question, top_k=pool)
+    return reciprocal_rank_fusion([by_meaning, by_words])[:top_k]</code></pre><p>A script that shows the three lists side by side. <code>hybrid_demo.py</code>:</p><pre><code>import os
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.hybrid import KeywordIndex, hybrid_search
+from my_ai_project.store import ChunkStore
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+embedder = FastEmbedder()
+keywords = KeywordIndex(store.all_chunks())
+
+for question in [&quot;What does error E104 mean?&quot;, &quot;How do I reset the monitor?&quot;]:
+    print(question)
+    lists = {
+        &quot;vector&quot;: store.search(embedder.embed([question])[0], top_k=3),
+        &quot;keyword&quot;: keywords.search(question, top_k=3),
+        &quot;hybrid&quot;: hybrid_search(question, embedder, store, keywords, top_k=3),
+    }
+    for name, found in lists.items():
+        print(f&quot;  {name:&lt;8}&quot; + &quot;  &quot;.join(f&quot;{f.citation} {f.similarity}&quot; for f in found))</code></pre><div class="out"><b>You should see</b><br>What does error E104 mean?<br>&nbsp;&nbsp;vector&nbsp;&nbsp;[error-e101#1] 0.73&nbsp;&nbsp;[error-e102#1] 0.69&nbsp;&nbsp;[error-e101#0] 0.69<br>&nbsp;&nbsp;keyword [faq-warranty#0] 5.44&nbsp;&nbsp;[error-e104#0] 2.99&nbsp;&nbsp;[error-e101#0] 2.17<br>&nbsp;&nbsp;hybrid&nbsp;&nbsp;[error-e104#0] 0.63&nbsp;&nbsp;[error-e101#0] 0.69&nbsp;&nbsp;[error-e102#0] 0.6<br>How do I reset the monitor?<br>&nbsp;&nbsp;vector&nbsp;&nbsp;[faq-reset#0] 0.81&nbsp;&nbsp;[manual-firmware-update#0] 0.69&nbsp;&nbsp;[error-e103#0] 0.69<br>&nbsp;&nbsp;keyword [faq-reset#0] 8.69&nbsp;&nbsp;[faq-alarm-sound#0] 5.84&nbsp;&nbsp;[faq-battery-life#0] 2.73<br>&nbsp;&nbsp;hybrid&nbsp;&nbsp;[faq-reset#0] 0.81&nbsp;&nbsp;[manual-firmware-update#0] 0.69&nbsp;&nbsp;[manual-calibration#1] 0.66</div><p>For the E104 question the vector list has the wrong pages, and the keyword list has <code>error-e104#0</code> in second place, behind <code>faq-warranty#0</code> (short chunks with the common words <em>what</em> and <em>does</em> score high). Neither list is good alone. The fused list puts <code>error-e104#0</code> first. For the reset question both lists agree, and the top of the fused list is the same as before. The score shown in the hybrid list is the <strong>vector similarity</strong> (0.0 if the chunk was not in the vector list): the fusion only decides the order.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c hybrid</code>). The database must be running, with the chunks from Day 67.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>all_chunks</code> to <code>store.py</code>, add <code>hybrid.py</code>, add <code>hybrid_demo.py</code>, and run it. Match the six lines.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Change <code>pool</code> in <code>hybrid_search</code> to 3, then 5, then 10, and print the E104 question&rsquo;s hybrid list each time. <strong>Predict first:</strong> at which pool does <code>error-e104#0</code> reach the top 3?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Two experiments. First, search for <code>What does error E-104 mean?</code> (with a hyphen) and read the keyword list: what does <code>tokenize</code> do to <code>E-104</code>? Second, add the vector similarity and the keyword score of every chunk (instead of fusing by rank) and print the top 3. Which chunk wins, and why is that wrong?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Fix the hyphen: make <code>tokenize</code> turn <code>E-104</code> into <code>e104</code>, without breaking other words (a hint is in Stuck). Then write the tests of the template. Finally, run your five questions from the Day 68 table through the hybrid search and note any question where hybrid is <em>worse</em> than vector alone. There may be none: write that down.</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Add keyword search and rank fusion&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;ZeroDivisionError&rdquo; in <code>KeywordIndex</code></strong>: <code>all_chunks()</code> returned an empty list, so the table is empty. Run <code>ingest.py</code>.</li><li><strong>The keyword list is empty</strong>: no query word is in any chunk. That is normal for a question in another language.</li><li><strong>The hybrid list has a chunk with similarity 0.0</strong>: it came from the keyword list only, and was not in the vector pool. It is normal; make the pool bigger if it bothers you.</li><li><strong>mypy: <code>Searcher</code> has no <code>search</code> with <code>top_k</code></strong>: import <code>Searcher</code> from <code>pipeline.py</code> (Day 67).</li></ul><details><summary>Hint: Step 4</summary><p>Before you split into words, remove a hyphen that sits between a letter and a digit. A regular expression such as <code>re.sub(r&quot;(?&lt;=[a-z])-(?=\d)&quot;, &quot;&quot;, text.lower())</code> does it.</p></details><details><summary>Solution: Step 2</summary><div class="out"><b>You should see</b><br>pool 3:&nbsp;&nbsp;[error-e101#0] 0.69&nbsp;&nbsp;[error-e101#1] 0.73&nbsp;&nbsp;[faq-warranty#0] 0.0<br>pool 5:&nbsp;&nbsp;[error-e104#0] 0.63&nbsp;&nbsp;[error-e101#0] 0.69&nbsp;&nbsp;[error-e101#1] 0.73<br>pool 10: [error-e104#0] 0.63&nbsp;&nbsp;[error-e101#0] 0.69&nbsp;&nbsp;[error-e102#0] 0.6</div><p>With a pool of 3, the E104 page is only in the keyword list (second place), so it gets one small share (1/62) and falls just outside the top 3. With a pool of 5 it also appears in the vector list, gets two shares, and rises to the top. The pool has to be bigger than the final <code>top_k</code>: it is the room that fusion works in.</p></details><details><summary>Solution: Step 3</summary><div class="out"><b>You should see</b><br>['what', 'does', 'error', 'e', '104', 'mean']</div><p>The hyphen splits <code>E-104</code> into <code>e</code> and <code>104</code>, so the keyword search lost its best clue (the keyword search then returns the E101 and E102 pages after the warranty page, and no E104 page in its top 3). Adding raw scores:</p><div class="out"><b>You should see</b><br>raw sum of the two scores:  [faq-warranty#0] 5.44  [error-e104#0] 3.62  [error-e101#0] 2.86</div><p>The keyword score (5.44) is much bigger than any similarity (0.73 at most), so the warranty page wins and the vector search has no say. This is why you combine ranks.</p><div class="out"><b>You should see</b><br>idf of e104: 2.89   idf of error: 2.38   idf of monitor: 0.69</div><p>The idf shows the rare-word weight: <code>e104</code> weighs about four times as much as <code>monitor</code>.</p></details><details><summary>Template: tests</summary><pre><code>from my_ai_project.hybrid import KeywordIndex, reciprocal_rank_fusion, tokenize
+from my_ai_project.store import Found
+
+CHUNKS = [
+    Found(&quot;error-e101&quot;, 0, &quot;E101 Sensor timeout&quot;, &quot;error&quot;, &quot;The sensor did not answer. Restart the monitor.&quot;, 0.0),
+    Found(&quot;error-e104&quot;, 0, &quot;E104 Disk full&quot;, &quot;error&quot;, &quot;The storage is above 95 percent. Export your readings.&quot;, 0.0),
+    Found(&quot;faq-reset&quot;, 0, &quot;How do I reset the monitor?&quot;, &quot;faq&quot;, &quot;Hold the power button for 5 seconds.&quot;, 0.0),
+]
+
+
+def test_tokenize_lowercases_and_keeps_codes() -&gt; None:
+    assert tokenize(&quot;What does E104 mean?&quot;) == [&quot;what&quot;, &quot;does&quot;, &quot;e104&quot;, &quot;mean&quot;]
+
+
+def test_a_rare_exact_word_finds_its_chunk() -&gt; None:
+    found = KeywordIndex(CHUNKS).search(&quot;E104&quot;)
+    assert [f.doc_id for f in found] == [&quot;error-e104&quot;]
+
+
+def test_chunks_without_any_query_word_are_left_out() -&gt; None:
+    assert KeywordIndex(CHUNKS).search(&quot;zebra&quot;) == []
+
+
+def test_a_rare_word_counts_more_than_a_common_one() -&gt; None:
+    index = KeywordIndex(CHUNKS)
+    assert index.idf(&quot;e104&quot;) &gt; index.idf(&quot;monitor&quot;)
+
+
+def test_fusion_rewards_a_chunk_that_both_lists_like() -&gt; None:
+    a, b, c = CHUNKS
+    fused = reciprocal_rank_fusion([[a, b, c], [b, c]])
+    assert fused[0].doc_id == &quot;error-e104&quot;
+
+
+def test_fusion_keeps_the_vector_similarity() -&gt; None:
+    first = Found(&quot;error-e101&quot;, 0, &quot;t&quot;, &quot;error&quot;, &quot;x&quot;, 0.73)
+    second = Found(&quot;error-e104&quot;, 0, &quot;t&quot;, &quot;error&quot;, &quot;y&quot;, 5.0)
+    fused = reciprocal_rank_fusion([[first], [second]])
+    similarity = {f.doc_id: f.similarity for f in fused}
+    assert similarity == {&quot;error-e101&quot;: 0.73, &quot;error-e104&quot;: 0.0}</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why did the vector search miss <code>E104</code>?</li><li>Why do you fuse by rank and not by adding the scores?</li><li>When would you add a reranker?</li></ol><details><summary>Answers</summary><ol><li>An embedding captures meaning, and the error codes look alike to it. The exact characters weigh little.</li><li>The two scores are in different units. The keyword score is much bigger than a similarity, so adding them lets one list decide. Ranks are comparable.</li><li>When you have measured that the right chunk is in the candidates but not near the top. A reranker costs time on every question, so it comes after a measurement, not before.</li></ol></details></section>
+<section id="game-day74" class="game"><h2><span class="n">+</span> &middot; Game: Hybrid Search Check <span class="t">5 min</span></h2>
+<p><p>You combine a keyword search with a vector search. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day74-start"><p>Ready? 8 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day74-play">Start the game</button></div>
+<div id="day74-round" hidden><div class="gtop"><span id="day74-num">Round 1</span><span id="day74-score">Score 0</span></div>
+<pre hidden><code id="day74-code"></code></pre><div class="q" id="day74-q"></div><div class="choices" id="day74-opts"></div>
+<div class="fb" id="day74-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day74-next" hidden>Next round</button></p></div>
+<div id="day74-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day74",[{"c": "python hybrid_demo.py   # What does error E104 mean?  vector list", "q": "What is first in the vector list?", "o": ["[error-e101#1] 0.73", "[error-e104#0]", "[faq-warranty#0]"], "a": 0, "out": "  vector  [error-e101#1] 0.73  [error-e102#1] 0.69  [error-e101#0] 0.69", "why": "The meaning of E104 is close to the other error codes."}, {"c": "keyword list for the same question", "q": "Where is [error-e104#0]?", "o": ["Second, behind [faq-warranty#0]", "First", "Not in the list"], "a": 0, "out": "  keyword [faq-warranty#0] 5.44  [error-e104#0] 2.99  [error-e101#0] 2.17", "why": "A keyword search finds the exact word, but common words in a short chunk also score."}, {"c": "hybrid_search(question, embedder, store, keywords, top_k=3)", "q": "What is first?", "o": ["[error-e104#0]", "[error-e101#1]", "[faq-warranty#0]"], "a": 0, "out": "  hybrid  [error-e104#0] 0.63  [error-e101#0] 0.69  [error-e102#0] 0.6", "why": "Fusion by rank rewards a chunk that both lists like."}, {"c": "hybrid for 'How do I reset the monitor?'", "q": "What happens to the first result?", "o": ["It stays [faq-reset#0]: both lists agree", "It changes to a manual", "It disappears"], "a": 0, "out": "  vector  [faq-reset#0] 0.81 ...\n  keyword [faq-reset#0] 8.69 ...\n  hybrid  [faq-reset#0] 0.81 ...", "why": "When both searches agree, hybrid does not change the top."}, {"c": "add the keyword score and the similarity of each chunk", "q": "Who wins?", "o": ["[faq-warranty#0] with 5.44, so the vector search has no say", "[error-e104#0]", "[error-e101#0]"], "a": 0, "out": "raw sum of the two scores:  [faq-warranty#0] 5.44  [error-e104#0] 3.62  [error-e101#0] 2.86", "why": "The two scores are in different units. Fuse by rank."}, {"c": "hybrid_search(..., pool=3)", "q": "Is [error-e104#0] in the top 3?", "o": ["No: the pool is too small for fusion to lift it", "Yes", "Only with top_k=10"], "a": 0, "out": "pool 3:  [error-e101#0] 0.69  [error-e101#1] 0.73  [faq-warranty#0] 0.0\npool 5:  [error-e104#0] 0.63  [error-e101#0] 0.69  [error-e101#1] 0.73", "why": "The pool is the room fusion works in. Make it bigger than top_k."}, {"c": "tokenize('What does error E-104 mean?')", "q": "What does the hyphen do?", "o": ["It splits E-104 into 'e' and '104'", "Nothing", "It removes the code"], "a": 0, "out": "['what', 'does', 'error', 'e', '104', 'mean']", "why": "A keyword search only matches the tokens you make. Normalise codes."}, {"c": "Decision: add a reranker now.", "q": "When is it worth it?", "o": ["When you measured the right chunk is among the candidates but not near the top", "Always", "Never"], "a": 0, "out": "(a judgement, no output)", "why": "A reranker costs time on every question. Measure first."}],["Hybrid rookie", "Hybrid regular", "Search blender"],"Keyword search likes rare words, vector search finds meaning, rank fusion combines them without comparing scores, and a reranker comes after a measurement.");</script>
+<p><small>Tick &ldquo;Play the Hybrid Search Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a keyword index that likes rare words, a rank fusion that needs no tuning, a hybrid search that finds <em>E104</em>, and a clear idea of what reranking is and when it is worth it.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 74 checklist.</li><li>Share one line in the comments: which word in your own data would a vector search miss?</li><li><strong>Next:</strong> Thursday is mixed practice: you answer five questions with citations, and refuse when there is no source, from a blank file.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

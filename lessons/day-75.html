@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 75 - Mixed practice: cite or refuse</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 75 &middot; LEVEL 6: RAG &middot; MIXED PRACTICE</div><h1>Mixed practice: cite or refuse</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to answer five questions with citations and refuse when there is no source, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why do you fuse two searches by rank and not by adding the scores?</li><li>What is an invented citation?</li></ol><details><summary>Answers</summary><ol><li>The scores are in different units: a keyword score is much bigger than a similarity, so one list would decide. Ranks can be compared.</li><li>A citation in the answer that is not one of the chunks you gave to the model.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You get a contract, and you write the script yourself, from a blank file. Use your earlier files (<code>pipeline.py</code>, <code>grounding.py</code>, <code>simulated.py</code>, <code>embedder.py</code>, <code>store.py</code>).</p><pre><code>ask_cited.py
+  input : the chunks table (Day 67) and these 5 questions
+  does  : for each question, retrieve the top 3 chunks, look at the best similarity;
+          if it is under 0.6, do not call the writer: print the not-found sentence;
+          otherwise ground the answer in the chunks (Day 72) and print the answer with its citation
+  prints: the question, then the answer or the not-found sentence, and the best similarity</code></pre><p>The five questions:</p><pre><code>How often should I calibrate the sensor?
+How do I silence the alarm?
+What does error E104 mean?
+Where can I buy a coffee?
+What is the capital of France?</code></pre><p><strong>Predict first</strong>, before you run anything: which of the five will be answered, and which will be refused? Write your guess. Is there one where the best similarity will be high and the answer still wrong?</p></section>
+<section><h2><span class="n">3</span> &middot; Do it <span class="t">25 min</span></h2><ol><li>Write <code>ask_cited.py</code> in <code>my-ai-project</code>. Do not open the solution until you have tried for 15 minutes.</li><li>Run it. Does each answer carry a citation, and are two of them refused?</li><li>Look at the E104 question. The best similarity is high. What does the answer say, and why is that a bad result? Then swap <code>retrieve</code> for <code>hybrid_search</code> (see the hint) and run it again.</li><li>Commit: <code>git add .</code> and <code>git commit -m &quot;Answer with citations and refuse without a source&quot;</code>.</li></ol><details><summary>Hint: where to start</summary><p>Loop over the questions. For each: <code>retrieve(question, embedder, store, top_k=3)</code>. If nothing came back or the best similarity is under <code>MIN_SCORE</code>, print the <code>NO_ANSWER</code> sentence from <code>prompts.py</code> and continue. Otherwise <code>ground(question, found, SimulatedWriter())</code> and print <code>answer.text</code>.</p></details><details><summary>Solution</summary><pre><code>import os
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.grounding import ground
+from my_ai_project.pipeline import retrieve
+from my_ai_project.prompts import NO_ANSWER
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkStore
+
+MIN_SCORE = 0.6
+QUESTIONS = [
+    &quot;How often should I calibrate the sensor?&quot;,
+    &quot;How do I silence the alarm?&quot;,
+    &quot;What does error E104 mean?&quot;,
+    &quot;Where can I buy a coffee?&quot;,
+    &quot;What is the capital of France?&quot;,
+]
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+embedder = FastEmbedder()
+writer = SimulatedWriter()
+
+for question in QUESTIONS:
+    found = retrieve(question, embedder, store, top_k=3)
+    if not found or found[0].similarity &lt; MIN_SCORE:
+        best = found[0].similarity if found else 0.0
+        print(f&quot;{question}\n  {NO_ANSWER}  (best similarity {best:.2f})&quot;)
+        continue
+    answer = ground(question, found, writer)
+    print(f&quot;{question}\n  {answer.text}  (best similarity {found[0].similarity:.2f})&quot;)</code></pre><div class="out"><b>You should see</b><br>How often should I calibrate the sensor?<br>&nbsp;&nbsp;Calibrate the sensor once a month [manual-calibration#0].&nbsp;&nbsp;(best similarity 0.85)<br>How do I silence the alarm?<br>&nbsp;&nbsp;Open Settings, choose Sound, and set the alarm to Silent [faq-alarm-sound#0].&nbsp;&nbsp;(best similarity 0.80)<br>What does error E104 mean?<br>&nbsp;&nbsp;I could not find that in the knowledge base.&nbsp;&nbsp;(best similarity 0.73)<br>Where can I buy a coffee?<br>&nbsp;&nbsp;I could not find that in the knowledge base.&nbsp;&nbsp;(best similarity 0.46)<br>What is the capital of France?<br>&nbsp;&nbsp;I could not find that in the knowledge base.&nbsp;&nbsp;(best similarity 0.41)</div></details><details><summary>Read the E104 line, then fix it</summary><p>The best similarity for the E104 question is <strong>0.73</strong>, higher than for the alarm question, and the answer is still &ldquo;not found&rdquo;. The score says <em>something similar exists</em> (other error pages), not <em>the answer exists</em>. The E104 page was never retrieved (Day 72 and Day 74). Swap in the hybrid search:</p><pre><code>from my_ai_project.hybrid import KeywordIndex, hybrid_search
+
+keywords = KeywordIndex(store.all_chunks())
+...
+found = hybrid_search(question, embedder, store, keywords, top_k=3)
+best = max((f.similarity for f in found), default=0.0)   # not found[0]: after fusion the first chunk may have 0.0</code></pre><div class="out"><b>You should see</b><br>What does error E104 mean?<br>&nbsp;&nbsp;The storage is above 95 percent [error-e104#0].</div><p>Now it is answered, with the right citation. Notice the comment: after fusion, the first chunk may come from the keyword list only and have a similarity of 0.0, so take the best similarity of the whole list.</p></details></section>
+<section><h2><span class="n">4</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why do you check the best similarity <em>before</em> calling the writer?</li><li>Why can a high similarity still end in &ldquo;not found&rdquo;?</li><li>What does the answer line give a reader that a plain answer does not?</li></ol><details><summary>Answers</summary><ol><li>If nothing is close, the sources cannot help, and a writer might fill the gap with something made up. Refusing in code does not depend on the writer&rsquo;s mood, and it saves a model call.</li><li>The score measures how close the best chunk is, not whether the answer is in it. The right page may not have been retrieved at all.</li><li>A citation: the reader can open the page and check the answer, and your code can check that the page was really retrieved.</li></ol></details></section>
+<section id="game-day75" class="game"><h2><span class="n">+</span> &middot; Game: Cite or Refuse <span class="t">5 min</span></h2>
+<p><p>You answer with a citation or refuse. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day75-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day75-play">Start the game</button></div>
+<div id="day75-round" hidden><div class="gtop"><span id="day75-num">Round 1</span><span id="day75-score">Score 0</span></div>
+<pre hidden><code id="day75-code"></code></pre><div class="q" id="day75-q"></div><div class="choices" id="day75-opts"></div>
+<div class="fb" id="day75-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day75-next" hidden>Next round</button></p></div>
+<div id="day75-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day75",[{"c": "ask_cited.py: How often should I calibrate the sensor?", "q": "What does it print?", "o": ["The answer with [manual-calibration#0], best similarity 0.85", "Not found", "An answer without a citation"], "a": 0, "out": "  Calibrate the sensor once a month [manual-calibration#0].  (best similarity 0.85)", "why": "The best similarity is over 0.6, so the writer is called, and the answer is grounded."}, {"c": "ask_cited.py: Where can I buy a coffee?", "q": "Is the writer called?", "o": ["No: the best similarity 0.46 is under 0.6", "Yes", "Only for 3 chunks"], "a": 0, "out": "  I could not find that in the knowledge base.  (best similarity 0.46)", "why": "Refusing in code does not depend on the writer."}, {"c": "ask_cited.py: What is the capital of France?", "q": "What is the best similarity?", "o": ["0.41", "0.85", "0.73"], "a": 0, "out": "  I could not find that in the knowledge base.  (best similarity 0.41)", "why": "Nothing in the knowledge base is close to this question."}, {"c": "ask_cited.py: What does error E104 mean?   # vector search only", "q": "Why is it not found, with a best similarity of 0.73?", "o": ["The E104 page was never retrieved: the score only says similar pages exist", "The writer is broken", "The threshold is too high"], "a": 0, "out": "  I could not find that in the knowledge base.  (best similarity 0.73)", "why": "A high score does not mean the answer is there."}, {"c": "swap retrieve for hybrid_search", "q": "What does the E104 question print now?", "o": ["The storage is above 95 percent [error-e104#0].", "Not found", "A citation to error-e101"], "a": 0, "out": "What does error E104 mean?\n  The storage is above 95 percent [error-e104#0].", "why": "Keyword search brings the exact page into the candidates."}, {"c": "best = max((f.similarity for f in found), default=0.0)", "q": "Why not found[0].similarity after fusion?", "o": ["The first chunk may come from the keyword list only, with similarity 0.0", "It is slower", "It is a different type"], "a": 0, "out": "[('[error-e104#0]', 0.63), ('[error-e101#0]', 0.69), ('[error-e102#0]', 0.6)]", "why": "Fusion decides the order; the similarity shown is from the vector list."}],["Cite rookie", "Cite regular", "Refusal builder"],"Check the best similarity before calling the writer, remember that a high score does not mean the answer exists, and use hybrid retrieval so exact words find their page.");</script>
+<p><small>Tick &ldquo;Play the Cite or Refuse game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a script that answers with citations and refuses when there is no source, from a blank file, and you found a question where the score is high and the answer still fails.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 75 checklist.</li><li>Share one line in the comments: which question surprised you?</li><li><strong>Next:</strong> Friday is a teach-back: you explain how RAG reduces made-up answers, and what it does not fix.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

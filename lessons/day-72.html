@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 72 - Citations and grounding</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 72 &middot; LEVEL 6: RAG</div><h1>Citations and grounding</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to give a model numbered sources, get an answer with citations, and catch a citation it invented.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is five questions not enough to pick a chunk size for good?</li><li>What does a wrong <code>kind</code> give in <code>/api/search</code>: an empty list or an error?</li></ol><details><summary>Answers</summary><ol><li>Too few questions to see a real difference, so a result can flip by chance. Test on your own questions and read the failures.</li><li>An error: <code>422</code>, because <code>Literal</code> lets FastAPI check the value.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your assistant says &ldquo;Calibrate once a month.&rdquo; A user asks: &ldquo;Where does it say that?&rdquo; Can your app answer, and can it tell if the answer was made up?</strong></p><details><summary>Guess first, then open</summary><p>Only if every answer carries <strong>where it came from</strong>. A citation such as <code>[manual-calibration#0]</code> lets the user open the page, and lets your <em>code</em> check that the page was really one of the chunks you gave to the model. An answer with no citation, or with one you never gave, should not be shown.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: grounding means &ldquo;only from these sources&rdquo;</h3>
+<p>A <strong>grounded</strong> answer is built from the chunks you retrieved, not from what the model remembers. You do two things in the prompt: you give the chunks as <strong>numbered sources</strong>, each with its citation (<code>[doc_id#chunk_index]</code>), and you write the rule: use only these sources, cite each fact, and say &ldquo;not found&rdquo; if the sources do not have the answer. The rules go in the system prompt; the sources and the question go in the user message.</p>
+<h3>Piece 2: the citation is the chunk&rsquo;s id</h3>
+<p>You already made the id on Day 67: <code>doc_id</code> plus <code>chunk_index</code>. The model does not invent the id format; it copies it from the source line. That is why you show the id <em>exactly as written</em>.</p>
+<h3>Piece 3: check the citations in code</h3>
+<p>A model can still cite something that was never in the prompt. So after the answer, find every <code>[...]</code> with a regular expression and check that each id is in the set of chunks you retrieved. Ids that are not there are <strong>invented citations</strong>. Real citations become the <em>Sources</em> line you show to the user.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> the citation check is like validating a foreign key: every reference in the output must exist in the set you passed in. <code>cited_ids</code> is a <code>Regex.Matches(...).Select(...).Distinct()</code>, and the dataclass is a record with a computed property.</div>
+<div class="box cap"><strong>Capstone:</strong> in <code>ai-knowledge-assistant</code> a reader must be able to check every answer. This is the part that makes it possible, and on Saturday it sits in the real pipeline.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. A new module <code>src/my_ai_project/grounding.py</code>: the rules, a function that builds the numbered message, and <code>ground</code>, which calls the writer and checks the citations:</p><pre><code>import re
+from dataclasses import dataclass
+from typing import Protocol
+
+from my_ai_project.prompts import NO_ANSWER
+from my_ai_project.store import Found
+
+RULES = f&quot;&quot;&quot;You are a support assistant for the PumpGuard monitor.
+
+Rules:
+1. Use only the sources in the user message. Do not use any other knowledge.
+2. Answer in at most two short sentences.
+3. After each fact, add the citation of its source, exactly as written, like [error-e101#0].
+4. If the sources do not contain the answer, reply with exactly: {NO_ANSWER}&quot;&quot;&quot;
+
+CITATION = re.compile(r&quot;\[([a-z0-9-]+#\d+)\]&quot;)
+
+
+class Writer(Protocol):
+    def complete(self, prompt: str, system: str | None = None) -&gt; str: ...
+
+
+@dataclass
+class GroundedAnswer:
+    text: str
+    sources: list[Found]  # the retrieved chunks that the answer really cites
+    invented: list[str]  # citations in the text that are not in the retrieved set
+
+    @property
+    def refused(self) -&gt; bool:
+        return self.text.strip() == NO_ANSWER
+
+
+def build_message(question: str, found: list[Found]) -&gt; str:
+    &quot;&quot;&quot;The user message: numbered sources, then the question. The rules go in the system prompt.&quot;&quot;&quot;
+    sources = &quot;\n&quot;.join(f&quot;{f.citation} {f.title}. {f.text}&quot; for f in found)
+    return f&quot;Sources:\n{sources}\n\nQuestion: {question}&quot;
+
+
+def cited_ids(text: str) -&gt; list[str]:
+    &quot;&quot;&quot;The citations in an answer, without the brackets, once each, in order.&quot;&quot;&quot;
+    return list(dict.fromkeys(CITATION.findall(text)))
+
+
+def ground(question: str, found: list[Found], writer: Writer) -&gt; GroundedAnswer:
+    text = writer.complete(build_message(question, found), RULES).strip()
+    by_id = {f&quot;{f.doc_id}#{f.chunk_index}&quot;: f for f in found}
+    ids = cited_ids(text)
+    return GroundedAnswer(text, [by_id[i] for i in ids if i in by_id], [i for i in ids if i not in by_id])</code></pre><div class="box"><strong>This writer is simulated.</strong> We have no key in this lesson, so we use <code>SimulatedWriter</code>: a small class that reads the numbered sources and writes the first sentence of the top source with its citation. It is <strong>not a real model</strong> and a real model will word things differently. With <code>careless=True</code> it also cites a source that was never given, to show you what the check catches. Add it to <code>simulated.py</code>:</div><pre><code>class SimulatedWriter:
+    &quot;&quot;&quot;A stand-in for a real model that follows the numbered-source prompt of Day 72: no key, no cost.
+
+    It is NOT a real model. It answers with the first sentence of the top source and its citation, and it says
+    &quot;not found&quot; only when no word of the question appears in that source. A real model is less predictable.
+    With careless=True it also cites a source that was never given: the mistake that grounding must catch.&quot;&quot;&quot;
+
+    def __init__(self, careless: bool = False) -&gt; None:
+        self.careless = careless
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        question = prompt.rsplit(&quot;Question:&quot;, 1)[1].strip()
+        sources = re.findall(r&quot;^\[([a-z0-9-]+#\d+)\] (.+)$&quot;, prompt, re.MULTILINE)
+        words = {w for w in re.findall(r&quot;[a-z0-9]+&quot;, question.lower()) if len(w) &gt;= 4 and w not in STOP_WORDS}
+        top_id, top_text = sources[0] if sources else (&quot;&quot;, &quot;&quot;)
+        if not any(word in top_text.lower() for word in words):
+            return NO_ANSWER
+        body = top_text.split(&quot;. &quot;, 1)[1] if &quot;. &quot; in top_text else top_text
+        sentence = body.split(&quot;. &quot;)[0].rstrip(&quot;.&quot;) + &quot;.&quot;
+        text = sentence[:-1] + f&quot; [{top_id}].&quot;
+        if self.careless:
+            text += &quot; Contact support if it keeps happening [faq-support#0].&quot;
+        return text</code></pre><p>A script that retrieves, builds the prompt, and asks both writers. <code>ask_with_sources.py</code>:</p><pre><code>import os
+
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.grounding import RULES, build_message, ground
+from my_ai_project.pipeline import retrieve
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkStore
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+embedder = FastEmbedder()
+question = &quot;How often should I calibrate the sensor?&quot;
+
+found = retrieve(question, embedder, store, top_k=3)
+print(&quot;--- system prompt ---&quot;)
+print(RULES)
+print(&quot;--- user message ---&quot;)
+print(build_message(question, found))
+
+for writer in (SimulatedWriter(), SimulatedWriter(careless=True)):
+    answer = ground(question, found, writer)
+    print(f&quot;\n--- {&#x27;careless&#x27; if writer.careless else &#x27;careful&#x27;} writer ---&quot;)
+    print(&quot;Answer:&quot;, answer.text)
+    print(&quot;Sources:&quot;, &quot;, &quot;.join(f&quot;{s.citation} {s.title}&quot; for s in answer.sources) or &quot;none&quot;)
+    print(&quot;Invented citations:&quot;, answer.invented or &quot;none&quot;)</code></pre><div class="out"><b>You should see</b><br>--- system prompt ---<br>You are a support assistant for the PumpGuard monitor.<br><br>Rules:<br>1. Use only the sources in the user message. Do not use any other knowledge.<br>2. Answer in at most two short sentences.<br>3. After each fact, add the citation of its source, exactly as written, like [error-e101#0].<br>4. If the sources do not contain the answer, reply with exactly: I could not find that in the knowledge base.<br>--- user message ---<br>Sources:<br>[manual-calibration#0] Calibration guide. Calibrate the sensor once a month. Open the menu, choose Calibrate, and keep the pump running at normal speed for two minutes.<br>[manual-maintenance#1] Maintenance guide. Check the sensor cable for cracks every three months and replace it if the outer layer is damaged.<br>[manual-maintenance#0] Maintenance guide. Wipe the casing with a dry cloth every month. Do not use water or cleaning spray near the sensor port.<br><br>Question: How often should I calibrate the sensor?<br><br>--- careful writer ---<br>Answer: Calibrate the sensor once a month [manual-calibration#0].<br>Sources: [manual-calibration#0] Calibration guide<br>Invented citations: none<br><br>--- careless writer ---<br>Answer: Calibrate the sensor once a month [manual-calibration#0]. Contact support if it keeps happening [faq-support#0].<br>Sources: [manual-calibration#0] Calibration guide<br>Invented citations: ['faq-support#0']</div><p>Look at the last two blocks. The careful writer cites only what it was given. The careless one adds <code>[faq-support#0]</code>, and <code>ground</code> reports it in <code>invented</code> and leaves it out of <code>Sources</code>.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c grounding</code>). Start the database from Day 60 (<code>docker compose up -d</code>) and make sure <code>ingest.py</code> from Day 67 has filled the <code>chunks</code> table.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>grounding.py</code>, add <code>SimulatedWriter</code> to <code>simulated.py</code>, add <code>ask_with_sources.py</code> and run it. Match the answers, the <code>Sources</code> lines and the <code>Invented citations</code> lines.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Ask a different question from your knowledge base (for example <em>How do I silence the alarm?</em>). <strong>Predict first:</strong> which citation will the answer carry? Then check, and open the page it points to: does the answer match the page?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>In the careless run, remove the check: make <code>ground</code> keep every cited id as a source. What would a user see in the <code>Sources</code> line? Why is that worse than an answer with no sources at all?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Two jobs. First, show the sources in a form a user can read:</p><pre><code>Answer: Calibrate the sensor once a month [manual-calibration#0].
+Sources:
+  [manual-calibration#0] Calibration guide</code></pre>
+<p>Write a small function <code>format_sources(answer)</code> that makes this text. Then write the tests of the template. Second, ask <em>What does error E104 mean?</em> with <code>retrieve</code> and print the top 3 chunks (use the search of Day 67). Is the E104 page there? Write down what you see. (You fix this on Wednesday.)</p>
+<p>Finally, commit: <code>git add .</code> and <code>git commit -m &quot;Ground answers in numbered sources&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The citation is not found</strong> (<code>invented</code> has the id of a real source): check that you copy the id the same way in the prompt and in the regex. The id is <code>doc_id#chunk_index</code>, in square brackets, lower case.</li><li><strong>The answer has no citation</strong>: the writer did not follow rule 3. In this lesson that means your <code>RULES</code> text was changed. Keep rule 3 exactly.</li><li><strong>&ldquo;ModuleNotFoundError ... grounding&rdquo;</strong>: the file must be in <code>src/my_ai_project/</code>.</li><li><strong>The sources look wrong</strong>: you may have an old table without the <code>kind</code> and <code>title</code> columns. Run <code>ingest.py</code> from Day 67 again.</li></ul><details><summary>Hint: Step 4</summary><p>The sources of an answer are <code>answer.sources</code>, each a <code>Found</code> with <code>citation</code> and <code>title</code>. Join them with a newline and start each line with two spaces. If the list is empty, return an empty string.</p></details><details><summary>Solution: Step 4 (what you should see for E104)</summary><p>The search for the E104 question puts three other error pages first:</p><div class="out"><b>You should see</b><br>What does error E104 mean?<br>&nbsp;&nbsp;0.73&nbsp;&nbsp;[error-e101#1]<br>&nbsp;&nbsp;0.69&nbsp;&nbsp;[error-e102#1]<br>&nbsp;&nbsp;0.69&nbsp;&nbsp;[error-e101#0]</div><p>The E104 page (<code>error-e104#0</code>) is <em>not</em> in the top 3, so an answer built from these sources cannot be about E104. The citation makes this visible: a reader sees <code>error-e101</code> and knows it is the wrong page. On Wednesday you add a keyword search that finds exact codes.</p></details><details><summary>Solution: Step 3</summary><p>The <code>Sources</code> line would show <code>faq-support#0</code>, a page that is not in your knowledge base. That is worse than no sources: it looks like proof and sends the user to nothing. A missing citation is honest; an invented one is a lie with a stamp on it.</p></details><details><summary>Template: tests</summary><pre><code>from my_ai_project.grounding import GroundedAnswer, build_message, cited_ids, ground
+from my_ai_project.prompts import NO_ANSWER
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import Found
+
+FOUND = [
+    Found(&quot;faq-battery&quot;, 0, &quot;Battery life&quot;, &quot;faq&quot;, &quot;The battery lasts about eight hours. Charge it every night.&quot;, 0.8),
+    Found(&quot;error-e102&quot;, 0, &quot;E102 Battery low&quot;, &quot;error&quot;, &quot;The battery is under 15 percent. Connect the power cable.&quot;, 0.7),
+]
+
+
+class Reply:
+    def __init__(self, text: str) -&gt; None:
+        self.text = text
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        return self.text
+
+
+def test_the_message_numbers_every_source() -&gt; None:
+    message = build_message(&quot;How long?&quot;, FOUND)
+    assert &quot;[faq-battery#0] Battery life. The battery lasts about eight hours.&quot; in message
+    assert &quot;[error-e102#0] E102 Battery low.&quot; in message
+    assert message.endswith(&quot;Question: How long?&quot;)
+
+
+def test_cited_ids_are_unique_and_in_order() -&gt; None:
+    assert cited_ids(&quot;A [error-e102#0]. B [faq-battery#0]. C [error-e102#0].&quot;) == [&quot;error-e102#0&quot;, &quot;faq-battery#0&quot;]
+    assert cited_ids(&quot;no citation here&quot;) == []
+
+
+def test_a_good_answer_keeps_its_sources() -&gt; None:
+    answer = ground(&quot;How long?&quot;, FOUND, Reply(&quot;About eight hours [faq-battery#0].&quot;))
+    assert [s.doc_id for s in answer.sources] == [&quot;faq-battery&quot;]
+    assert answer.invented == []
+
+
+def test_an_invented_citation_is_reported_and_not_kept() -&gt; None:
+    answer = ground(&quot;How long?&quot;, FOUND, Reply(&quot;About eight hours [faq-battery#0]. Call us [faq-support#0].&quot;))
+    assert answer.invented == [&quot;faq-support#0&quot;]
+    assert [s.doc_id for s in answer.sources] == [&quot;faq-battery&quot;]
+
+
+def test_a_refusal_is_recognised() -&gt; None:
+    assert ground(&quot;How long?&quot;, FOUND, Reply(NO_ANSWER)).refused
+    assert not GroundedAnswer(&quot;About eight hours [faq-battery#0].&quot;, [], []).refused
+
+
+def test_the_simulated_writer_cites_its_top_source() -&gt; None:
+    answer = ground(&quot;How long does the battery last?&quot;, FOUND, SimulatedWriter())
+    assert answer.text == &quot;The battery lasts about eight hours [faq-battery#0].&quot;</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What does grounding mean for an answer?</li><li>Where do the rules go, and where do the sources go?</li><li>Why do you check the citations in code and not trust the model?</li></ol><details><summary>Answers</summary><ol><li>The answer is built from the retrieved chunks only, and every fact points to one of them.</li><li>The rules go in the system prompt. The numbered sources and the question go in the user message.</li><li>A model can cite something that was never given. The check compares each cited id with the retrieved set and finds the ones that are invented.</li></ol></details></section>
+<section id="game-day72" class="game"><h2><span class="n">+</span> &middot; Game: Source Checker <span class="t">5 min</span></h2>
+<p><p>You ground an answer in numbered sources. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day72-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day72-play">Start the game</button></div>
+<div id="day72-round" hidden><div class="gtop"><span id="day72-num">Round 1</span><span id="day72-score">Score 0</span></div>
+<pre hidden><code id="day72-code"></code></pre><div class="q" id="day72-q"></div><div class="choices" id="day72-opts"></div>
+<div class="fb" id="day72-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day72-next" hidden>Next round</button></p></div>
+<div id="day72-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day72",[{"c": "build_message(question, found)", "q": "What does the user message contain?", "o": ["The numbered sources like [manual-calibration#0], then the question", "Only the question", "The rules"], "a": 0, "out": "Sources:\n[manual-calibration#0] Calibration guide. Calibrate the sensor once a month. ...\n\nQuestion: How often should I calibrate the sensor?", "why": "The rules go in the system prompt. The sources and the question go in the user message."}, {"c": "ground(question, found, SimulatedWriter())   # the careful writer", "q": "What are the Sources and the invented citations?", "o": ["Sources: [manual-calibration#0]; invented: none", "No sources", "Invented: [manual-calibration#0]"], "a": 0, "out": "Answer: Calibrate the sensor once a month [manual-calibration#0].\nSources: [manual-calibration#0] Calibration guide\nInvented citations: none", "why": "Every cited id was one of the retrieved chunks."}, {"c": "ground(question, found, SimulatedWriter(careless=True))", "q": "What does the check report?", "o": ["Invented: ['faq-support#0'], and it is left out of Sources", "Nothing, the answer is fine", "An exception"], "a": 0, "out": "Answer: Calibrate the sensor once a month [manual-calibration#0]. Contact support if it keeps happening [faq-support#0].\nSources: [manual-calibration#0] Calibration guide\nInvented citations: ['faq-support#0']", "why": "A citation that was never in the prompt is an invented one."}, {"c": "cited_ids('A [error-e102#0]. B [faq-battery#0]. C [error-e102#0].')", "q": "What does it return?", "o": ["['error-e102#0', 'faq-battery#0']", "Three ids", "['error-e102#0']"], "a": 0, "out": "['error-e102#0', 'faq-battery#0']", "why": "Unique, in order of appearance, without the brackets."}, {"c": "retrieve('What does error E104 mean?', ..., top_k=3)", "q": "Is the E104 page in the top 3?", "o": ["No: error-e101#1, error-e102#1, error-e101#0", "Yes, first", "Yes, third"], "a": 0, "out": "  0.73  [error-e101#1]\n  0.69  [error-e102#1]\n  0.69  [error-e101#0]", "why": "Error codes look alike to an embedding, so the exact one is not found."}, {"c": "SimulatedWriter", "q": "What is it?", "o": ["A stand-in that is NOT a real model", "A real model", "A database"], "a": 0, "out": "(it writes the first sentence of the top source and its citation)", "why": "Real models word things differently. Always label simulated results."}, {"c": "Decision: the model must cite, so the answer can be trusted.", "q": "What is missing?", "o": ["A code check that each citation was really retrieved", "Nothing", "A bigger model"], "a": 0, "out": "(a judgement, no output)", "why": "A model can cite something that was never given."}],["Source rookie", "Source regular", "Grounding builder"],"A grounded answer uses numbered sources, rules in the system prompt, and a code check for invented citations, and the sources shown to the user are only the real ones.");</script>
+<p><small>Tick &ldquo;Play the Source Checker game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a prompt with numbered sources, a check that finds invented citations, a <code>Sources</code> list a user can read, and a first look at a question your search cannot answer yet.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 72 checklist.</li><li>Share one line in the comments: which of your own answers would you most want to check?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you add a keyword search next to the vector search and combine them, so that <em>E104</em> finds its page.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
