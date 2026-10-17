@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 88 - MCP: what it is, and a tiny server</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 88 &middot; LEVEL 7: TOOLS</div><h1>MCP: what it is, and a tiny server</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to run a tiny MCP server, list its tools from a client, call one, and say where MCP sits next to function calling.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is the permission checked before the input in a tool?</li><li>Name two parts of a good tool error.</li></ol><details><summary>Answers</summary><ol><li>So that a refused caller learns nothing about the data (no list of valid codes, no hint that a record exists).</li><li>A stable code, a plain message, a hint for the next step.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You wrote a tool for your assistant. A colleague writes another AI app and wants the same tool. Do they copy your code? And what if there are ten apps and ten tools?</strong></p><details><summary>Guess first, then open</summary><p>Copying does not scale: ten apps and ten tools means a hundred little adapters. The <strong>Model Context Protocol</strong> (MCP) is a shared standard: you put the tool in a <em>server</em> once, and any MCP-aware app can list its tools and call them, in the same way, without knowing how they are written.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: a host, a client and a server</h3>
+<p>The <strong>host</strong> is the AI application. Inside it, an MCP <strong>client</strong> keeps a connection to an MCP <strong>server</strong>, which is a separate program. The server offers <strong>tools</strong> (and, in the protocol, also <em>resources</em> and <em>prompts</em>; today only tools). The client can ask <code>list_tools</code> and <code>call_tool</code>.</p>
+<h3>Piece 2: MCP does not replace function calling</h3>
+<p>This is the part that is easy to mix up. The <em>model</em> still uses function calling, as on Day 81: the host passes the tool list in the request, and the model replies with a <code>tool_use</code>. MCP is what happens <strong>around</strong> that: how the host <em>finds</em> the tools (it asks the server) and how it <em>runs</em> the call (it sends it to the server). Function calling is between the host and the model. MCP is between the host and the tools.</p>
+<h3>Piece 3: a server talks over stdio or HTTP</h3>
+<p>With <strong>stdio</strong>, the client starts the server as a process and they talk through standard input and output. With <strong>HTTP</strong>, the server runs somewhere and the client connects to a URL. One rule of stdio is important: <strong>a stdio server must never print to standard output</strong>, because that channel carries the protocol. Logs go to standard error.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> it is like a language server (LSP) or a plug-in host: one protocol, many tools, and the editor does not know how each one is written. An MCP server with a stdio transport is like a child process you start with <code>Process.Start</code> and talk to with JSON-RPC lines.</div>
+<div class="box cap"><strong>Capstone:</strong> the Module 7 checkpoint says &ldquo;optionally, expose it as a minimal MCP server&rdquo;. Today you learn the shape with a toy tool; on Thursday you expose the incident lookup.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read the picture first:</p><pre><code>  the AI application (the host)
+     |  1. starts / connects to a server        2. asks: which tools do you have?
+     |  3. passes those tools to the model      4. the model asks for one (tool_use)
+     |  5. the app sends the call to the server 6. the server runs it and replies
+     v
+  the MCP server (a separate program: word_server.py)</code></pre><p>Add the SDK with <code>uv add mcp</code>. A tiny server with one tool, in <code>word_server.py</code>. The type hints become the input schema, and the docstring becomes the description, so write them like a prompt:</p><pre><code>from mcp.server import MCPServer
+
+mcp = MCPServer(&quot;word-tools&quot;)
+
+
+@mcp.tool()
+def count_words(text: str) -&gt; int:
+    &quot;&quot;&quot;Count the words in a text. Use it when the user asks how long a text is.&quot;&quot;&quot;
+    return len(text.split())
+
+
+if __name__ == &quot;__main__&quot;:
+    mcp.run()   # talks over stdin and stdout: a client starts this file as a process</code></pre><p>A client that starts the server, lists its tools and calls one. <code>list_and_call.py</code>:</p><pre><code>import asyncio
+import sys
+
+from mcp import Client, StdioServerParameters
+
+
+async def main() -&gt; None:
+    server = StdioServerParameters(command=sys.executable, args=[&quot;word_server.py&quot;])
+    async with Client(server) as client:
+        listing = await client.list_tools()
+        for tool in listing.tools:
+            print(&quot;tool:       &quot;, tool.name)
+            print(&quot;description:&quot;, tool.description)
+            print(&quot;input:      &quot;, tool.input_schema)
+        result = await client.call_tool(&quot;count_words&quot;, {&quot;text&quot;: &quot;calibrate the sensor once a month&quot;})
+        print(&quot;result:     &quot;, result.content[0].text, &quot;| is_error:&quot;, result.is_error)
+
+
+asyncio.run(main())</code></pre><div class="out"><b>You should see</b><br>tool:        count_words<br>description: Count the words in a text. Use it when the user asks how long a text is.<br>input:       {'type': 'object', 'properties': {'text': {'title': 'Text', 'type': 'string'}}, 'required': ['text'], 'title': 'count_wordsArguments'}<br>result:      6 | is_error: False</div><p>Nobody typed the schema: it was made from <code>text: str</code>. The client learned the tool&rsquo;s name, description and input by asking, which is exactly what a host needs to pass the tool to a model.</p><div class="box"><strong>Version note.</strong> This lesson was run with the Python SDK <code>mcp</code> 2.3.0, where the server class is <code>MCPServer</code> and the client is <code>mcp.Client</code>. Many older examples use version 1: <code>FastMCP</code> from <code>mcp.server.fastmcp</code> and a <code>ClientSession</code>. The ideas are the same; if your install is version 1, use its names.</div><pre><code>from mcp.server.fastmcp import FastMCP     # version 1 of the SDK
+mcp = FastMCP(&quot;word-tools&quot;)</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c mcp</code>). You need no database and no model.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add the two files and run <code>uv run python list_and_call.py</code>. Match the four lines.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Add a second tool to the server, <code>shout(text: str) -> str</code>, that returns the text in capital letters. <strong>Predict first:</strong> what will <code>list_tools</code> print, and did you change the client?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Add <code>print(&quot;starting&quot;)</code> at the top of <code>word_server.py</code> and run the client again. What happens in your version? (Then take it out, or use <code>sys.stderr</code>.)</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Call <code>count_words</code> with a wrong input: <code>{&quot;text&quot;: 5}</code>. Print <code>result.is_error</code> and the text. Then draw, in your own words, which messages go between the host, the model and the MCP server when a user asks &ldquo;how many words are in this sentence?&rdquo; (six arrows, like the picture).</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Run a tiny MCP server and list its tools&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;cannot import name MCPServer&rdquo;</strong>: you have version 1 of the SDK. Use <code>FastMCP</code> (see the version note) or upgrade with <code>uv add -U mcp</code>.</li><li><strong>The client hangs</strong>: the server file path is wrong, or the server crashed on start. Run <code>uv run python word_server.py</code> alone; it should wait silently for input (press Ctrl-C).</li><li><strong>A parse or JSON error from the client</strong>: check whether something is printed to standard output. Remove the <code>print</code> or send it to standard error.</li><li><strong>Windows or a different folder</strong>: use <code>sys.executable</code> as in the example, and a path that does not depend on the current folder.</li></ul><details><summary>Solution: Step 2</summary><p>The list shows two tools, <code>count_words</code> and <code>shout</code>, and you did not change the client: it asks the server what it has. That is the point of the protocol.</p></details><details><summary>Solution: Step 3</summary><p>I did not record one fixed result for this step, because it depends on the version of the SDK: some versions stop with a parse error, some log the bad line and go on. Either way the rule does not change. For a stdio server, standard output belongs to the protocol, and a line that is not a protocol message is a bug waiting to happen. Use <code>print(..., file=sys.stderr)</code> or the <code>logging</code> module (which writes to standard error). Write down what <em>your</em> version did.</p></details><details><summary>Solution: Step 4</summary><p>The server checks the input against the schema, so <code>5</code> instead of a string should give <code>is_error: True</code> and a message from the server (check it on your version). You get the same shape of failure as with your own tools on Day 82, from a program you did not write the client for.</p><p>The six arrows: (1) the host starts the server, (2) it asks for the tools, (3) it sends the tools and the question to the model, (4) the model replies with a tool_use, (5) the host sends the call to the server, (6) the server&rsquo;s result goes back to the host, which sends it to the model as a tool_result.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Does MCP replace function calling? What is each one between?</li><li>Why must a stdio server not print to standard output?</li><li>What does the client learn when it calls <code>list_tools</code>?</li></ol><details><summary>Answers</summary><ol><li>No. Function calling is between the host and the model (the model asks for a tool). MCP is between the host and the tools (how it finds and runs them).</li><li>Standard output carries the protocol messages, so extra text can break them. Logs go to standard error.</li><li>Each tool&rsquo;s name, description and input schema: everything the host needs to offer it to a model.</li></ol></details></section>
+<section id="game-day88" class="game"><h2><span class="n">+</span> &middot; Game: MCP Check <span class="t">5 min</span></h2>
+<p><p>You run a tiny MCP server. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day88-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day88-play">Start the game</button></div>
+<div id="day88-round" hidden><div class="gtop"><span id="day88-num">Round 1</span><span id="day88-score">Score 0</span></div>
+<pre hidden><code id="day88-code"></code></pre><div class="q" id="day88-q"></div><div class="choices" id="day88-opts"></div>
+<div class="fb" id="day88-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day88-next" hidden>Next round</button></p></div>
+<div id="day88-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day88",[{"c": "await client.list_tools()   # word_server.py", "q": "What does the client learn?", "o": ["The name, description and input schema of count_words", "Only the name", "The source code"], "a": 0, "out": "tool:        count_words\ndescription: Count the words in a text. Use it when the user asks how long a text is.\ninput:       {'type': 'object', 'properties': {'text': {'title': 'Text', 'type': 'string'}}, 'required': ['text'], ...}", "why": "Everything a host needs to offer the tool to a model."}, {"c": "@mcp.tool()\ndef count_words(text: str) -> int:", "q": "Where does the input schema come from?", "o": ["From the type hints of the function", "You write it by hand", "From the client"], "a": 0, "out": "input: {'type': 'object', 'properties': {'text': {'title': 'Text', 'type': 'string'}}, 'required': ['text'], ...}", "why": "The docstring becomes the description, so write it like a prompt."}, {"c": "await client.call_tool('count_words', {'text': 'calibrate the sensor once a month'})", "q": "What is the result?", "o": ["6, and is_error False", "5", "An error"], "a": 0, "out": "result:      6 | is_error: False", "why": "Six words."}, {"c": "Does MCP replace function calling?", "q": "What is the truth?", "o": ["No: the model still asks with a tool_use; MCP is how the host finds and runs the tools", "Yes", "MCP is only for databases"], "a": 0, "out": "(a judgement, no output)", "why": "Function calling is host and model; MCP is host and tools."}, {"c": "mcp.run()   # stdio", "q": "How does the client talk to the server?", "o": ["It starts the server as a process and uses stdin and stdout", "Over a web page", "By email"], "a": 0, "out": "(StdioServerParameters(command=sys.executable, args=['word_server.py']))", "why": "With HTTP the server runs elsewhere and the client uses a URL."}, {"c": "print('starting')   # inside a stdio server", "q": "What is the rule?", "o": ["Never print to standard output: it carries the protocol", "Print as much as you like", "Print only numbers"], "a": 0, "out": "(use print(..., file=sys.stderr) or logging)", "why": "Logs go to standard error."}, {"c": "from mcp.server import MCPServer   # SDK version 2", "q": "What was the class in version 1?", "o": ["FastMCP, from mcp.server.fastmcp", "MCPClient", "ToolServer"], "a": 0, "out": "(this lesson ran with mcp 2.3.0)", "why": "The ideas are the same; use the names of your version."}],["MCP rookie", "MCP regular", "Server builder"],"An MCP server offers tools through a standard protocol, the host finds and runs them, function calling still happens between the host and the model, and a stdio server never prints to standard output.");</script>
+<p><small>Tick &ldquo;Play the MCP Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a tiny MCP server, a client that starts it, lists its tools and calls one, and a clear picture of where MCP sits next to function calling.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 88 checklist.</li><li>Share one line in the comments: which tool of yours would other apps want?</li><li><strong>Next:</strong> Thursday is mixed practice: you expose the incident lookup as an MCP tool, from a blank file.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

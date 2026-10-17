@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 86 - Tool design: schemas, permissions, errors</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 86 &middot; LEVEL 7: TOOLS</div><h1>Tool design: schemas, permissions, errors</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to design a tool with a clear description, a strict schema, a structured error and a permission check that runs first.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a tool error go back to the model as a result?</li><li>Who runs the function when a model &ldquo;calls&rdquo; it?</li></ol><details><summary>Answers</summary><ol><li>The model can read it and recover, or explain it to the user. An exception ends the loop and nobody learns why.</li><li>Your code. The model only sends a request that names the tool and the input.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Two tools do the same lookup. One is called <code>error</code> with the description &ldquo;errors&rdquo;. The other has a clear name, a clear description and a strict schema. Which one will the model use correctly, and why?</strong></p><details><summary>Guess first, then open</summary><p>The second. A tool&rsquo;s name, description and schema are the <em>only</em> things the model knows about it. They are a prompt. A vague tool gets called at the wrong time, with the wrong input, or never.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: the description is a prompt</h3>
+<p>Write it for the model. Say what the tool does, <strong>when to use it</strong>, and <strong>when not to</strong>. Put the format of the input in the schema (a <code>pattern</code>, an <code>enum</code>, a short <code>description</code> on each field), because a schema can be checked by code and a sentence cannot.</p>
+<h3>Piece 2: the error is part of the design</h3>
+<p>A good tool error has three parts: a stable <strong>code</strong> (<code>invalid_input</code>, <code>unknown_error_code</code>, <code>permission_denied</code>) that your code and your tests can match, a plain <strong>message</strong>, and a <strong>hint</strong> for what to do next (the format to use, the list of valid codes). The model can then fix its own mistake or explain it. Keep hints useful but safe: a refused caller must not learn what exists.</p>
+<h3>Piece 3: the tool acts for the user, not for the model</h3>
+<p>The model is not a user and has no rights of its own. A tool must run with the <strong>role of the person who asked</strong> and check it <em>before</em> doing anything. The role comes from your code (their login), never from the model&rsquo;s input. This is the permission filter of Day 79, now applied to tools. A tool that only reads is easy; a tool that writes or deletes needs extra care, and you will meet that on Wednesday next week.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> a tool is a public API method with an OpenAPI description, and the model is a client that has read only the documentation. You would not ship an endpoint called <code>error</code> with the summary &ldquo;errors&rdquo;. The error codes are like <code>ProblemDetails</code> with a <code>type</code>, and the role check is an <code>[Authorize]</code> that runs before the action.</div>
+<div class="box cap"><strong>Capstone:</strong> the Module 7 checkpoint is one real tool. Today you design it properly, so that on Saturday the loop around it is simple.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>A checklist for any tool you write:</p><pre><code>1. One job.            The tool does one thing. Two jobs are two tools.
+2. A verb_noun name.   lookup_error, not error or handle.
+3. A description for the model: what it does, when to use it, and when NOT to.
+4. A strict schema:    required fields, patterns, enums, short descriptions.
+5. A small answer:     only the fields the model needs, never a whole table.
+6. A readable error:   a stable code, a plain message, and a hint for the next step.
+7. The user&#x27;s rights:  the tool runs with the permissions of the person asking, not of the model.
+8. Read or write?      A tool that changes things needs more care (a confirmation, a log, a limit).</code></pre><p>A bad tool, for contrast:</p><pre><code>{&quot;name&quot;: &quot;error&quot;, &quot;description&quot;: &quot;errors&quot;, &quot;input_schema&quot;: {&quot;type&quot;: &quot;object&quot;}}   # what is it for? what does it take?</code></pre><p>The good one, in <code>src/my_ai_project/tool_design.py</code>. It replaces the executor of Day 82: the same input check, plus the user&rsquo;s role, structured errors with hints, and a better description:</p><pre><code>import json
+from dataclasses import asdict
+from typing import Any
+
+from pydantic import BaseModel, Field, ValidationError
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.incident import UnknownErrorCode, load_incidents, lookup_error
+
+
+class LookupInput(BaseModel):
+    code: str = Field(pattern=r&quot;^[Ee]\d{3}$&quot;, description=&quot;The error code: the letter E and three digits, like E104&quot;)
+
+
+LOOKUP_TOOL: dict[str, Any] = {
+    &quot;name&quot;: &quot;lookup_error&quot;,
+    &quot;description&quot;: &quot;Look up ONE PumpGuard error code (the letter E and three digits, like E104) in the incident database. &quot;
+    &quot;Returns its name, severity and the recommended action. &quot;
+    &quot;Use it when the user asks what an error code means or what to do about it. &quot;
+    &quot;Do not use it for general questions: it only knows error codes.&quot;,
+    &quot;input_schema&quot;: LookupInput.model_json_schema(),
+}
+
+
+def tool_error(tool_use_id: str, code: str, message: str, **hints: Any) -&gt; dict[str, Any]:
+    &quot;&quot;&quot;An error result the model can act on: a stable code, a plain message, and a hint for what to do next.&quot;&quot;&quot;
+    body = {&quot;error&quot;: {&quot;code&quot;: code, &quot;message&quot;: message, **hints}}
+    return {&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: tool_use_id, &quot;content&quot;: json.dumps(body), &quot;is_error&quot;: True}
+
+
+def execute(tool_use_id: str, name: str, tool_input: dict[str, Any], role: str = &quot;customer&quot;) -&gt; dict[str, Any]:
+    &quot;&quot;&quot;Run a tool on behalf of a user with this role. Always returns a tool_result block; never raises.&quot;&quot;&quot;
+    if name != &quot;lookup_error&quot;:
+        return tool_error(tool_use_id, &quot;unknown_tool&quot;, f&quot;there is no tool named {name!r}&quot;, available=[&quot;lookup_error&quot;])
+    try:
+        permitted = &quot;error&quot; in allowed_kinds(role)
+    except ValueError:
+        permitted = False   # an unknown role fails closed
+    if not permitted:
+        # Checked before the input, so a refused caller learns nothing about which codes exist.
+        return tool_error(tool_use_id, &quot;permission_denied&quot;, &quot;this user may not read error records&quot;, hint=&quot;tell the user to ask support staff&quot;)
+    try:
+        args = LookupInput.model_validate(tool_input)
+        incident = lookup_error(args.code)
+    except ValidationError as err:
+        first = err.errors()[0]
+        return tool_error(tool_use_id, &quot;invalid_input&quot;, f&quot;invalid {&#x27;.&#x27;.join(str(p) for p in first[&#x27;loc&#x27;])}: {first[&#x27;msg&#x27;]}&quot;, hint=&quot;use the letter E and three digits, like E104&quot;)
+    except UnknownErrorCode:
+        return tool_error(tool_use_id, &quot;unknown_error_code&quot;, f&quot;no error with code {tool_input.get(&#x27;code&#x27;)!r}&quot;, known_codes=sorted(load_incidents()))
+    return {&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: tool_use_id, &quot;content&quot;: json.dumps(asdict(incident))}</code></pre><p>Six calls, with different roles. <code>tool_design_cases.py</code>:</p><pre><code>from my_ai_project.tool_design import LOOKUP_TOOL, execute
+
+print(LOOKUP_TOOL[&quot;description&quot;])
+print()
+CASES = [
+    (&quot;customer&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;}),
+    (&quot;staff&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;}),
+    (&quot;staff&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;104&quot;}),
+    (&quot;staff&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E999&quot;}),
+    (&quot;admin&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;}),
+    (&quot;staff&quot;, &quot;delete_everything&quot;, {}),
+]
+for role, name, tool_input in CASES:
+    result = execute(&quot;toolu_1&quot;, name, tool_input, role)
+    print(f&quot;role={role:&lt;9}{name} {tool_input}&quot;)
+    print(f&quot;   is_error={result.get(&#x27;is_error&#x27;, False)}  {result[&#x27;content&#x27;]}&quot;)</code></pre><div class="out"><b>You should see</b><br>Look up ONE PumpGuard error code (the letter E and three digits, like E104) in the incident database. Returns its name, severity and the recommended action. Use it when the user asks what an error code means or what to do about it. Do not use it for general questions: it only knows error codes.<br><br>role=customer lookup_error {'code': 'E104'}<br>&nbsp;&nbsp; is_error=True&nbsp;&nbsp;{"error": {"code": "permission_denied", "message": "this user may not read error records", "hint": "tell the user to ask support staff"}}<br>role=staff&nbsp;&nbsp;&nbsp;&nbsp;lookup_error {'code': 'E104'}<br>&nbsp;&nbsp; is_error=False&nbsp;&nbsp;{"code": "E104", "name": "Disk full", "severity": "high", "action": "The storage is above 95 percent. Export your readings from the web dashboard and then delete the old ones in Settings."}<br>role=staff&nbsp;&nbsp;&nbsp;&nbsp;lookup_error {'code': '104'}<br>&nbsp;&nbsp; is_error=True&nbsp;&nbsp;{"error": {"code": "invalid_input", "message": "invalid code: String should match pattern '^[Ee]\\d{3}$'", "hint": "use the letter E and three digits, like E104"}}<br>role=staff&nbsp;&nbsp;&nbsp;&nbsp;lookup_error {'code': 'E999'}<br>&nbsp;&nbsp; is_error=True&nbsp;&nbsp;{"error": {"code": "unknown_error_code", "message": "no error with code 'E999'", "known_codes": ["E101", "E102", "E103", "E104", "E105", "E106", "E107"]}}<br>role=admin&nbsp;&nbsp;&nbsp;&nbsp;lookup_error {'code': 'E104'}<br>&nbsp;&nbsp; is_error=True&nbsp;&nbsp;{"error": {"code": "permission_denied", "message": "this user may not read error records", "hint": "tell the user to ask support staff"}}<br>role=staff&nbsp;&nbsp;&nbsp;&nbsp;delete_everything {}<br>&nbsp;&nbsp; is_error=True&nbsp;&nbsp;{"error": {"code": "unknown_tool", "message": "there is no tool named 'delete_everything'", "available": ["lookup_error"]}}</div><p>Read the results. The customer is refused <em>before</em> the code is even looked at, so the refusal says nothing about E104. The unknown role <code>admin</code> is refused too: fail closed. The staff user who sends <code>104</code> gets the format to use, and the one who sends <code>E999</code> gets the list of valid codes.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c tool-design</code>). You need no database and no model today.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>tool_design.py</code> and <code>tool_design_cases.py</code> and run it. Match the six results.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Move the permission check <em>after</em> the input check. <strong>Predict first:</strong> what does a customer who sends <code>E999</code> get now, and what have they learned?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Put the whole list of incidents (every record, with all fields) in the success result instead of one. Count the characters of the result. Why is a big answer a problem for the model, and for the cost of the call?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Write the tests of the template. Then design a <strong>second</strong> tool on paper only (do not code it): <code>close_incident</code>. Write its name, description (with when <em>not</em> to use it), schema, its error codes, and who may call it. Which of the eight checklist points are different for a tool that changes data?</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Design the lookup tool: roles and structured errors&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;ModuleNotFoundError: access&rdquo;</strong>: <code>access.py</code> comes from Day 79. Add it, or copy it from the lesson.</li><li><strong>Staff get <code>permission_denied</code></strong>: the role string must be exactly <code>staff</code>, lower case.</li><li><strong>A test fails on the message text</strong>: match the stable <code>code</code>, not the sentence. The message may change; the code is the contract.</li></ul><details><summary>Solution: Step 2</summary><p>The customer would see <code>unknown_error_code</code> with the full list of known codes, so a person with no rights learns exactly which codes exist. The order of the checks is part of the security: rights first, then input, then lookup.</p></details><details><summary>Solution: Step 3</summary><p>Every record has a name, a severity and a long action text. Seven records are already several times longer than one, and a real database would have thousands. The model has to read all of it on every call: it is slower, it costs more, and it can lose the one fact that matters (context rot, Day 58). Return what was asked for, and nothing else.</p></details><details><summary>Solution: Step 4 (close_incident)</summary><p>Different points: it <strong>writes</strong>, so it needs a confirmation before it runs (a human says yes), a log line with who and when, a permission that only staff have, an error for &ldquo;already closed&rdquo;, and a description that says &ldquo;only after the user has confirmed&rdquo;. It must be safe to call twice (idempotent).</p></details><details><summary>Template: tests</summary><pre><code>import json
+
+import pytest
+
+from my_ai_project.tool_design import LOOKUP_TOOL, execute
+
+
+def body(result: dict[str, object]) -&gt; dict[str, object]:
+    return json.loads(str(result[&quot;content&quot;]))
+
+
+def test_staff_get_the_record() -&gt; None:
+    result = execute(&quot;t1&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;}, &quot;staff&quot;)
+    assert &quot;is_error&quot; not in result
+    assert body(result)[&quot;name&quot;] == &quot;Disk full&quot;
+
+
+@pytest.mark.parametrize(&quot;role&quot;, [&quot;customer&quot;, &quot;admin&quot;, &quot;&quot;])
+def test_everyone_else_is_refused_and_learns_nothing(role: str) -&gt; None:
+    result = execute(&quot;t1&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E999&quot;}, role)
+    assert result[&quot;is_error&quot;] is True
+    error = body(result)[&quot;error&quot;]
+    assert error[&quot;code&quot;] == &quot;permission_denied&quot;   # type: ignore[index]
+    assert &quot;known_codes&quot; not in error             # type: ignore[operator]
+
+
+def test_a_bad_format_says_how_to_fix_it() -&gt; None:
+    error = body(execute(&quot;t1&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;104&quot;}, &quot;staff&quot;))[&quot;error&quot;]
+    assert error[&quot;code&quot;] == &quot;invalid_input&quot;        # type: ignore[index]
+    assert &quot;E104&quot; in error[&quot;hint&quot;]                 # type: ignore[index]
+
+
+def test_an_unknown_code_lists_the_known_ones() -&gt; None:
+    error = body(execute(&quot;t1&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E999&quot;}, &quot;staff&quot;))[&quot;error&quot;]
+    assert error[&quot;code&quot;] == &quot;unknown_error_code&quot;   # type: ignore[index]
+    assert &quot;E104&quot; in error[&quot;known_codes&quot;]          # type: ignore[index, operator]
+
+
+def test_an_unknown_tool_lists_the_available_ones() -&gt; None:
+    error = body(execute(&quot;t1&quot;, &quot;delete_everything&quot;, {}, &quot;staff&quot;))[&quot;error&quot;]
+    assert error[&quot;available&quot;] == [&quot;lookup_error&quot;]  # type: ignore[index]
+
+
+def test_the_description_says_when_not_to_use_it() -&gt; None:
+    assert &quot;Do not use it&quot; in LOOKUP_TOOL[&quot;description&quot;]</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is a tool description a prompt?</li><li>What three parts does a good tool error have?</li><li>Why is the permission checked before the input?</li></ol><details><summary>Answers</summary><ol><li>It is the only thing the model knows about the tool, and it decides when and how the model calls it.</li><li>A stable code, a plain message, and a hint for the next step.</li><li>So that a refused caller learns nothing about the data: no list of valid codes, no hint that a record exists.</li></ol></details></section>
+<section id="game-day86" class="game"><h2><span class="n">+</span> &middot; Game: Tool Design Check <span class="t">5 min</span></h2>
+<p><p>You design a tool. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day86-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day86-play">Start the game</button></div>
+<div id="day86-round" hidden><div class="gtop"><span id="day86-num">Round 1</span><span id="day86-score">Score 0</span></div>
+<pre hidden><code id="day86-code"></code></pre><div class="q" id="day86-q"></div><div class="choices" id="day86-opts"></div>
+<div class="fb" id="day86-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day86-next" hidden>Next round</button></p></div>
+<div id="day86-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day86",[{"c": "execute('t', 'lookup_error', {'code': 'E104'}, 'customer')", "q": "What does a customer get?", "o": ["permission_denied, before the code is looked at", "The record", "unknown_error_code"], "a": 0, "out": "{\"error\": {\"code\": \"permission_denied\", \"message\": \"this user may not read error records\", \"hint\": \"tell the user to ask support staff\"}}", "why": "The tool acts with the rights of the user, and the check comes first."}, {"c": "execute('t', 'lookup_error', {'code': 'E104'}, 'staff')", "q": "What does staff get?", "o": ["The record: name Disk full, severity high, and the action", "permission_denied", "invalid_input"], "a": 0, "out": "{\"code\": \"E104\", \"name\": \"Disk full\", \"severity\": \"high\", \"action\": \"The storage is above 95 percent. ...\"}", "why": "Staff may read error records."}, {"c": "execute('t', 'lookup_error', {'code': '104'}, 'staff')", "q": "What does the hint say?", "o": ["use the letter E and three digits, like E104", "try again", "contact support"], "a": 0, "out": "{\"error\": {\"code\": \"invalid_input\", \"message\": \"invalid code: String should match pattern '^[Ee]\\\\d{3}$'\", \"hint\": \"use the letter E and three digits, like E104\"}}", "why": "The hint tells the model how to fix its own mistake."}, {"c": "execute('t', 'lookup_error', {'code': 'E999'}, 'staff')", "q": "What extra field does the error have?", "o": ["known_codes: E101 to E107", "stack_trace", "retry_after"], "a": 0, "out": "{\"error\": {\"code\": \"unknown_error_code\", \"message\": \"no error with code 'E999'\", \"known_codes\": [\"E101\", \"E102\", \"E103\", \"E104\", \"E105\", \"E106\", \"E107\"]}}", "why": "The model can pick a valid code or tell the user. Only staff see this list."}, {"c": "execute('t', 'lookup_error', {'code': 'E104'}, 'admin')", "q": "What happens with an unknown role?", "o": ["permission_denied: it fails closed", "The record", "A crash"], "a": 0, "out": "{\"error\": {\"code\": \"permission_denied\", \"message\": \"this user may not read error records\", ...}}", "why": "An unknown role never means more power."}, {"c": "execute('t', 'delete_everything', {}, 'staff')", "q": "What does the error list?", "o": ["available: ['lookup_error']", "Nothing", "known_codes"], "a": 0, "out": "{\"error\": {\"code\": \"unknown_tool\", \"message\": \"there is no tool named 'delete_everything'\", \"available\": [\"lookup_error\"]}}", "why": "Only listed tools run."}, {"c": "Decision: check the input first, then the permission.", "q": "What goes wrong?", "o": ["A customer learns which codes exist from the error", "Nothing", "The tool becomes slow"], "a": 0, "out": "(a judgement, no output)", "why": "Rights first, then input, then lookup."}],["Tool design rookie", "Tool design regular", "Tool designer"],"A tool description is a prompt, an error has a code, a message and a hint, and the tool checks the caller's rights first.");</script>
+<p><small>Tick &ldquo;Play the Tool Design Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a tool with a clear description, a strict schema, structured errors with hints, and a permission check that runs first, with tests. You also wrote a design for a tool that writes.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 86 checklist.</li><li>Share one line in the comments: which function of yours needs the most care as a tool?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you meet the Model Context Protocol and run a tiny MCP server.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 89 - Mixed practice: the incident lookup as an MCP tool</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 89 &middot; LEVEL 7: TOOLS &middot; MIXED PRACTICE</div><h1>Mixed practice: the incident lookup as an MCP tool</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to expose a lookup as an MCP tool that obeys the same rules as your own loop, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Between which two parties does MCP work, and between which does function calling?</li><li>Why must a stdio server not print to standard output?</li></ol><details><summary>Answers</summary><ol><li>MCP: the host and the tools (a server). Function calling: the host and the model.</li><li>Standard output carries the protocol messages; extra text can break them. Use standard error for logs.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You get a contract, and you write the server and the client yourself, from blank files. Use <code>tool_design.py</code> from Monday and what you learned on Wednesday.</p><pre><code>incident_server.py
+  does  : an MCP server (stdio) with ONE tool, lookup_error(code: str)
+          the tool uses execute() from tool_design.py (Day 86): same checks, same errors
+          the role is read from the environment variable INCIDENT_ROLE (default: customer),
+          never from the tool&#x27;s input
+  rules : nothing is printed to standard output
+          a tool_result with is_error becomes an MCP tool error (isError = true)
+
+call_incident_server.py
+  starts the server once for each of these calls and prints is_error and the text:
+    staff E104     staff 104     staff E999     customer E104</code></pre><p><strong>Predict first</strong>, before you run anything: which of the four calls will be errors, and what will each error say? Where will the role come from, and why not from the tool&rsquo;s input?</p></section>
+<section><h2><span class="n">3</span> &middot; Do it <span class="t">25 min</span></h2><ol><li>Write <code>incident_server.py</code> and <code>call_incident_server.py</code> in <code>my-ai-project</code>. Do not open the solution until you have tried for 15 minutes.</li><li>Run the client. Compare your four results with your prediction.</li><li>Make a mistake on purpose: print a line in the server. See what your version of the SDK does, then fix it.</li><li>Commit: <code>git add .</code> and <code>git commit -m &quot;Expose the incident lookup as an MCP tool&quot;</code>.</li></ol><details><summary>Hint: where to start</summary><p>Copy the shape of <code>word_server.py</code>. Inside the tool call <code>execute(&quot;mcp&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: code}, ROLE)</code>. If the result has <code>is_error</code>, raise <code>ToolError</code> (from <code>mcp.server.mcpserver.exceptions</code>) with the content; otherwise return the content. In the client, pass the role to the server process with <code>env={&quot;INCIDENT_ROLE&quot;: role, &quot;PYTHONPATH&quot;: &quot;src&quot;}</code> in <code>StdioServerParameters</code>.</p></details><details><summary>Solution</summary><pre><code>import os
+
+from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+
+from my_ai_project.tool_design import LOOKUP_TOOL, execute
+
+# The role is decided by whoever starts the server (here an environment variable), not by the model.
+ROLE = os.environ.get(&quot;INCIDENT_ROLE&quot;, &quot;customer&quot;)
+
+mcp = MCPServer(&quot;incident-lookup&quot;)
+
+
+@mcp.tool(description=LOOKUP_TOOL[&quot;description&quot;])
+def lookup_error(code: str) -&gt; str:
+    result = execute(&quot;mcp&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: code}, ROLE)
+    if result.get(&quot;is_error&quot;):
+        raise ToolError(str(result[&quot;content&quot;]))   # becomes a result with isError = true
+    return str(result[&quot;content&quot;])
+
+
+if __name__ == &quot;__main__&quot;:
+    mcp.run()</code></pre><p><code>call_incident_server.py</code>:</p><pre><code>import asyncio
+import sys
+
+from mcp import Client, StdioServerParameters
+
+CALLS = [(&quot;staff&quot;, &quot;E104&quot;), (&quot;staff&quot;, &quot;104&quot;), (&quot;staff&quot;, &quot;E999&quot;), (&quot;customer&quot;, &quot;E104&quot;)]
+
+
+async def main() -&gt; None:
+    for role, code in CALLS:
+        server = StdioServerParameters(command=sys.executable, args=[&quot;incident_server.py&quot;], env={&quot;INCIDENT_ROLE&quot;: role, &quot;PYTHONPATH&quot;: &quot;src&quot;})
+        async with Client(server) as client:
+            if (role, code) == CALLS[0]:
+                print(&quot;tools:&quot;, [tool.name for tool in (await client.list_tools()).tools])
+            result = await client.call_tool(&quot;lookup_error&quot;, {&quot;code&quot;: code})
+            print(f&quot;role={role:&lt;9}code={code:&lt;5}is_error={result.is_error}&quot;)
+            print(&quot;   &quot;, result.content[0].text)
+
+
+asyncio.run(main())</code></pre><div class="out"><b>You should see</b><br>tools: ['lookup_error']<br>role=staff    code=E104 is_error=False<br>    {"code": "E104", "name": "Disk full", "severity": "high", "action": "The storage is above 95 percent. Export your readings from the web dashboard and then delete the old ones in Settings."}<br>role=staff    code=104  is_error=True<br>    Error executing tool lookup_error: {"error": {"code": "invalid_input", "message": "invalid code: String should match pattern '^[Ee]\\d{3}$'", "hint": "use the letter E and three digits, like E104"}}<br>role=staff    code=E999 is_error=True<br>    Error executing tool lookup_error: {"error": {"code": "unknown_error_code", "message": "no error with code 'E999'", "known_codes": ["E101", "E102", "E103", "E104", "E105", "E106", "E107"]}}<br>role=customer code=E104 is_error=True<br>    Error executing tool lookup_error: {"error": {"code": "permission_denied", "message": "this user may not read error records", "hint": "tell the user to ask support staff"}}</div></details><details><summary>Read the four results</summary><p>The staff call returns the record. The format error and the unknown code come back with the hints of Monday, now wrapped by the protocol as a tool error. The customer is refused before anything is looked up. All four use the same <code>execute</code> as your function-calling loop, so the rules live in <strong>one place</strong> and both ways of reaching the tool obey them.</p><p>Why is the role in an environment variable? Whoever <em>starts</em> the server decides who it works for. If the role were an argument of the tool, the model could write <code>role=staff</code> itself.</p></details></section>
+<section><h2><span class="n">4</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does the MCP tool call <code>execute</code> and not repeat the checks?</li><li>Why must the role not be an input of the tool?</li><li>What is the difference between this server and the function-calling loop of Wednesday last week, in what the model sees?</li></ol><details><summary>Answers</summary><ol><li>One place for the rules: a fix or a new rule applies to every way of calling the tool.</li><li>The model chooses the input, so it could choose a role. The role comes from outside, from whoever started the server or from a login.</li><li>The model sees the same thing: a tool with a name, description and schema. The difference is where the tool lives and how the host finds and calls it.</li></ol></details></section>
+<section id="game-day89" class="game"><h2><span class="n">+</span> &middot; Game: Incident Server Check <span class="t">5 min</span></h2>
+<p><p>You expose the incident lookup as an MCP tool. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day89-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day89-play">Start the game</button></div>
+<div id="day89-round" hidden><div class="gtop"><span id="day89-num">Round 1</span><span id="day89-score">Score 0</span></div>
+<pre hidden><code id="day89-code"></code></pre><div class="q" id="day89-q"></div><div class="choices" id="day89-opts"></div>
+<div class="fb" id="day89-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day89-next" hidden>Next round</button></p></div>
+<div id="day89-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day89",[{"c": "role=staff  code=E104", "q": "What does the tool return?", "o": ["The record, is_error False", "permission_denied", "invalid_input"], "a": 0, "out": "role=staff    code=E104 is_error=False\n    {\"code\": \"E104\", \"name\": \"Disk full\", \"severity\": \"high\", \"action\": \"The storage is above 95 percent. ...\"}", "why": "Staff may read error records."}, {"c": "role=staff  code=104", "q": "What is the error code in the result?", "o": ["invalid_input, with the hint to use E and three digits", "unknown_error_code", "permission_denied"], "a": 0, "out": "role=staff    code=104  is_error=True\n    Error executing tool lookup_error: {\"error\": {\"code\": \"invalid_input\", ...}}", "why": "The format is checked before the lookup."}, {"c": "role=staff  code=E999", "q": "What does the error list?", "o": ["known_codes E101 to E107", "Nothing", "The stack trace"], "a": 0, "out": "role=staff    code=E999 is_error=True\n    Error executing tool lookup_error: {\"error\": {\"code\": \"unknown_error_code\", ... \"known_codes\": [\"E101\", ... \"E107\"]}}", "why": "The model can choose a valid code."}, {"c": "role=customer  code=E104", "q": "What happens?", "o": ["permission_denied: this user may not read error records", "The record", "A crash of the server"], "a": 0, "out": "role=customer code=E104 is_error=True\n    Error executing tool lookup_error: {\"error\": {\"code\": \"permission_denied\", ...}}", "why": "The same rules as the function-calling loop, because it is the same execute()."}, {"c": "ROLE = os.environ.get('INCIDENT_ROLE', 'customer')", "q": "Why an environment variable and not a tool input?", "o": ["The model could write role=staff in the input; whoever starts the server decides", "It is faster", "MCP requires it"], "a": 0, "out": "(env={'INCIDENT_ROLE': role, 'PYTHONPATH': 'src'} in StdioServerParameters)", "why": "The role comes from outside the model."}, {"c": "if result.get('is_error'): raise ToolError(...)", "q": "What does the client see?", "o": ["is_error True and the message", "A normal result", "The server stops"], "a": 0, "out": "is_error=True", "why": "A tool error is a result, not a crash."}],["Server rookie", "Server regular", "Incident server builder"],"An MCP tool can reuse the same execute() as your own loop, so the rules live in one place, and the role is set by whoever starts the server, never by the model.");</script>
+<p><small>Tick &ldquo;Play the Incident Server Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> the incident lookup as an MCP server that obeys the same rules as your own loop, with the role set by whoever starts it.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 89 checklist.</li><li>Share one line in the comments: what did the failed <code>print</code> teach you?</li><li><strong>Next:</strong> Friday is a teach-back: you explain a tool versus an MCP server.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

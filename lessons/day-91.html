@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 91 - Project Lab 13: the tool-calling loop</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 91 &middot; LEVEL 7: TOOLS &middot; PROJECT LAB</div><h1>Project Lab 13: the tool-calling loop</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to build a tool-calling loop that runs tools as the caller's role, stops after a limit, and shows the calls it made, with tests that need no model and no key.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does the role of the user decide what a tool may do, and not the model&rsquo;s input?</li><li>What does a good tool error have besides a message?</li></ol><details><summary>Answers</summary><ol><li>The model chooses the input, so it could choose a role. The role comes from your code, from the login of the person who asked.</li><li>A stable code and a hint for the next step.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p>This is the first half of the <strong>Module 7 checkpoint</strong>: one real tool, with a simple loop. By the end:</p><ul><li><code>assist()</code> is a <strong>tool-calling loop</strong>: it asks the model, runs the tools the model asks for <em>as the caller&rsquo;s role</em>, sends the results back, and stops at a final answer or after <strong>three rounds</strong>.</li><li>One adapter for a <strong>real model</strong> (<code>AnthropicToolModel</code>) and one <strong>stand-in</strong> (<code>PretendToolModel</code>) so everything runs without a key.</li><li><code>POST /api/assist</code> returns the answer, the tool calls that were made, and the number of rounds.</li><li>Tests that need <strong>no model and no key</strong>, including a model that never stops asking.</li></ul><div class="box cap"><strong>Capstone:</strong> your assistant can now do two things: answer from documents (<code>/api/ask</code>) and look things up with a tool (<code>/api/assist</code>). In week 14 the React chat UI will use the tool through the .NET API.</div><div class="box"><strong>About the model.</strong> The run in this lesson used <code>PretendToolModel</code>: it asks for <code>lookup_error</code> when the question contains something like E104, and writes its answer from the tool result. It is <strong>not a real model</strong>. The adapter for a real model was tested with the real SDK against a mock server, never against a real model, so the wording and the choices of a real model will be different. The loop, the roles, the errors and the limits are the real part. Try your own key when you can, and read what it does.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Cut the work in small pieces, and commit after each one:</p><ol><li><strong>The loop</strong>: <code>assist()</code> and its result type.</li><li><strong>The adapters</strong>: real and pretend.</li><li><strong>The endpoint</strong> and the dependency.</li><li><strong>Tests</strong> with a scripted model.</li><li><strong>Run it</strong> with curl, as staff and as a customer.</li><li><strong>README</strong> and push.</li></ol><pre><code>POST /api/assist  (role from the login; here the demo header)
+  -&gt; assist(question, model, role)
+       round 1: model.create(...)  -&gt;  tool_use lookup_error {code: E104}
+                execute(...) as this role  -&gt;  tool_result (or an error result)
+       round 2: model.create(... + tool_result)  -&gt;  final text
+  &lt;- answer, the tool calls that were made, the number of rounds</code></pre></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2><h3>Step 1: the loop and the adapters</h3><p>A new module <code>src/my_ai_project/tool_loop.py</code>. Notice three decisions: the replies are plain dicts (so the loop does not depend on SDK classes), the role goes into every <code>execute</code>, and the loop has a <strong>maximum number of rounds</strong>, because a model that keeps asking would otherwise run forever and cost money:</p><pre><code>import json
+import re
+from dataclasses import dataclass, field
+from typing import Any, Protocol
+
+import anthropic
+
+from my_ai_project.tool_design import LOOKUP_TOOL, execute
+
+SYSTEM = (
+    &quot;You are a support assistant for the PumpGuard monitor. &quot;
+    &quot;When the user asks about an error code, use the lookup_error tool, then answer from its result in at most two short sentences. &quot;
+    &quot;If the tool returns an error, explain it plainly and do not guess.&quot;
+)
+GIVE_UP = &quot;I could not finish that. Please try again or ask support.&quot;
+
+
+@dataclass
+class ToolReply:
+    stop_reason: str
+    content: list[dict[str, Any]]   # plain dicts: {&quot;type&quot;: &quot;text&quot;, ...} or {&quot;type&quot;: &quot;tool_use&quot;, ...}
+
+
+class ToolModel(Protocol):
+    def create(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], system: str) -&gt; ToolReply: ...
+
+
+@dataclass
+class ToolCall:
+    name: str
+    tool_input: dict[str, Any]
+    is_error: bool
+
+
+@dataclass
+class AssistResult:
+    answer: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    rounds: int = 0
+    gave_up: bool = False
+
+
+def text_of(reply: ToolReply) -&gt; str:
+    return &quot; &quot;.join(block[&quot;text&quot;] for block in reply.content if block[&quot;type&quot;] == &quot;text&quot;).strip()
+
+
+def assist(question: str, model: ToolModel, role: str, max_rounds: int = 3) -&gt; AssistResult:
+    &quot;&quot;&quot;The tool loop: ask the model, run the tools it asks for as this user&#x27;s role, send the results back, stop at a final answer.&quot;&quot;&quot;
+    messages: list[dict[str, Any]] = [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: question}]
+    calls: list[ToolCall] = []
+    for round_number in range(1, max_rounds + 1):
+        reply = model.create(messages, [LOOKUP_TOOL], SYSTEM)
+        if reply.stop_reason != &quot;tool_use&quot;:
+            return AssistResult(text_of(reply), calls, round_number)
+        results = []
+        for block in reply.content:
+            if block[&quot;type&quot;] == &quot;tool_use&quot;:
+                result = execute(block[&quot;id&quot;], block[&quot;name&quot;], block[&quot;input&quot;], role)
+                calls.append(ToolCall(block[&quot;name&quot;], block[&quot;input&quot;], bool(result.get(&quot;is_error&quot;))))
+                results.append(result)
+        messages.append({&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: reply.content})
+        messages.append({&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: results})
+    return AssistResult(GIVE_UP, calls, max_rounds, gave_up=True)   # the model kept asking: do not loop forever
+
+
+class AnthropicToolModel:
+    &quot;&quot;&quot;The real model. The SDK&#x27;s blocks are turned into small plain dicts, so the rest of the code never depends on SDK classes.&quot;&quot;&quot;
+
+    def __init__(self, client: anthropic.Anthropic, model: str = &quot;claude-haiku-4-5-20251001&quot;, max_tokens: int = 400) -&gt; None:
+        self.client, self.model, self.max_tokens = client, model, max_tokens
+
+    def create(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], system: str) -&gt; ToolReply:
+        message = self.client.messages.create(model=self.model, max_tokens=self.max_tokens, system=system, tools=tools, messages=messages)  # type: ignore[arg-type]
+        blocks: list[dict[str, Any]] = []
+        for block in message.content:
+            if block.type == &quot;text&quot;:
+                blocks.append({&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: block.text})
+            elif block.type == &quot;tool_use&quot;:
+                blocks.append({&quot;type&quot;: &quot;tool_use&quot;, &quot;id&quot;: block.id, &quot;name&quot;: block.name, &quot;input&quot;: dict(block.input)})  # type: ignore[arg-type]
+        return ToolReply(message.stop_reason or &quot;end_turn&quot;, blocks)
+
+
+class PretendToolModel:
+    &quot;&quot;&quot;A stand-in for a model, to run the loop with no key and no cost. It is NOT a real model.
+
+    It asks for lookup_error when the question contains something like E104, and it writes its answer from the tool result.&quot;&quot;&quot;
+
+    def create(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], system: str) -&gt; ToolReply:
+        last = messages[-1][&quot;content&quot;]
+        if isinstance(last, str):
+            found = re.search(r&quot;\b[Ee]\d{3}\b&quot;, last)
+            if not found:
+                return ToolReply(&quot;end_turn&quot;, [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;I can only look up error codes, like E104.&quot;}])
+            return ToolReply(&quot;tool_use&quot;, [{&quot;type&quot;: &quot;tool_use&quot;, &quot;id&quot;: &quot;toolu_pretend&quot;, &quot;name&quot;: &quot;lookup_error&quot;, &quot;input&quot;: {&quot;code&quot;: found.group(0)}}])
+        result = json.loads(last[0][&quot;content&quot;])
+        if last[0].get(&quot;is_error&quot;):
+            error = result[&quot;error&quot;]
+            return ToolReply(&quot;end_turn&quot;, [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: f&quot;I could not look that up: {error[&#x27;message&#x27;]}. {error.get(&#x27;hint&#x27;, &#x27;&#x27;)}&quot;.strip()}])
+        return ToolReply(&quot;end_turn&quot;, [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: f&quot;{result[&#x27;code&#x27;]} means {result[&#x27;name&#x27;]} (severity {result[&#x27;severity&#x27;]}). {result[&#x27;action&#x27;]}&quot;}])</code></pre><h3>Step 2: the dependency and the endpoint</h3><p>In <code>deps.py</code> (add <code>import anthropic</code> too):</p><pre><code>def get_tool_model() -&gt; ToolModel:
+    if os.environ.get(&quot;LLM_MODE&quot;, &quot;fake&quot;) == &quot;real&quot;:
+        api_key = os.environ.get(&quot;ANTHROPIC_API_KEY&quot;)
+        if not api_key:
+            raise RuntimeError(&quot;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&quot;)
+        return AnthropicToolModel(anthropic.Anthropic(api_key=api_key, timeout=30.0))
+    return PretendToolModel()   # NOT a real model: it lets you run and test the loop with no key
+
+
+ToolModelDep = Annotated[ToolModel, Depends(get_tool_model)]</code></pre><p>In <code>api.py</code> (import <code>assist</code> and <code>ToolModelDep</code>). A failure of the model API becomes a <code>502</code>:</p><pre><code>class AssistRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+
+
+class ToolCallInfo(BaseModel):
+    name: str
+    tool_input: dict[str, Any]
+    is_error: bool
+
+
+class AssistResponse(BaseModel):
+    answer: str
+    tool_calls: list[ToolCallInfo]
+    rounds: int
+    gave_up: bool
+
+
+@app.post(&quot;/api/assist&quot;)
+def assist_with_tools(request: AssistRequest, model: ToolModelDep, role: RoleDep) -&gt; AssistResponse:
+    try:
+        result = assist(request.question, model, role)
+    except anthropic.APIError as err:
+        raise HTTPException(status_code=502, detail=&quot;the model call failed&quot;) from err
+    calls = [ToolCallInfo(name=c.name, tool_input=c.tool_input, is_error=c.is_error) for c in result.tool_calls]
+    return AssistResponse(answer=result.answer, tool_calls=calls, rounds=result.rounds, gave_up=result.gave_up)</code></pre><h3>Step 3: tests</h3><p>The scripted model replays a list of replies and remembers what it was sent, so you can check exactly what the loop sends back after a tool call. One test uses the real SDK against a mock server to check the adapter:</p><pre><code>import json
+from typing import Any
+
+import anthropic
+import httpx2
+from fastapi.testclient import TestClient
+
+from my_ai_project.api import app
+from my_ai_project.deps import get_tool_model
+from my_ai_project.tool_loop import GIVE_UP, AnthropicToolModel, PretendToolModel, ToolReply, assist
+
+
+class Scripted:
+    &quot;&quot;&quot;A model that replays a list of replies and remembers what it was sent.&quot;&quot;&quot;
+
+    def __init__(self, replies: list[ToolReply]) -&gt; None:
+        self.replies = replies
+        self.seen: list[list[dict[str, Any]]] = []
+
+    def create(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], system: str) -&gt; ToolReply:
+        self.seen.append(json.loads(json.dumps(messages)))
+        return self.replies.pop(0)
+
+
+def ask_for(code: str) -&gt; ToolReply:
+    return ToolReply(&quot;tool_use&quot;, [{&quot;type&quot;: &quot;tool_use&quot;, &quot;id&quot;: &quot;toolu_1&quot;, &quot;name&quot;: &quot;lookup_error&quot;, &quot;input&quot;: {&quot;code&quot;: code}}])
+
+
+def say(text: str) -&gt; ToolReply:
+    return ToolReply(&quot;end_turn&quot;, [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: text}])
+
+
+def test_the_loop_runs_the_tool_and_returns_the_final_answer() -&gt; None:
+    model = Scripted([ask_for(&quot;E104&quot;), say(&quot;E104 means Disk full.&quot;)])
+    result = assist(&quot;What is E104?&quot;, model, &quot;staff&quot;)
+    assert result.answer == &quot;E104 means Disk full.&quot;
+    assert [(c.name, c.is_error) for c in result.tool_calls] == [(&quot;lookup_error&quot;, False)]
+    assert result.rounds == 2
+    sent = model.seen[1][-1][&quot;content&quot;][0]
+    assert sent[&quot;type&quot;] == &quot;tool_result&quot; and sent[&quot;tool_use_id&quot;] == &quot;toolu_1&quot;
+
+
+def test_the_users_role_decides_what_the_tool_may_do() -&gt; None:
+    model = Scripted([ask_for(&quot;E104&quot;), say(&quot;Please ask support staff.&quot;)])
+    result = assist(&quot;What is E104?&quot;, model, &quot;customer&quot;)
+    assert result.tool_calls[0].is_error is True
+    assert &quot;permission_denied&quot; in model.seen[1][-1][&quot;content&quot;][0][&quot;content&quot;]
+
+
+def test_a_model_that_never_stops_asking_is_stopped() -&gt; None:
+    model = Scripted([ask_for(&quot;E104&quot;)] * 5)
+    result = assist(&quot;What is E104?&quot;, model, &quot;staff&quot;, max_rounds=3)
+    assert result.gave_up and result.answer == GIVE_UP and result.rounds == 3
+    assert len(model.seen) == 3
+
+
+def test_a_question_without_a_tool_call_is_one_round() -&gt; None:
+    result = assist(&quot;Hello&quot;, Scripted([say(&quot;Hi.&quot;)]), &quot;customer&quot;)
+    assert result.tool_calls == [] and result.rounds == 1
+
+
+def test_the_pretend_model_answers_from_the_tool_result() -&gt; None:
+    result = assist(&quot;What does error E104 mean?&quot;, PretendToolModel(), &quot;staff&quot;)
+    assert result.answer.startswith(&quot;E104 means Disk full (severity high).&quot;)
+
+
+def test_the_real_adapter_sends_tools_and_reads_tool_use_blocks() -&gt; None:
+    sent: list[dict[str, Any]] = []
+
+    def handler(request: httpx2.Request) -&gt; httpx2.Response:
+        body = json.loads(request.content)
+        sent.append(body)
+        block = {&quot;type&quot;: &quot;tool_use&quot;, &quot;id&quot;: &quot;toolu_x&quot;, &quot;name&quot;: &quot;lookup_error&quot;, &quot;input&quot;: {&quot;code&quot;: &quot;E104&quot;}}
+        reply = {&quot;id&quot;: &quot;msg_1&quot;, &quot;type&quot;: &quot;message&quot;, &quot;role&quot;: &quot;assistant&quot;, &quot;model&quot;: body[&quot;model&quot;], &quot;content&quot;: [block],
+                 &quot;stop_reason&quot;: &quot;tool_use&quot;, &quot;stop_sequence&quot;: None, &quot;usage&quot;: {&quot;input_tokens&quot;: 10, &quot;output_tokens&quot;: 5}}
+        return httpx2.Response(200, json=reply)
+
+    client = anthropic.Anthropic(api_key=&quot;not-a-real-key&quot;, http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+    reply = AnthropicToolModel(client).create([{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;E104?&quot;}], [{&quot;name&quot;: &quot;lookup_error&quot;, &quot;description&quot;: &quot;d&quot;, &quot;input_schema&quot;: {&quot;type&quot;: &quot;object&quot;}}], &quot;be brief&quot;)
+    assert sent[0][&quot;system&quot;] == &quot;be brief&quot; and sent[0][&quot;tools&quot;][0][&quot;name&quot;] == &quot;lookup_error&quot;
+    assert reply.stop_reason == &quot;tool_use&quot; and reply.content[0][&quot;input&quot;] == {&quot;code&quot;: &quot;E104&quot;}
+
+
+def test_the_endpoint_returns_the_answer_and_the_calls() -&gt; None:
+    app.dependency_overrides[get_tool_model] = PretendToolModel
+    try:
+        client = TestClient(app)
+        staff = client.post(&quot;/api/assist&quot;, json={&quot;question&quot;: &quot;What does error E104 mean?&quot;}, headers={&quot;x-demo-role&quot;: &quot;staff&quot;}).json()
+        customer = client.post(&quot;/api/assist&quot;, json={&quot;question&quot;: &quot;What does error E104 mean?&quot;}).json()
+        assert staff[&quot;tool_calls&quot;] == [{&quot;name&quot;: &quot;lookup_error&quot;, &quot;tool_input&quot;: {&quot;code&quot;: &quot;E104&quot;}, &quot;is_error&quot;: False}]
+        assert &quot;Disk full&quot; in staff[&quot;answer&quot;]
+        assert customer[&quot;tool_calls&quot;][0][&quot;is_error&quot;] is True and &quot;Disk full&quot; not in customer[&quot;answer&quot;]
+        assert client.post(&quot;/api/assist&quot;, json={&quot;question&quot;: &quot;&quot;}).status_code == 422
+    finally:
+        app.dependency_overrides.clear()</code></pre><p>Run <code>uv run pytest</code> and <code>uv run mypy src tests</code>.</p><div class="out"><b>You should see</b><br>7 passed (test_tool_loop.py); the whole project: 115 passed, 4 skipped (the 4 need the database)</div></section>
+<section><h2><span class="n">5</span> &middot; Run it <span class="t">15 min</span></h2><p>Start the API (<code>uv run uvicorn my_ai_project.api:app --port 8000</code>). The tool needs no database, so you can run this with the database stopped. Ask as staff:</p><pre><code>curl -X POST http://localhost:8000/api/assist -H &quot;x-demo-role: staff&quot; -H &quot;content-type: application/json&quot; -d &#x27;{&quot;question&quot;: &quot;What does error E104 mean?&quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>{"answer":"E104 means Disk full (severity high). The storage is above 95 percent. Export your readings from the web dashboard and then delete the old ones in Settings.",
+ "tool_calls":[{"name":"lookup_error","tool_input":{"code":"E104"},"is_error":false}],"rounds":2,"gave_up":false}</div><p>Ask the same as a customer (no header). The tool refuses, and the answer says so:</p><div class="out"><b>You should see</b><br>(the same request with no x-demo-role header)<br>{"answer":"I could not look that up: this user may not read error records. tell the user to ask support staff",<br> "tool_calls":[{"name":"lookup_error","tool_input":{"code":"E104"},"is_error":true}],"rounds":2,"gave_up":false}</div><p>A code that does not exist, and a question with no code:</p><div class="out"><b>You should see</b><br>(What does error E999 mean?, as staff)<br>{"answer":"I could not look that up: no error with code 'E999'.","tool_calls":[{"name":"lookup_error","tool_input":{"code":"E999"},"is_error":true}],"rounds":2,"gave_up":false}</div><div class="out"><b>You should see</b><br>(How is the weather?, as staff)<br>{"answer":"I can only look up error codes, like E104.","tool_calls":[],"rounds":1,"gave_up":false}</div><p>A bad request:</p><div class="out"><b>You should see</b><br>HTTP 422: question: String should have at least 1 character</div><p>Look at <code>rounds</code>: 2 means the model asked once and then answered. A question without a tool is 1 round. These are the numbers to watch when a real model is behind it.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The SDK says the message format is wrong</strong>: after a <code>tool_use</code>, the next user message must hold a <code>tool_result</code> for every tool_use id. Check that you add the assistant message <em>and</em> the results.</li><li><strong>The loop returns the give-up text</strong>: the model kept asking. Print the tool calls; a tool that always returns an error can make a model retry.</li><li><strong>mypy complains about SDK types</strong>: the two <code>type: ignore</code> comments are in the adapter on purpose; keep them out of the rest of the code.</li><li><strong>A customer gets the record</strong>: the endpoint must pass the role to <code>assist</code>, and <code>assist</code> to <code>execute</code>.</li><li><strong>You want to try a real model</strong>: set <code>LLM_MODE=real</code> and <code>ANTHROPIC_API_KEY</code>. Watch the <code>tool_calls</code> and <code>rounds</code> of the answers; they will differ from this lesson.</li></ul></section>
+<section><h2><span class="n">7</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Add the README section, run the checklist, and push.</p><pre><code>## Assist (tool calling)
+
+    uv run uvicorn my_ai_project.api:app --port 8000
+    POST /api/assist   {&quot;question&quot;: &quot;What does error E104 mean?&quot;}   header x-demo-role: staff
+    -&gt; {&quot;answer&quot;, &quot;tool_calls&quot;: [{&quot;name&quot;, &quot;tool_input&quot;, &quot;is_error&quot;}], &quot;rounds&quot;, &quot;gave_up&quot;}
+
+    LLM_MODE=real (and ANTHROPIC_API_KEY) uses a real model; by default a pretend model is used.
+    The tool runs with the caller&#x27;s role: a customer gets permission_denied. The loop stops after 3 rounds.</code></pre><pre><code>[ ] tool_loop.py: assist() runs the tools as the caller&#x27;s role and stops after max_rounds
+[ ] AnthropicToolModel turns SDK blocks into plain dicts; PretendToolModel is clearly marked
+[ ] POST /api/assist returns the answer, the tool calls and the rounds
+[ ] a customer gets permission_denied, staff get the record, an unknown code is explained
+[ ] a model that never stops asking is stopped (test)
+[ ] tests need no model and no key; mypy is clean
+[ ] README has the endpoint; committed and pushed</code></pre><p><code>git add .</code>, <code>git commit -m &quot;Add the tool-calling loop and /api/assist&quot;</code>, <code>git push</code>.</p></section>
+<section><h2><span class="n">8</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does the loop have a maximum number of rounds?</li><li>Why are the replies plain dicts and not SDK objects?</li><li>What does the number of <code>rounds</code> tell you?</li></ol><details><summary>Answers</summary><ol><li>A model that keeps asking for tools would run forever and cost money. A limit turns that into a clear give-up answer.</li><li>The rest of the code and the tests do not depend on the SDK, and you can swap the model, or fake it, easily.</li><li>How many times the model was called: 1 means no tool was needed, 2 means one tool call and an answer. A high number is a warning.</li></ol></details></section>
+<section id="game-day91" class="game"><h2><span class="n">+</span> &middot; Game: Tool Loop Check <span class="t">5 min</span></h2>
+<p><p>You test the tool-calling loop. Read the call, pick what happens, then see the real output. (The model is a stand-in, not a real model.)</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day91-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day91-play">Start the game</button></div>
+<div id="day91-round" hidden><div class="gtop"><span id="day91-num">Round 1</span><span id="day91-score">Score 0</span></div>
+<pre hidden><code id="day91-code"></code></pre><div class="q" id="day91-q"></div><div class="choices" id="day91-opts"></div>
+<div class="fb" id="day91-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day91-next" hidden>Next round</button></p></div>
+<div id="day91-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day91",[{"c": "POST /api/assist  What does error E104 mean?   # x-demo-role: staff", "q": "How many rounds?", "o": ["2: one tool call, then the answer", "1", "3"], "a": 0, "out": "{\"answer\":\"E104 means Disk full (severity high). ...\",\"tool_calls\":[{\"name\":\"lookup_error\",\"tool_input\":{\"code\":\"E104\"},\"is_error\":false}],\"rounds\":2,\"gave_up\":false}", "why": "Round 1 is the tool request, round 2 the final answer."}, {"c": "POST /api/assist  What does error E104 mean?   # no role header", "q": "What happens?", "o": ["The tool call is_error true: this user may not read error records", "The record", "A 500"], "a": 0, "out": "{\"answer\":\"I could not look that up: this user may not read error records. tell the user to ask support staff\",\"tool_calls\":[{\"name\":\"lookup_error\",\"tool_input\":{\"code\":\"E104\"},\"is_error\":true}],\"rounds\":2,\"gave_up\":false}", "why": "The tool runs with the caller's role, and the least powerful role is the default."}, {"c": "POST /api/assist  What does error E999 mean?   # staff", "q": "What does the answer say?", "o": ["no error with code 'E999'", "The record of E104", "Nothing"], "a": 0, "out": "{\"answer\":\"I could not look that up: no error with code 'E999'.\", ... \"is_error\":true ...}", "why": "The error went back to the model, which explained it."}, {"c": "POST /api/assist  How is the weather?", "q": "How many rounds and tool calls?", "o": ["1 round, no tool call", "2 rounds", "3 rounds"], "a": 0, "out": "{\"answer\":\"I can only look up error codes, like E104.\",\"tool_calls\":[],\"rounds\":1,\"gave_up\":false}", "why": "No tool was needed."}, {"c": "A model that asks for the tool in every reply", "q": "What stops the loop?", "o": ["max_rounds: after 3 rounds it returns the give-up text", "Nothing", "The tool"], "a": 0, "out": "(test: result.gave_up is True, result.rounds == 3, the model was called 3 times)", "why": "A limit turns an endless loop into a clear answer."}, {"c": "POST /api/assist with an empty question", "q": "Which status?", "o": ["422", "200", "502"], "a": 0, "out": "HTTP 422: question: String should have at least 1 character", "why": "The request is checked before anything else."}, {"c": "AnthropicToolModel", "q": "How was it tested here?", "o": ["With the real SDK against a mock server, not a real model", "Against a real model", "It was not tested"], "a": 0, "out": "(test_the_real_adapter_sends_tools_and_reads_tool_use_blocks)", "why": "Always say what was simulated."}],["Loop rookie", "Loop regular", "Tool loop builder"],"A tool loop runs the requested tools as the caller's role, returns errors to the model, stops after a limit, and shows the calls it made.");</script>
+<p><small>Tick &ldquo;Play the Tool Loop Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">9</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a tool-calling loop with roles, errors and a limit, an adapter for a real model and a stand-in to run it without one, an endpoint that shows the calls it made, and tests that need nothing running.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 91 checklist.</li><li>Share one line in the comments: what did the customer&rsquo;s answer look like?</li><li><strong>Next:</strong> Sunday is a three-month review: what worked, what to reset, and the plan for week 14.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
