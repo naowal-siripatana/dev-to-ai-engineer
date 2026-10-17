@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 98 - Project Lab 14: the React chat page</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 98 &middot; LEVEL 7: TOOLS &middot; PROJECT LAB</div><h1>Project Lab 14: the React chat page</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to use your tool through a web page: a React chat page, a .NET gateway and a Python service, with clear messages when something fails.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a risky tool wait for a person before it runs?</li><li>What does the .NET gateway do when the Python service is stopped?</li></ol><details><summary>Answers</summary><ol><li>A wrong call could change or delete something. A person approves that exact call, and a missing or negative answer means the tool does not run.</li><li>It answers <code>502</code> with &ldquo;the AI service is not reachable&rdquo;.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p>This is the second half of the <strong>Module 7 checkpoint</strong>: one question uses the tool <strong>through a page</strong>. By the end:</p><ul><li>The .NET gateway forwards <code>POST /api/assist</code> (as well as <code>/api/ask</code>), passes the demo role header on, and turns a Python <code>422</code> into a <code>400</code>.</li><li>A React page (Vite and TypeScript) with a chat box, a role selector, the answer, and the <strong>tool calls</strong> that produced it.</li><li>The page handles failure: a clear message when the service is down, not a blank screen.</li><li>The page never talks to Python directly: <code>browser, .NET gateway, Python service</code>.</li></ul><div class="box cap"><strong>Capstone:</strong> this is the first time a person can use your assistant without a terminal. It is small, and it is the demo you will show.</div><div class="box"><strong>About the answers.</strong> The Python service answers with its pretend model (Day 91), so the wording is not a real model&rsquo;s. The page, the gateway and the tool call are real. This lesson was run with Node 22, Vite 8, React 19, TypeScript 6 and the .NET 10 SDK. I drove the page in a real browser (as a customer, as staff, and with the Python service stopped); my automated browser could not test pressing Enter in the box, only clicking Send, so test Enter yourself.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Cut the work in small pieces, and commit after each one:</p><ol><li><strong>The gateway</strong>: <code>/api/assist</code>, the role header, the 422 mapping, tests.</li><li><strong>Create the page</strong> with Vite.</li><li><strong>The API client</strong> (<code>api.ts</code>) with types and errors.</li><li><strong>The chat component</strong> (<code>App.tsx</code>).</li><li><strong>Run all three</strong> and try it in the browser.</li><li><strong>README</strong> and push.</li></ol><pre><code>ai-knowledge-assistant/
+  python-service/        FastAPI: /api/ask, /api/assist
+  gateway/               ASP.NET Core: forwards /api/ask and /api/assist
+  web/chat-ui/           React + TypeScript (Vite): the chat page
+  README.md</code></pre></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2><h3>Step 1: the gateway</h3><p>The client of Day 84 gets one generic <code>PostAsync</code>, a role header and a mapping for <code>422</code>. New models, a second endpoint, and three more tests:</p><pre><code>using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+
+namespace AskGateway;
+
+// The shapes of the Python service. The JSON names are snake_case there (top_k, doc_id, tool_input),
+// and PascalCase here: the naming policy in ApiJson converts between them.
+public record AskRequest(
+    [property: Required, StringLength(500, MinimumLength = 1)] string Question,
+    [property: Range(1, 10)] int TopK = 3);
+
+public record Source(string Citation, string DocId, int ChunkIndex, string Title, string Kind, string Text, double Similarity);
+
+public record AskResponse(string Question, string Answer, bool Refused, string Reason, List&lt;Source&gt; Sources);
+
+public record AssistRequest([property: Required, StringLength(500, MinimumLength = 1)] string Question);
+
+public record ToolCallInfo(string Name, Dictionary&lt;string, JsonElement&gt; ToolInput, bool IsError);
+
+public record AssistResponse(string Answer, List&lt;ToolCallInfo&gt; ToolCalls, int Rounds, bool GaveUp);</code></pre><pre><code>using System.Net;
+
+namespace AskGateway;
+
+public class PythonServiceException(int statusCode, string message) : Exception(message)
+{
+    public int StatusCode { get; } = statusCode;
+}
+
+public class PythonServiceClient(HttpClient http, ILogger&lt;PythonServiceClient&gt; logger)
+{
+    public const string RoleHeader = &quot;x-demo-role&quot;;   // DEMO ONLY: a real role comes from a login (Module 8)
+
+    public Task&lt;AskResponse&gt; AskAsync(AskRequest request, string? role, CancellationToken cancellationToken) =&gt;
+        PostAsync&lt;AskRequest, AskResponse&gt;(&quot;/api/ask&quot;, request, role, cancellationToken);
+
+    public Task&lt;AssistResponse&gt; AssistAsync(AssistRequest request, string? role, CancellationToken cancellationToken) =&gt;
+        PostAsync&lt;AssistRequest, AssistResponse&gt;(&quot;/api/assist&quot;, request, role, cancellationToken);
+
+    async Task&lt;TResponse&gt; PostAsync&lt;TRequest, TResponse&gt;(string path, TRequest request, string? role, CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(request, options: ApiJson.Options) };
+        if (!string.IsNullOrEmpty(role))
+        {
+            message.Headers.Add(RoleHeader, role);
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await http.SendAsync(message, cancellationToken);
+        }
+        catch (HttpRequestException error)
+        {
+            logger.LogWarning(&quot;python service is not reachable: {Message}&quot;, error.Message);
+            throw new PythonServiceException(StatusCodes.Status502BadGateway, &quot;the AI service is not reachable&quot;);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(&quot;python service timed out&quot;);
+            throw new PythonServiceException(StatusCodes.Status504GatewayTimeout, &quot;the AI service took too long&quot;);
+        }
+
+        using (response)
+        {
+            if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            {
+                throw new PythonServiceException(StatusCodes.Status503ServiceUnavailable, &quot;the AI service cannot reach its database&quot;);
+            }
+            if (response.StatusCode == HttpStatusCode.UnprocessableEntity)
+            {
+                throw new PythonServiceException(StatusCodes.Status400BadRequest, &quot;the AI service rejected the request (check the role)&quot;);
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning(&quot;python service answered {Status}&quot;, (int)response.StatusCode);
+                throw new PythonServiceException(StatusCodes.Status502BadGateway, $&quot;the AI service answered with status {(int)response.StatusCode}&quot;);
+            }
+            var answer = await response.Content.ReadFromJsonAsync&lt;TResponse&gt;(ApiJson.Options, cancellationToken);
+            return answer ?? throw new PythonServiceException(StatusCodes.Status502BadGateway, &quot;the AI service sent an empty answer&quot;);
+        }
+    }
+}</code></pre><p><code>Program.cs</code> now has two endpoints that share one helper:</p><pre><code>using AskGateway;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddValidation();                       // checks [Required], [StringLength], [Range] on the request
+builder.Services.ConfigureHttpJsonOptions(o =&gt; o.SerializerOptions.PropertyNamingPolicy = ApiJson.Options.PropertyNamingPolicy);
+builder.Services.AddHttpClient&lt;PythonServiceClient&gt;(client =&gt;
+{
+    var settings = builder.Configuration.GetSection(&quot;PythonService&quot;);
+    client.BaseAddress = new Uri(settings[&quot;BaseUrl&quot;] ?? &quot;http://localhost:8000&quot;);
+    client.Timeout = TimeSpan.FromSeconds(settings.GetValue(&quot;TimeoutSeconds&quot;, 30));
+});
+
+var app = builder.Build();
+
+app.MapGet(&quot;/health&quot;, () =&gt; Results.Ok(new { status = &quot;ok&quot; }));
+
+app.MapPost(&quot;/api/ask&quot;, (AskRequest request, HttpContext http, PythonServiceClient python, CancellationToken cancellationToken) =&gt;
+    Forward(() =&gt; python.AskAsync(request, http.Request.Headers[PythonServiceClient.RoleHeader].FirstOrDefault(), cancellationToken)));
+
+app.MapPost(&quot;/api/assist&quot;, (AssistRequest request, HttpContext http, PythonServiceClient python, CancellationToken cancellationToken) =&gt;
+    Forward(() =&gt; python.AssistAsync(request, http.Request.Headers[PythonServiceClient.RoleHeader].FirstOrDefault(), cancellationToken)));
+
+app.Run();
+
+static async Task&lt;IResult&gt; Forward&lt;T&gt;(Func&lt;Task&lt;T&gt;&gt; call)
+{
+    try
+    {
+        return Results.Ok(await call());
+    }
+    catch (PythonServiceException error)
+    {
+        return Results.Problem(detail: error.Message, statusCode: error.StatusCode);
+    }
+}
+
+public partial class Program;   // lets a test project start the app</code></pre><p>The tests (the first seven are the ones of Day 84; the last three are new). Run <code>dotnet test</code> in <code>AskGateway.Tests</code>:</p><pre><code>using System.Net;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace AskGateway.Tests;
+
+// A stand-in for the Python service: the tests need no Python, no database and no model.
+class StubHandler(Func&lt;HttpRequestMessage, HttpResponseMessage&gt; reply) : HttpMessageHandler
+{
+    public HttpRequestMessage? LastRequest { get; private set; }
+    public string? LastBody { get; private set; }
+
+    protected override async Task&lt;HttpResponseMessage&gt; SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        LastRequest = request;
+        LastBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+        return reply(request);
+    }
+}
+
+public class GatewayTests
+{
+    const string PythonAnswer = &quot;&quot;&quot;
+        {&quot;question&quot;:&quot;How often?&quot;,&quot;answer&quot;:&quot;Once a month [manual-calibration#0].&quot;,&quot;refused&quot;:false,&quot;reason&quot;:&quot;&quot;,
+         &quot;sources&quot;:[{&quot;citation&quot;:&quot;[manual-calibration#0]&quot;,&quot;doc_id&quot;:&quot;manual-calibration&quot;,&quot;chunk_index&quot;:0,&quot;title&quot;:&quot;Calibration guide&quot;,&quot;kind&quot;:&quot;manual&quot;,&quot;text&quot;:&quot;Calibrate once a month.&quot;,&quot;similarity&quot;:0.85}]}
+        &quot;&quot;&quot;;
+
+    static HttpClient ClientWith(StubHandler handler) =&gt;
+        new WebApplicationFactory&lt;Program&gt;()
+            .WithWebHostBuilder(host =&gt; host.ConfigureTestServices(services =&gt;
+                services.AddHttpClient&lt;PythonServiceClient&gt;().ConfigurePrimaryHttpMessageHandler(() =&gt; handler)))
+            .CreateClient();
+
+    static HttpResponseMessage Json(HttpStatusCode status, string body) =&gt;
+        new(status) { Content = new StringContent(body, System.Text.Encoding.UTF8, &quot;application/json&quot;) };
+
+    [Fact]
+    public async Task A_question_is_forwarded_and_the_answer_comes_back_with_its_sources()
+    {
+        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.OK, PythonAnswer));
+        var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/ask&quot;, new { question = &quot;How often?&quot;, top_k = 2 });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(&quot;/api/ask&quot;, python.LastRequest!.RequestUri!.AbsolutePath);
+        Assert.Contains(&quot;\&quot;top_k\&quot;:2&quot;, python.LastBody);                  // snake_case towards Python
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains(&quot;\&quot;doc_id\&quot;:\&quot;manual-calibration\&quot;&quot;, body);       // and snake_case back to the caller
+        Assert.Contains(&quot;\&quot;refused\&quot;:false&quot;, body);
+    }
+
+    [Theory]
+    [InlineData(&quot;&quot;, 3)]
+    [InlineData(&quot;x&quot;, 0)]
+    [InlineData(&quot;x&quot;, 11)]
+    public async Task A_bad_request_is_a_400_and_never_reaches_python(string question, int topK)
+    {
+        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.OK, PythonAnswer));
+        var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/ask&quot;, new { question, top_k = topK });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(python.LastRequest);
+    }
+
+    [Fact]
+    public async Task A_python_503_stays_a_503()
+    {
+        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.ServiceUnavailable, &quot;&quot;&quot;{&quot;detail&quot;:&quot;the database is not available&quot;}&quot;&quot;&quot;));
+        var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/ask&quot;, new { question = &quot;x&quot; });
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_python_service_that_is_down_is_a_502()
+    {
+        var python = new StubHandler(_ =&gt; throw new HttpRequestException(&quot;connection refused&quot;));
+        var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/ask&quot;, new { question = &quot;x&quot; });
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task An_unexpected_python_status_is_a_502()
+    {
+        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.InternalServerError, &quot;{}&quot;));
+        var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/ask&quot;, new { question = &quot;x&quot; });
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+    }
+
+    const string AssistAnswer = &quot;&quot;&quot;
+        {&quot;answer&quot;:&quot;E104 means Disk full.&quot;,&quot;tool_calls&quot;:[{&quot;name&quot;:&quot;lookup_error&quot;,&quot;tool_input&quot;:{&quot;code&quot;:&quot;E104&quot;},&quot;is_error&quot;:false}],&quot;rounds&quot;:2,&quot;gave_up&quot;:false}
+        &quot;&quot;&quot;;
+
+    [Fact]
+    public async Task An_assist_request_is_forwarded_with_the_role_and_the_tool_calls_come_back()
+    {
+        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.OK, AssistAnswer));
+        var http = ClientWith(python);
+        http.DefaultRequestHeaders.Add(&quot;x-demo-role&quot;, &quot;staff&quot;);
+        var response = await http.PostAsJsonAsync(&quot;/api/assist&quot;, new { question = &quot;What does error E104 mean?&quot; });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(&quot;/api/assist&quot;, python.LastRequest!.RequestUri!.AbsolutePath);
+        Assert.Equal(&quot;staff&quot;, python.LastRequest.Headers.GetValues(&quot;x-demo-role&quot;).Single());
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains(&quot;\&quot;tool_calls\&quot;:[{\&quot;name\&quot;:\&quot;lookup_error\&quot;&quot;, body);
+        Assert.Contains(&quot;\&quot;tool_input\&quot;:{\&quot;code\&quot;:\&quot;E104\&quot;}&quot;, body);
+        Assert.Contains(&quot;\&quot;gave_up\&quot;:false&quot;, body);
+    }
+
+    [Fact]
+    public async Task Without_a_role_no_role_header_is_sent()
+    {
+        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.OK, AssistAnswer));
+        await ClientWith(python).PostAsJsonAsync(&quot;/api/assist&quot;, new { question = &quot;x&quot; });
+        Assert.False(python.LastRequest!.Headers.Contains(&quot;x-demo-role&quot;));
+    }
+
+    [Fact]
+    public async Task A_python_422_such_as_an_unknown_role_is_a_400()
+    {
+        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.UnprocessableEntity, &quot;&quot;&quot;{&quot;detail&quot;:&quot;unknown role&quot;}&quot;&quot;&quot;));
+        var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/assist&quot;, new { question = &quot;x&quot; });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+}</code></pre><div class="out"><b>You should see</b><br>Passed!  - Failed: 0, Passed: 10, Skipped: 0, Total: 10</div><h3>Step 2: create the page</h3><pre><code>cd ai-knowledge-assistant
+mkdir web &amp;&amp; cd web
+npm create vite@latest chat-ui -- --template react-ts
+cd chat-ui
+npm install</code></pre><p>Delete the template&rsquo;s <code>src/assets</code>, <code>src/App.css</code> and the logo files; you will replace <code>App.tsx</code> and <code>index.css</code>. Add the proxy to <code>vite.config.ts</code>: during development the page is served by Vite on port 5173, and Vite forwards <code>/api</code> to the gateway, so the browser never makes a cross-origin call and you need no CORS for now (a deployed page would need either a proxy or a CORS policy in the gateway):</p><pre><code>import react from &#x27;@vitejs/plugin-react&#x27;
+import { defineConfig } from &#x27;vite&#x27;
+
+// In development the page is served by Vite (port 5173) and calls /api/... on the same address.
+// Vite forwards those calls to the .NET gateway, so the browser never needs CORS.
+export default defineConfig({
+  plugins: [react()],
+  server: { proxy: { &#x27;/api&#x27;: &#x27;http://localhost:5100&#x27; } },
+})</code></pre><h3>Step 3: the API client</h3><p><code>src/api.ts</code>: the types of the response, one function, and an <code>ApiError</code> that carries the status. A network failure and an error status both become an <code>ApiError</code> with a message a person can read:</p><pre><code>export type Role = &#x27;customer&#x27; | &#x27;staff&#x27;
+
+export interface ToolCall {
+  name: string
+  tool_input: Record&lt;string, unknown&gt;
+  is_error: boolean
+}
+
+export interface AssistResponse {
+  answer: string
+  tool_calls: ToolCall[]
+  rounds: number
+  gave_up: boolean
+}
+
+export class ApiError extends Error {
+  status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+// DEMO ONLY: the role is sent in a header so that you can try both. A real app sends a login token (Module 8).
+export async function assist(question: string, role: Role): Promise&lt;AssistResponse&gt; {
+  let response: Response
+  try {
+    response = await fetch(&#x27;/api/assist&#x27;, {
+      method: &#x27;POST&#x27;,
+      headers: { &#x27;content-type&#x27;: &#x27;application/json&#x27;, &#x27;x-demo-role&#x27;: role },
+      body: JSON.stringify({ question }),
+    })
+  } catch {
+    throw new ApiError(0, &#x27;Cannot reach the server. Is the gateway running?&#x27;)
+  }
+  if (!response.ok) {
+    const problem = (await response.json().catch(() =&gt; null)) as { detail?: string; title?: string } | null
+    throw new ApiError(response.status, problem?.detail ?? problem?.title ?? `The request failed (${response.status}).`)
+  }
+  return (await response.json()) as AssistResponse
+}</code></pre><h3>Step 4: the chat component</h3><p><code>src/App.tsx</code>. The state is a list of messages, the text box, the role, and a <code>waiting</code> flag that disables the button while a call is running. The tool calls of an answer are in a <code>details</code> element, so they are there when you want them and out of the way when you do not:</p><pre><code>import { useState, type FormEvent } from &#x27;react&#x27;
+import { ApiError, assist, type Role, type ToolCall } from &#x27;./api&#x27;
+import &#x27;./index.css&#x27;
+
+interface Message {
+  id: number
+  from: &#x27;user&#x27; | &#x27;assistant&#x27;
+  text: string
+  toolCalls?: ToolCall[]
+  failed?: boolean
+}
+
+export default function App() {
+  const [messages, setMessages] = useState&lt;Message[]&gt;([])
+  const [question, setQuestion] = useState(&#x27;&#x27;)
+  const [role, setRole] = useState&lt;Role&gt;(&#x27;customer&#x27;)
+  const [waiting, setWaiting] = useState(false)
+
+  function add(message: Omit&lt;Message, &#x27;id&#x27;&gt;) {
+    setMessages((current) =&gt; [...current, { ...message, id: current.length }])
+  }
+
+  async function send(event: FormEvent) {
+    event.preventDefault()
+    const text = question.trim()
+    if (!text || waiting) return
+    add({ from: &#x27;user&#x27;, text })
+    setQuestion(&#x27;&#x27;)
+    setWaiting(true)
+    try {
+      const result = await assist(text, role)
+      add({ from: &#x27;assistant&#x27;, text: result.answer, toolCalls: result.tool_calls })
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : &#x27;Something went wrong.&#x27;
+      add({ from: &#x27;assistant&#x27;, text: message, failed: true })
+    } finally {
+      setWaiting(false)
+    }
+  }
+
+  return (
+    &lt;main&gt;
+      &lt;header&gt;
+        &lt;h1&gt;PumpGuard assistant&lt;/h1&gt;
+        &lt;label&gt;
+          I am a{&#x27; &#x27;}
+          &lt;select value={role} onChange={(event) =&gt; setRole(event.target.value as Role)}&gt;
+            &lt;option value=&quot;customer&quot;&gt;customer&lt;/option&gt;
+            &lt;option value=&quot;staff&quot;&gt;staff member&lt;/option&gt;
+          &lt;/select&gt;
+        &lt;/label&gt;
+      &lt;/header&gt;
+
+      &lt;section aria-live=&quot;polite&quot; aria-label=&quot;Conversation&quot;&gt;
+        {messages.length === 0 &amp;&amp; &lt;p className=&quot;hint&quot;&gt;Ask about an error code, for example: What does error E104 mean?&lt;/p&gt;}
+        {messages.map((message) =&gt; (
+          &lt;article key={message.id} className={`${message.from}${message.failed ? &#x27; failed&#x27; : &#x27;&#x27;}`}&gt;
+            &lt;p&gt;{message.text}&lt;/p&gt;
+            {message.toolCalls &amp;&amp; message.toolCalls.length &gt; 0 &amp;&amp; (
+              &lt;details&gt;
+                &lt;summary&gt;Tool calls ({message.toolCalls.length})&lt;/summary&gt;
+                &lt;ul&gt;
+                  {message.toolCalls.map((call, index) =&gt; (
+                    &lt;li key={index}&gt;
+                      &lt;code&gt;
+                        {call.name}({JSON.stringify(call.tool_input)})
+                      &lt;/code&gt;{&#x27; &#x27;}
+                      {call.is_error ? &#x27;failed&#x27; : &#x27;ok&#x27;}
+                    &lt;/li&gt;
+                  ))}
+                &lt;/ul&gt;
+              &lt;/details&gt;
+            )}
+          &lt;/article&gt;
+        ))}
+        {waiting &amp;&amp; &lt;p className=&quot;hint&quot;&gt;Thinking...&lt;/p&gt;}
+      &lt;/section&gt;
+
+      &lt;form onSubmit={send}&gt;
+        &lt;input value={question} onChange={(event) =&gt; setQuestion(event.target.value)} placeholder=&quot;Type a question&quot; aria-label=&quot;Your question&quot; maxLength={500} /&gt;
+        &lt;button type=&quot;submit&quot; disabled={waiting || question.trim() === &#x27;&#x27;}&gt;
+          Send
+        &lt;/button&gt;
+      &lt;/form&gt;
+    &lt;/main&gt;
+  )
+}</code></pre><p><code>src/index.css</code> (plain CSS, with a dark mode):</p><pre><code>:root { font-family: system-ui, sans-serif; color: #1b1b1f; background: #f6f6f8; }
+@media (prefers-color-scheme: dark) { :root { color: #ececf1; background: #17171b; } article.assistant { background: #26262d; } input, select { background: #26262d; color: inherit; } }
+body { margin: 0; }
+main { max-width: 40rem; margin: 0 auto; padding: 1rem; display: flex; flex-direction: column; min-height: 100vh; box-sizing: border-box; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-size: 1.25rem; margin: 0; }
+section { flex: 1; display: flex; flex-direction: column; gap: 0.75rem; padding: 1rem 0; }
+article { max-width: 85%; padding: 0.6rem 0.9rem; border-radius: 0.75rem; }
+article p { margin: 0; }
+article.user { align-self: flex-end; background: #3b5bdb; color: #fff; }
+article.assistant { align-self: flex-start; background: #e6e6ec; }
+article.failed { outline: 2px solid #e03131; }
+details { margin-top: 0.4rem; font-size: 0.85rem; }
+ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
+.hint { color: #868e96; margin: 0; }
+form { display: flex; gap: 0.5rem; }
+input { flex: 1; padding: 0.6rem; font-size: 1rem; border: 1px solid #adb5bd; border-radius: 0.5rem; }
+button { padding: 0.6rem 1rem; font-size: 1rem; border: 0; border-radius: 0.5rem; background: #3b5bdb; color: #fff; cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }</code></pre><p>Check the types and the build:</p><pre><code>npx tsc -b            # the types are right: no output means no errors
+npx vite build        # the page builds</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Run it <span class="t">20 min</span></h2><p>Start all three, each in its own terminal:</p><pre><code># terminal 1: the Python service
+cd python-service &amp;&amp; uv run uvicorn my_ai_project.api:app --port 8000
+# terminal 2: the .NET gateway
+dotnet run --project gateway/AskGateway --urls http://localhost:5100
+# terminal 3: the web page
+cd web/chat-ui &amp;&amp; npm run dev          # http://localhost:5173</code></pre><p>First check the whole path <strong>without the browser</strong>: the same address the page uses (port 5173, through the proxy, the gateway and Python):</p><pre><code>curl -X POST http://localhost:5173/api/assist -H &quot;x-demo-role: staff&quot; -H &quot;content-type: application/json&quot; -d &#x27;{&quot;question&quot;: &quot;What does error E104 mean?&quot;}&#x27;</code></pre><div class="out"><b>You should see</b><br>{"answer":"E104 means Disk full (severity high). The storage is above 95 percent. Export your readings from the web dashboard and then delete the old ones in Settings.",
+ "tool_calls":[{"name":"lookup_error","tool_input":{"code":"E104"},"is_error":false}],"rounds":2,"gave_up":false}</div><p>Now open <code>http://localhost:5173</code> and try it:</p><ol><li>As a <strong>customer</strong>, ask <em>What does error E104 mean?</em> and press Send. The answer says that this user may not read error records, and the tool call is marked <code>failed</code>.</li><li>Change the selector to <strong>staff member</strong> and ask again. The answer is <em>E104 means Disk full (severity high)</em> with the action. Open <strong>Tool calls (1)</strong>: <code>lookup_error({&quot;code&quot;:&quot;E104&quot;}) ok</code>.</li><li>Stop the Python service and ask again. The page shows <em>the AI service is not reachable</em> in a red frame, and the box works again.</li></ol><p>That is what I saw when I drove the page in a browser. Press Enter in the box too, and write down whether it sends.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The page shows &ldquo;Cannot reach the server&rdquo;</strong>: the gateway is not running on 5100, or the proxy in <code>vite.config.ts</code> has another port. Test with the <code>curl</code> command first.</li><li><strong>A 404 from Vite on <code>/api/assist</code></strong>: restart <code>npm run dev</code> after changing <code>vite.config.ts</code>.</li><li><strong>A 400 from the gateway</strong>: the request body is <code>{&quot;question&quot;: &quot;...&quot;}</code> and the question must not be empty or longer than 500 characters.</li><li><strong>A 502 although Python runs</strong>: the gateway looks at <code>PythonService:BaseUrl</code> (port 8000).</li><li><strong>TypeScript errors about <code>type</code> imports</strong>: with the Vite template, import types with <code>import { type Role }</code> or <code>import type</code>.</li><li><strong>You want a real model</strong>: start the Python service with <code>LLM_MODE=real</code> and <code>ANTHROPIC_API_KEY</code>. The page does not change.</li></ul></section>
+<section><h2><span class="n">7</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Add <code>node_modules</code> and <code>dist</code> to the <code>.gitignore</code> of <code>web/chat-ui</code> (the template already does), add the README section, run the checklist, and push.</p><pre><code>## Chat UI
+
+    cd python-service &amp;&amp; uv run uvicorn my_ai_project.api:app --port 8000
+    dotnet run --project gateway/AskGateway --urls http://localhost:5100
+    cd web/chat-ui &amp;&amp; npm install &amp;&amp; npm run dev        # open http://localhost:5173
+
+    The page asks POST /api/assist through the Vite proxy and the .NET gateway.
+    &quot;I am a customer / staff member&quot; sets the demo header x-demo-role (a login replaces it in Module 8).
+    Answers use a pretend model unless the Python service runs with LLM_MODE=real and a key.</code></pre><pre><code>[ ] the gateway forwards POST /api/assist, with the role header, and maps a Python 422 to a 400
+[ ] 10 gateway tests pass without Python or a model
+[ ] web/chat-ui: npx tsc -b and npx vite build pass
+[ ] the page shows my question, the answer, and the tool calls of that answer
+[ ] a customer sees the permission message, staff see the record
+[ ] with the Python service stopped, the page shows &#x27;the AI service is not reachable&#x27; (not a blank page)
+[ ] README has the three commands; node_modules and dist are in .gitignore
+[ ] committed and pushed</code></pre><p><code>git add .</code>, <code>git commit -m &quot;Add the React chat page and the /api/assist gateway endpoint&quot;</code>, <code>git push</code>.</p></section>
+<section><h2><span class="n">8</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does the page call the gateway and not the Python service?</li><li>Why does the Vite proxy mean you need no CORS during development?</li><li>Why is the role selector only a demo?</li></ol><details><summary>Answers</summary><ol><li>The .NET layer is the front door: it will own login, business rules and logging. The browser should know one address, and the AI service stays behind it.</li><li>The browser only talks to its own origin (port 5173). Vite forwards the request to the gateway from the server side, where CORS does not apply.</li><li>Anything in the browser can be changed by the user, so a role that the page sends can be faked. A real role comes from a login that the server checks (Module 8).</li></ol></details></section>
+<section id="game-day98" class="game"><h2><span class="n">+</span> &middot; Game: Chat Page Check <span class="t">5 min</span></h2>
+<p><p>You test the React page and the .NET gateway. Read the action, pick what happens, then see what I saw. (The answers come from a stand-in model.)</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day98-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day98-play">Start the game</button></div>
+<div id="day98-round" hidden><div class="gtop"><span id="day98-num">Round 1</span><span id="day98-score">Score 0</span></div>
+<pre hidden><code id="day98-code"></code></pre><div class="q" id="day98-q"></div><div class="choices" id="day98-opts"></div>
+<div class="fb" id="day98-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day98-next" hidden>Next round</button></p></div>
+<div id="day98-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day98",[{"c": "Page: customer, question 'What does error E104 mean?', click Send", "q": "What does the page show?", "o": ["The answer says this user may not read error records; the tool call failed", "The E104 record", "A blank page"], "a": 0, "out": "I could not look that up: this user may not read error records. tell the user to ask support staff\nTool calls (1)  lookup_error({\"code\":\"E104\"}) failed", "why": "The role header was customer, and the tool runs as that role."}, {"c": "Page: staff member, the same question, click Send", "q": "What does the page show?", "o": ["E104 means Disk full (severity high) and the action; the tool call ok", "The same refusal", "An error page"], "a": 0, "out": "E104 means Disk full (severity high). The storage is above 95 percent. Export your readings from the web dashboard and then delete the old ones in Settings.\nTool calls (1)  lookup_error({\"code\":\"E104\"}) ok", "why": "Staff may read error records. This is the Module 7 checkpoint."}, {"c": "Stop the Python service, then send a question in the page", "q": "What does the page show?", "o": ["the AI service is not reachable, in a red frame", "A blank page", "The old answer"], "a": 0, "out": "the AI service is not reachable", "why": "The gateway answers 502, and the page shows the message of the error."}, {"c": "vite.config.ts: server: { proxy: { '/api': 'http://localhost:5100' } }", "q": "Why is CORS not needed in development?", "o": ["The browser only talks to port 5173; Vite forwards the call from the server side", "CORS does not exist in browsers", "The gateway ignores origins"], "a": 0, "out": "curl -X POST http://localhost:5173/api/assist ...  ->  {\"answer\":\"E104 means Disk full ...\", \"rounds\":2, ...}", "why": "A deployed page needs either a proxy or a CORS policy."}, {"c": "POST /api/assist through the gateway, Python answers 422 (unknown role)", "q": "Which status does the gateway return?", "o": ["400", "502", "200"], "a": 0, "out": "Passed!  - Failed: 0, Passed: 10, Skipped: 0, Total: 10", "why": "The caller sent something wrong: the gateway maps a 422 to a 400."}, {"c": "The role selector in the page", "q": "Why is it only a demo?", "o": ["The user can change anything in the browser; a real role comes from a login the server checks", "It is too slow", "Selectors are not allowed"], "a": 0, "out": "headers: { 'x-demo-role': role }", "why": "Module 8 replaces it with real authentication."}, {"c": "npx tsc -b && npx vite build", "q": "What does it check?", "o": ["That the types are right and the page builds", "That the answers are correct", "That Python is running"], "a": 0, "out": "tsc: no output (no errors)\nvite: built in 317ms", "why": "It does not test the behaviour: that is what you did in the browser."}],["Page rookie", "Page regular", "Full-stack builder"],"The page calls the .NET gateway, which calls Python; the role is a demo header; failures become readable messages; and a type check is not a behaviour test.");</script>
+<p><small>Tick &ldquo;Play the Chat Page Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">9</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a web page where a person types a question, a .NET gateway that forwards it with the role, a Python service that uses the tool, and an answer with the tool calls on screen, with clear messages when something fails. That is the Module 7 checkpoint.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 98 checklist.</li><li>Share one line in the comments, with a screenshot if you like: what does your page look like?</li><li><strong>Next:</strong> Sunday is the Module 7 retrospective, and the start of a new habit: two or three job applications a week.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

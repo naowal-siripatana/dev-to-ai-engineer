@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 93 - The agent loop: think, act, observe</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 93 &middot; LEVEL 7: TOOLS</div><h1>The agent loop: think, act, observe</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to run an agent loop with a step limit and a readable trace, and say why your code must set the limit.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does the Day 91 loop stop after three rounds?</li><li>Where does the role of the user come from in a tool call?</li></ol><details><summary>Answers</summary><ol><li>A model that keeps asking for tools would run forever and cost money. The limit turns that into a clear give-up answer.</li><li>From your own code (the login of the person who asked), never from the model&rsquo;s input.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A user asks: <em>Which of E101, E104 and E106 is the most severe?</em> One tool call is not enough: the assistant must look up three records and then compare them. Who decides how many calls to make, and when to stop?</strong></p><details><summary>Guess first, then open</summary><p>The <strong>model</strong> decides, one step at a time, and <strong>your loop</strong> decides when to cut it off. This pattern, where the model chooses its own next action in a loop until it thinks it is done, is what people call an <em>agent</em>. It is the loop of Day 91, with more than one step.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: think, act, observe</h3>
+<p>An <strong>agent loop</strong> repeats three things. <strong>Think</strong>: the model looks at the goal and what has happened so far, and decides the next move. <strong>Act</strong>: your code runs the tool the model chose. <strong>Observe</strong>: the result is added to the history, and the model thinks again with it. The loop ends when the model <em>answers</em> instead of asking for a tool.</p>
+<h3>Piece 2: the loop needs limits</h3>
+<p>A model can get stuck, repeat itself or wander. So <strong>your code</strong> sets a <strong>maximum number of steps</strong>. When it is reached, the loop stops and returns a clear message, together with the steps so far. Without a limit, a bad run costs money and time and never ends.</p>
+<h3>Piece 3: keep a trace</h3>
+<p>Record every step: what the model thought, which tool it called, with what input, and what came back. This <strong>trace</strong> is how you understand a run afterwards, and how you will later evaluate it. An agent without a trace is a black box.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> it is a <code>while</code> loop with a counter and a state machine whose next state is chosen by a remote service. The <code>Step</code> list is the log you would write for any workflow engine, and <code>max_steps</code> is the circuit breaker you would put on any loop that calls something you do not control.</div>
+<div class="box cap"><strong>Capstone:</strong> your assistant already has a tool loop (Day 91). This week you look at the general shape, the limits and the approval step for risky actions, and the React UI shows one tool call to a user.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>The shape first:</p><pre><code>loop:
+    decision = model.decide(goal, steps_so_far)       # THINK
+    if decision.answer:  stop: done                   # the model says it is finished
+    observation = call_tool(decision.tool, ...)       # ACT, as this user&#x27;s role
+    steps_so_far.append(observation)                  # OBSERVE
+    if too many steps:   stop: max_steps</code></pre><p>The loop, in <code>src/my_ai_project/agent.py</code>. The model has one method, <code>decide</code>, and it returns either a tool to call (with a short thought) or a final answer. The tools run through the functions of Day 86, as the user&rsquo;s role, and a second tool, <code>list_error_codes</code>, is new:</p><pre><code>import json
+from dataclasses import dataclass, field
+from typing import Any, Literal, Protocol
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.incident import load_incidents
+from my_ai_project.tool_design import execute, tool_error
+
+GIVE_UP = &quot;I could not finish within the step limit.&quot;
+
+
+@dataclass
+class Decision:
+    &quot;&quot;&quot;What the model decides at each turn: think, then either act (a tool) or answer.&quot;&quot;&quot;
+
+    thought: str
+    tool: str | None = None
+    tool_input: dict[str, Any] = field(default_factory=dict)
+    answer: str | None = None
+
+
+@dataclass
+class Step:
+    number: int
+    thought: str
+    tool: str
+    tool_input: dict[str, Any]
+    observation: str
+    is_error: bool
+
+
+@dataclass
+class AgentRun:
+    goal: str
+    final: str
+    steps: list[Step]
+    stopped: Literal[&quot;done&quot;, &quot;max_steps&quot;]
+
+
+class AgentModel(Protocol):
+    def decide(self, goal: str, steps: list[Step]) -&gt; Decision: ...
+
+
+def call_tool(name: str, tool_input: dict[str, Any], role: str) -&gt; tuple[str, bool]:
+    &quot;&quot;&quot;Act: run one tool as this role. Returns the observation text and whether it was an error.&quot;&quot;&quot;
+    if name == &quot;list_error_codes&quot;:
+        try:
+            permitted = &quot;error&quot; in allowed_kinds(role)
+        except ValueError:
+            permitted = False
+        if not permitted:
+            result = tool_error(&quot;agent&quot;, &quot;permission_denied&quot;, &quot;this user may not read error records&quot;, hint=&quot;tell the user to ask support staff&quot;)
+        else:
+            codes = [{&quot;code&quot;: i.code, &quot;name&quot;: i.name} for i in load_incidents().values()]
+            return json.dumps(codes), False
+    else:
+        result = execute(&quot;agent&quot;, name, tool_input, role)
+    return str(result[&quot;content&quot;]), bool(result.get(&quot;is_error&quot;))
+
+
+def run_agent(goal: str, model: AgentModel, role: str, max_steps: int = 5) -&gt; AgentRun:
+    &quot;&quot;&quot;The agent loop: think, act, observe, again. It ends when the model answers, or after max_steps tool calls.&quot;&quot;&quot;
+    steps: list[Step] = []
+    while len(steps) &lt; max_steps:
+        decision = model.decide(goal, steps)
+        if decision.answer is not None:
+            return AgentRun(goal, decision.answer, steps, &quot;done&quot;)
+        observation, is_error = call_tool(decision.tool or &quot;&quot;, decision.tool_input, role)
+        steps.append(Step(len(steps) + 1, decision.thought, decision.tool or &quot;&quot;, decision.tool_input, observation, is_error))
+    return AgentRun(goal, GIVE_UP, steps, &quot;max_steps&quot;)   # the model kept acting: stop, never loop forever</code></pre><div class="box"><strong>These models are stand-ins.</strong> We have no key here, so <code>PretendAgentModel</code> looks up each error code that the goal names and then compares the severities, and <code>StubbornModel</code> never stops asking. Neither is a real model: a real model decides in its own way and may take more or fewer steps. (With a real model the history is sent as the messages of Day 91; here the history is a list of steps, so you can focus on the loop.)</div><pre><code>import json
+import re
+
+from my_ai_project.agent import Decision, Step
+
+RANK = {&quot;low&quot;: 1, &quot;medium&quot;: 2, &quot;high&quot;: 3}
+
+
+class PretendAgentModel:
+    &quot;&quot;&quot;A stand-in for a model, to run the agent loop with no key and no cost. It is NOT a real model.
+
+    It compares the severity of the error codes named in the goal: it looks each one up, then answers.&quot;&quot;&quot;
+
+    def decide(self, goal: str, steps: list[Step]) -&gt; Decision:
+        failed = [s for s in steps if s.is_error]
+        if failed:
+            message = json.loads(failed[-1].observation)[&quot;error&quot;][&quot;message&quot;]
+            return Decision(&quot;A tool failed, so I stop and explain.&quot;, answer=f&quot;I could not finish: {message}.&quot;)
+        codes = list(dict.fromkeys(c.upper() for c in re.findall(r&quot;\bE\d{3}\b&quot;, goal, re.IGNORECASE)))
+        if not codes:
+            return Decision(&quot;There is no error code in the goal.&quot;, answer=&quot;Name some error codes, like E104, and I will compare them.&quot;)
+        seen = {json.loads(s.observation)[&quot;code&quot;]: json.loads(s.observation)[&quot;severity&quot;] for s in steps}
+        todo = [c for c in codes if c not in seen]
+        if todo:
+            return Decision(f&quot;I need the severity of {todo[0]}.&quot;, tool=&quot;lookup_error&quot;, tool_input={&quot;code&quot;: todo[0]})
+        worst = max(seen, key=lambda c: RANK[seen[c]])
+        return Decision(&quot;I have every severity, so I can answer.&quot;, answer=f&quot;{worst} is the most severe ({seen[worst]}).&quot;)
+
+
+class StubbornModel:
+    &quot;&quot;&quot;A stand-in that never stops acting, to show what the step limit is for.&quot;&quot;&quot;
+
+    def decide(self, goal: str, steps: list[Step]) -&gt; Decision:
+        return Decision(&quot;Let me check the list again.&quot;, tool=&quot;list_error_codes&quot;)</code></pre><p>A script that runs three cases and prints the trace. <code>agent_demo.py</code>:</p><pre><code>from my_ai_project.agent import AgentModel, AgentRun, run_agent
+from my_ai_project.pretend_agent import PretendAgentModel, StubbornModel
+
+
+def show(run: AgentRun) -&gt; None:
+    print(f&quot;goal: {run.goal}&quot;)
+    for step in run.steps:
+        print(f&quot;  step {step.number}  think: {step.thought}&quot;)
+        print(f&quot;          act:   {step.tool} {step.tool_input}&quot;)
+        print(f&quot;          see:   {step.observation[:78]}{&#x27;...&#x27; if len(step.observation) &gt; 78 else &#x27;&#x27;}{&#x27;   [error]&#x27; if step.is_error else &#x27;&#x27;}&quot;)
+    print(f&quot;  stopped: {run.stopped}  |  final: {run.final}\n&quot;)
+
+
+GOAL = &quot;Which of E101, E104 and E106 is the most severe?&quot;
+runs: list[tuple[str, AgentModel, str]] = [
+    (&quot;staff&quot;, PretendAgentModel(), GOAL),
+    (&quot;customer&quot;, PretendAgentModel(), GOAL),
+    (&quot;staff&quot;, StubbornModel(), &quot;List the error codes.&quot;),
+]
+for role, model, goal in runs:
+    print(f&quot;role={role}, model={type(model).__name__}&quot;)
+    show(run_agent(goal, model, role))</code></pre><div class="out"><b>You should see</b><br>role=staff, model=PretendAgentModel<br>goal: Which of E101, E104 and E106 is the most severe?<br>&nbsp;&nbsp;step 1&nbsp;&nbsp;think: I need the severity of E101.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;act:&nbsp;&nbsp; lookup_error {'code': 'E101'}<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;see:&nbsp;&nbsp; {"code": "E101", "name": "Sensor timeout", "severity": "medium", "action": "Th...<br>&nbsp;&nbsp;step 2&nbsp;&nbsp;think: I need the severity of E104.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;act:&nbsp;&nbsp; lookup_error {'code': 'E104'}<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;see:&nbsp;&nbsp; {"code": "E104", "name": "Disk full", "severity": "high", "action": "The stora...<br>&nbsp;&nbsp;step 3&nbsp;&nbsp;think: I need the severity of E106.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;act:&nbsp;&nbsp; lookup_error {'code': 'E106'}<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;see:&nbsp;&nbsp; {"code": "E106", "name": "Firmware mismatch", "severity": "medium", "action": ...<br>&nbsp;&nbsp;stopped: done&nbsp;&nbsp;|&nbsp;&nbsp;final: E104 is the most severe (high).<br><br>role=customer, model=PretendAgentModel<br>goal: Which of E101, E104 and E106 is the most severe?<br>&nbsp;&nbsp;step 1&nbsp;&nbsp;think: I need the severity of E101.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;act:&nbsp;&nbsp; lookup_error {'code': 'E101'}<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;see:&nbsp;&nbsp; {"error": {"code": "permission_denied", "message": "this user may not read err...&nbsp;&nbsp; [error]<br>&nbsp;&nbsp;stopped: done&nbsp;&nbsp;|&nbsp;&nbsp;final: I could not finish: this user may not read error records.<br><br>role=staff, model=StubbornModel<br>goal: List the error codes.<br>&nbsp;&nbsp;step 1&nbsp;&nbsp;think: Let me check the list again.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;act:&nbsp;&nbsp; list_error_codes {}<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;see:&nbsp;&nbsp; [{"code": "E101", "name": "Sensor timeout"}, {"code": "E102", "name": "Low bat...<br>&nbsp;&nbsp;step 2&nbsp;&nbsp;think: Let me check the list again.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;act:&nbsp;&nbsp; list_error_codes {}<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;see:&nbsp;&nbsp; [{"code": "E101", "name": "Sensor timeout"}, {"code": "E102", "name": "Low bat...<br>&nbsp;&nbsp;step 3&nbsp;&nbsp;think: Let me check the list again.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;act:&nbsp;&nbsp; list_error_codes {}<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;see:&nbsp;&nbsp; [{"code": "E101", "name": "Sensor timeout"}, {"code": "E102", "name": "Low bat...<br>&nbsp;&nbsp;step 4&nbsp;&nbsp;think: Let me check the list again.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;act:&nbsp;&nbsp; list_error_codes {}<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;see:&nbsp;&nbsp; [{"code": "E101", "name": "Sensor timeout"}, {"code": "E102", "name": "Low bat...<br>&nbsp;&nbsp;step 5&nbsp;&nbsp;think: Let me check the list again.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;act:&nbsp;&nbsp; list_error_codes {}<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;see:&nbsp;&nbsp; [{"code": "E101", "name": "Sensor timeout"}, {"code": "E102", "name": "Low bat...<br>&nbsp;&nbsp;stopped: max_steps&nbsp;&nbsp;|&nbsp;&nbsp;final: I could not finish within the step limit.</div><p>Read the three runs. The first took three steps and answered. The second was stopped by a permission error, and the model explained it instead of guessing. The third never answered: the loop ended it after five steps.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c agent</code>). You need no database and no model.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>agent.py</code>, <code>pretend_agent.py</code> and <code>agent_demo.py</code> and run it. Match the three traces.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Run the first goal with <code>max_steps=2</code>. <strong>Predict first:</strong> what will <code>stopped</code> be, which steps are in the trace, and what is the final text?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Take the <code>max_steps</code> check out of the loop (make it <code>while True</code>) and run the <code>StubbornModel</code> for a few seconds. What happens, and what would that cost with a real model that charges for every step? (Stop it with Ctrl-C.)</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Write the tests of the template. Then add a second kind of stop: if one single step returns an error, stop the loop with <code>stopped=&quot;error&quot;</code> instead of letting the model decide. Is that a good rule? When would you <em>not</em> want it?</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Add the agent loop with a step limit and a trace&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;ModuleNotFoundError: tool_design&rdquo;</strong>: <code>tool_design.py</code> and <code>access.py</code> come from Days 86 and 79.</li><li><strong>The loop never ends without <code>max_steps</code></strong>: that is the point of Step 3. Put the limit back.</li><li><strong>A test fails on the number of steps</strong>: <code>len(steps)</code> counts tool calls; the final answer is not a step.</li></ul><details><summary>Solution: Step 2</summary><p><code>stopped</code> is <code>max_steps</code>, the trace has the first two lookups (E101 and E104), and the final text is the give-up message. The model never got the chance to answer, because the limit was reached after two tool calls. A limit that is too small makes a good run fail, so choose it from what a good run needs, and keep some room.</p></details><details><summary>Solution: Step 3</summary><p>The loop never ends: the stubborn model keeps asking, and the output goes on until you stop it. With a real model, every step is a paid call that sends the whole history again, so a loop without a limit is a bill without a limit.</p></details><details><summary>Solution: Step 4</summary><p>Stopping at the first error is simple and safe for tools that must not be retried (they change something). It is a poor rule for read-only lookups, where an error such as &ldquo;unknown code&rdquo; is information the model can use to try again. Today the model sees the error and decides; on Wednesday you decide for risky tools.</p></details><details><summary>Template: tests</summary><pre><code>import json
+
+from my_ai_project.agent import GIVE_UP, Decision, Step, call_tool, run_agent
+from my_ai_project.pretend_agent import PretendAgentModel, StubbornModel
+
+
+class Scripted:
+    def __init__(self, decisions: list[Decision]) -&gt; None:
+        self.decisions = decisions
+        self.seen: list[int] = []
+
+    def decide(self, goal: str, steps: list[Step]) -&gt; Decision:
+        self.seen.append(len(steps))
+        return self.decisions.pop(0)
+
+
+def act(tool: str, **tool_input: str) -&gt; Decision:
+    return Decision(&quot;thinking&quot;, tool=tool, tool_input=dict(tool_input))
+
+
+def test_the_agent_acts_observes_and_answers() -&gt; None:
+    model = Scripted([act(&quot;lookup_error&quot;, code=&quot;E104&quot;), Decision(&quot;done&quot;, answer=&quot;E104 is high.&quot;)])
+    run = run_agent(&quot;goal&quot;, model, &quot;staff&quot;)
+    assert run.stopped == &quot;done&quot; and run.final == &quot;E104 is high.&quot;
+    assert [(s.tool, s.is_error) for s in run.steps] == [(&quot;lookup_error&quot;, False)]
+    assert model.seen == [0, 1]   # the second decision saw the first step
+
+
+def test_the_step_limit_stops_a_model_that_never_answers() -&gt; None:
+    run = run_agent(&quot;goal&quot;, StubbornModel(), &quot;staff&quot;, max_steps=4)
+    assert run.stopped == &quot;max_steps&quot; and run.final == GIVE_UP and len(run.steps) == 4
+
+
+def test_a_tool_error_is_an_observation_not_a_crash() -&gt; None:
+    run = run_agent(&quot;goal&quot;, Scripted([act(&quot;lookup_error&quot;, code=&quot;E999&quot;), Decision(&quot;x&quot;, answer=&quot;no such code&quot;)]), &quot;staff&quot;)
+    assert run.steps[0].is_error and &quot;unknown_error_code&quot; in run.steps[0].observation
+
+
+def test_the_role_applies_to_every_tool() -&gt; None:
+    assert call_tool(&quot;list_error_codes&quot;, {}, &quot;customer&quot;)[1] is True
+    observation, is_error = call_tool(&quot;list_error_codes&quot;, {}, &quot;staff&quot;)
+    assert not is_error and len(json.loads(observation)) == 7
+
+
+def test_the_pretend_model_compares_severities() -&gt; None:
+    run = run_agent(&quot;Which of E101, E104 and E106 is the most severe?&quot;, PretendAgentModel(), &quot;staff&quot;)
+    assert [s.tool_input[&quot;code&quot;] for s in run.steps] == [&quot;E101&quot;, &quot;E104&quot;, &quot;E106&quot;]
+    assert run.final == &quot;E104 is the most severe (high).&quot;
+
+
+def test_the_pretend_model_stops_when_a_tool_is_refused() -&gt; None:
+    run = run_agent(&quot;Which of E101 and E104 is the most severe?&quot;, PretendAgentModel(), &quot;customer&quot;)
+    assert len(run.steps) == 1 and run.final.startswith(&quot;I could not finish&quot;)</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What are the three parts of one turn of an agent loop?</li><li>Who stops the loop if the model never answers?</li><li>What is a trace for?</li></ol><details><summary>Answers</summary><ol><li>Think (the model decides), act (your code runs the tool), observe (the result goes into the history).</li><li>Your code, with a maximum number of steps.</li><li>To understand a run afterwards: what the model thought, which tool it called with what input, and what came back. It is also the raw material for evaluation.</li></ol></details></section>
+<section id="game-day93" class="game"><h2><span class="n">+</span> &middot; Game: Agent Loop Check <span class="t">5 min</span></h2>
+<p><p>You run an agent loop. Read the call, pick what happens, then see the real output. (The models are stand-ins, not real models.)</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day93-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day93-play">Start the game</button></div>
+<div id="day93-round" hidden><div class="gtop"><span id="day93-num">Round 1</span><span id="day93-score">Score 0</span></div>
+<pre hidden><code id="day93-code"></code></pre><div class="q" id="day93-q"></div><div class="choices" id="day93-opts"></div>
+<div class="fb" id="day93-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day93-next" hidden>Next round</button></p></div>
+<div id="day93-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day93",[{"c": "run_agent('Which of E101, E104 and E106 is the most severe?', PretendAgentModel(), 'staff')", "q": "How many tool steps, and what is the answer?", "o": ["3 lookups, then: E104 is the most severe (high).", "1 lookup", "No steps"], "a": 0, "out": "  step 1  act: lookup_error {'code': 'E101'}\n  step 2  act: lookup_error {'code': 'E104'}\n  step 3  act: lookup_error {'code': 'E106'}\n  stopped: done  |  final: E104 is the most severe (high).", "why": "The model chose three lookups, then answered."}, {"c": "the same goal, role 'customer'", "q": "What happens at step 1?", "o": ["permission_denied, and the model explains it", "The record", "The loop crashes"], "a": 0, "out": "  step 1  act: lookup_error {'code': 'E101'}   see: {\"error\": {\"code\": \"permission_denied\", ...   [error]\n  stopped: done  |  final: I could not finish: this user may not read error records.", "why": "A tool error is an observation. The model reads it and stops."}, {"c": "run_agent('List the error codes.', StubbornModel(), 'staff')", "q": "How does it end?", "o": ["stopped=max_steps after 5 steps", "stopped=done", "It never ends"], "a": 0, "out": "  stopped: max_steps  |  final: I could not finish within the step limit.", "why": "Your code sets the limit. The model never would."}, {"c": "Remove the max_steps check (while True) and run the StubbornModel", "q": "What happens?", "o": ["It never stops, and a real model would charge for every step", "It stops by itself", "It answers"], "a": 0, "out": "(the output goes on until you press Ctrl-C)", "why": "A loop without a limit is a bill without a limit."}, {"c": "One turn of the loop", "q": "What are the three parts?", "o": ["Think (the model), act (your code runs the tool), observe (the result)", "Read, write, delete", "Ask, wait, answer"], "a": 0, "out": "step 1  think: I need the severity of E101.\n        act:   lookup_error {'code': 'E101'}\n        see:   {\"code\": \"E101\", ...", "why": "The result goes into the history, and the model thinks again."}, {"c": "The list of steps (Step objects)", "q": "What is it for?", "o": ["A trace: you can see what happened, and evaluate it later", "Making the loop faster", "Saving memory"], "a": 0, "out": "(every step has thought, tool, input, observation, is_error)", "why": "An agent without a trace is a black box."}, {"c": "PretendAgentModel and StubbornModel", "q": "What are they?", "o": ["Stand-ins, NOT real models", "Real models", "Databases"], "a": 0, "out": "(they run the loop with no key and no cost)", "why": "A real model decides in its own way and may take more or fewer steps."}],["Loop rookie", "Loop regular", "Agent loop builder"],"An agent loop is think, act, observe; your code sets a step limit; a trace shows what happened; and tool errors are observations the model can use.");</script>
+<p><small>Tick &ldquo;Play the Agent Loop Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> an agent loop with a tool registry, a step limit and a readable trace, a permission check on every tool, and tests that need no model.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 93 checklist.</li><li>Share one line in the comments: how many steps does your assistant need for a normal question?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you add a human approval before a risky tool, and think about when not to use an agent at all.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

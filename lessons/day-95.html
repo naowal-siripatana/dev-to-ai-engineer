@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 95 - Human-in-the-loop, and when not to use agents</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 95 &middot; LEVEL 7: TOOLS</div><h1>Human-in-the-loop, and when not to use agents</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to put a person's approval before a risky tool, in the right order of checks, and say when a workflow is better than an agent.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are the three parts of one turn of an agent loop?</li><li>Which stop rule did you add in the exercise, and who sets it?</li></ol><details><summary>Answers</summary><ol><li>Think (the model decides), act (your code runs the tool), observe (the result goes into the history).</li><li>The maximum number of steps, set by your code.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your agent can read incidents. Now you give it a tool that <em>closes</em> an incident. A model misreads a question and closes the wrong one. Who should have been asked first, and where in the code?</strong></p><details><summary>Guess first, then open</summary><p>A <strong>person</strong>, <em>before</em> the tool runs, and in <strong>your code</strong>, not in the prompt. A tool that only reads can be wrong and nothing is lost. A tool that changes something can do damage, so a human approves each call. This is called <strong>human-in-the-loop</strong>.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: mark the risky tools, and ask a person</h3>
+<p>Split your tools into <strong>safe</strong> (they only read) and <strong>risky</strong> (they change, send or delete). Keep the risky ones in a small set. Before a risky tool runs, your code <strong>pauses and asks a person</strong> to approve <em>that exact call</em> (the tool and its input). No approver, or a &ldquo;no&rdquo;, means the tool does not run, and the model gets an error result it can explain.</p>
+<h3>Piece 2: order of the checks</h3>
+<p>First the <strong>rights</strong> (may this user do it at all?), then the <strong>input</strong> (is it valid?), then the <strong>approval</strong> (does a person agree?), and only then the <strong>action</strong>. Never ask a person to approve something that is not allowed or not valid: it wastes their attention and trains them to click &ldquo;yes&rdquo; without reading. Make the risky action <strong>safe to repeat</strong> (closing an already closed incident is not an error), because approvals and retries happen.</p>
+<h3>Piece 3: when not to use an agent at all</h3>
+<p>An agent is the most flexible and the least predictable design. If you can write the steps down in advance, use a <strong>workflow</strong> (fixed steps, maybe with one model call inside). If one tool call answers the question, use <strong>one call</strong>. Use an agent only when the next step really depends on what the last one found, and a slow, costly, sometimes surprising run is acceptable.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> approval is like a confirmation dialog before a destructive operation, or a two-person rule on a deployment. The check order is the order of an authorization policy: authenticate, authorize, validate, confirm, execute. And &ldquo;safe to repeat&rdquo; is idempotency, the same reason a payment API takes an idempotency key.</div>
+<div class="box cap"><strong>Capstone:</strong> your assistant only reads today. When it gets a tool that writes (a ticket, an email), this is the step that keeps a person in charge.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>The agent of Monday, with a risky tool. <code>agent.py</code> now has a set <code>RISKY</code>, an <code>Approver</code> (any function that takes the tool name and input and returns yes or no), and <code>close_incident</code> with the order of checks above:</p><pre><code>import json
+from dataclasses import dataclass, field
+from collections.abc import Callable
+from typing import Any, Literal, Protocol
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.incident import load_incidents
+from pydantic import ValidationError
+
+from my_ai_project.incident import UnknownErrorCode, lookup_error
+from my_ai_project.tool_design import LookupInput, execute, tool_error
+
+GIVE_UP = &quot;I could not finish within the step limit.&quot;
+RISKY = {&quot;close_incident&quot;}   # tools that change something: a person must approve each call
+
+Approver = Callable[[str, dict[str, Any]], bool]
+
+
+@dataclass
+class Decision:
+    &quot;&quot;&quot;What the model decides at each turn: think, then either act (a tool) or answer.&quot;&quot;&quot;
+
+    thought: str
+    tool: str | None = None
+    tool_input: dict[str, Any] = field(default_factory=dict)
+    answer: str | None = None
+
+
+@dataclass
+class Step:
+    number: int
+    thought: str
+    tool: str
+    tool_input: dict[str, Any]
+    observation: str
+    is_error: bool
+
+
+@dataclass
+class AgentRun:
+    goal: str
+    final: str
+    steps: list[Step]
+    stopped: Literal[&quot;done&quot;, &quot;max_steps&quot;]
+
+
+class AgentModel(Protocol):
+    def decide(self, goal: str, steps: list[Step]) -&gt; Decision: ...
+
+
+def has_error_rights(role: str) -&gt; bool:
+    try:
+        return &quot;error&quot; in allowed_kinds(role)
+    except ValueError:
+        return False   # an unknown role fails closed
+
+
+def close_incident(tool_input: dict[str, Any], role: str, approve: Approver | None, closed: set[str]) -&gt; dict[str, Any]:
+    &quot;&quot;&quot;A tool that changes data. Order of checks: rights, then input, then a person&#x27;s approval, then the action.&quot;&quot;&quot;
+    if not has_error_rights(role):
+        return tool_error(&quot;agent&quot;, &quot;permission_denied&quot;, &quot;this user may not close incidents&quot;, hint=&quot;tell the user to ask support staff&quot;)
+    try:
+        code = LookupInput.model_validate(tool_input).code.upper()
+        lookup_error(code)
+    except ValidationError:
+        return tool_error(&quot;agent&quot;, &quot;invalid_input&quot;, &quot;invalid code&quot;, hint=&quot;use the letter E and three digits, like E104&quot;)
+    except UnknownErrorCode:
+        return tool_error(&quot;agent&quot;, &quot;unknown_error_code&quot;, f&quot;no error with code {code!r}&quot;)
+    if approve is None or not approve(&quot;close_incident&quot;, {&quot;code&quot;: code}):
+        return tool_error(&quot;agent&quot;, &quot;not_approved&quot;, f&quot;a person did not approve closing {code}&quot;, hint=&quot;ask the user to confirm, then try again&quot;)
+    already = code in closed
+    closed.add(code)
+    return {&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: &quot;agent&quot;, &quot;content&quot;: json.dumps({&quot;closed&quot;: code, &quot;already_closed&quot;: already})}
+
+
+def call_tool(name: str, tool_input: dict[str, Any], role: str, approve: Approver | None = None, closed: set[str] | None = None) -&gt; tuple[str, bool]:
+    &quot;&quot;&quot;Act: run one tool as this role. Returns the observation text and whether it was an error.&quot;&quot;&quot;
+    if name == &quot;list_error_codes&quot;:
+        if not has_error_rights(role):
+            result = tool_error(&quot;agent&quot;, &quot;permission_denied&quot;, &quot;this user may not read error records&quot;, hint=&quot;tell the user to ask support staff&quot;)
+        else:
+            codes = [{&quot;code&quot;: i.code, &quot;name&quot;: i.name} for i in load_incidents().values()]
+            return json.dumps(codes), False
+    elif name in RISKY:
+        result = close_incident(tool_input, role, approve, closed if closed is not None else set())
+    else:
+        result = execute(&quot;agent&quot;, name, tool_input, role)
+    return str(result[&quot;content&quot;]), bool(result.get(&quot;is_error&quot;))
+
+
+def run_agent(
+    goal: str, model: AgentModel, role: str, max_steps: int = 5, approve: Approver | None = None, closed: set[str] | None = None
+) -&gt; AgentRun:
+    &quot;&quot;&quot;The agent loop: think, act, observe, again. It ends when the model answers, or after max_steps tool calls.&quot;&quot;&quot;
+    steps: list[Step] = []
+    while len(steps) &lt; max_steps:
+        decision = model.decide(goal, steps)
+        if decision.answer is not None:
+            return AgentRun(goal, decision.answer, steps, &quot;done&quot;)
+        observation, is_error = call_tool(decision.tool or &quot;&quot;, decision.tool_input, role, approve, closed)
+        steps.append(Step(len(steps) + 1, decision.thought, decision.tool or &quot;&quot;, decision.tool_input, observation, is_error))
+    return AgentRun(goal, GIVE_UP, steps, &quot;max_steps&quot;)   # the model kept acting: stop, never loop forever</code></pre><p>The stand-in model needs a way to close incidents too. Add this method to <code>PretendAgentModel</code> (and in <code>decide</code>, right after the check for failed steps, send any goal that contains the word &ldquo;close&rdquo; to it). It reads the incident first, and then asks to close it. Again, it is <strong>not a real model</strong>:</p><pre><code>    def close(self, goal: str, steps: list[Step]) -&gt; Decision:
+        found = re.search(r&quot;\bE\d{3}\b&quot;, goal, re.IGNORECASE)
+        if not found:
+            return Decision(&quot;There is no error code in the goal.&quot;, answer=&quot;Tell me which error code to close, like E104.&quot;)
+        code = found.group(0).upper()
+        if not steps:
+            return Decision(f&quot;I should read {code} before I change anything.&quot;, tool=&quot;lookup_error&quot;, tool_input={&quot;code&quot;: code})
+        if len(steps) == 1:
+            return Decision(f&quot;Now I can close {code}.&quot;, tool=&quot;close_incident&quot;, tool_input={&quot;code&quot;: code})
+        return Decision(&quot;It is closed.&quot;, answer=f&quot;Closed {code}.&quot;)</code></pre><p>A script with four runs. The approver is a function that records the question and answers yes or no. <code>approval_demo.py</code>:</p><pre><code>from collections.abc import Callable
+from typing import Any
+
+from my_ai_project.agent import AgentRun, run_agent
+from my_ai_project.pretend_agent import PretendAgentModel
+
+asked: list[str] = []
+
+
+def person_says(answer: bool):
+    def approve(name: str, tool_input: dict[str, Any]) -&gt; bool:
+        asked.append(f&quot;{name} {tool_input}&quot;)
+        print(f&quot;      &gt;&gt;&gt; a person is asked: allow {name} {tool_input}?  answer: {&#x27;yes&#x27; if answer else &#x27;no&#x27;}&quot;)
+        return answer
+
+    return approve
+
+
+def show(title: str, make_run: Callable[[], AgentRun]) -&gt; None:
+    print(title)
+    run = make_run()
+    for step in run.steps:
+        print(f&quot;  step {step.number}  act: {step.tool} {step.tool_input}  -&gt;  {step.observation[:70]}{&#x27;   [error]&#x27; if step.is_error else &#x27;&#x27;}&quot;)
+    print(f&quot;  final: {run.final}\n&quot;)
+
+
+GOAL = &quot;Close incident E104.&quot;
+closed: set[str] = set()
+show(&quot;1. staff, the person says yes&quot;, lambda: run_agent(GOAL, PretendAgentModel(), &quot;staff&quot;, approve=person_says(True), closed=closed))
+show(&quot;2. staff, the same again (already closed)&quot;, lambda: run_agent(GOAL, PretendAgentModel(), &quot;staff&quot;, approve=person_says(True), closed=closed))
+show(&quot;3. staff, the person says no&quot;, lambda: run_agent(&quot;Close incident E101.&quot;, PretendAgentModel(), &quot;staff&quot;, approve=person_says(False), closed=closed))
+show(&quot;4. a customer asks (no person is asked)&quot;, lambda: run_agent(GOAL, PretendAgentModel(), &quot;customer&quot;, approve=person_says(True), closed=set()))
+print(&quot;closed now:&quot;, sorted(closed))</code></pre><div class="out"><b>You should see</b><br>1. staff, the person says yes<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;>>> a person is asked: allow close_incident {'code': 'E104'}?&nbsp;&nbsp;answer: yes<br>&nbsp;&nbsp;step 1&nbsp;&nbsp;act: lookup_error {'code': 'E104'}&nbsp;&nbsp;->&nbsp;&nbsp;{"code": "E104", "name": "Disk full", "severity": "high", "action": "T<br>&nbsp;&nbsp;step 2&nbsp;&nbsp;act: close_incident {'code': 'E104'}&nbsp;&nbsp;->&nbsp;&nbsp;{"closed": "E104", "already_closed": false}<br>&nbsp;&nbsp;final: Closed E104.<br><br>2. staff, the same again (already closed)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;>>> a person is asked: allow close_incident {'code': 'E104'}?&nbsp;&nbsp;answer: yes<br>&nbsp;&nbsp;step 1&nbsp;&nbsp;act: lookup_error {'code': 'E104'}&nbsp;&nbsp;->&nbsp;&nbsp;{"code": "E104", "name": "Disk full", "severity": "high", "action": "T<br>&nbsp;&nbsp;step 2&nbsp;&nbsp;act: close_incident {'code': 'E104'}&nbsp;&nbsp;->&nbsp;&nbsp;{"closed": "E104", "already_closed": true}<br>&nbsp;&nbsp;final: Closed E104.<br><br>3. staff, the person says no<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;>>> a person is asked: allow close_incident {'code': 'E101'}?&nbsp;&nbsp;answer: no<br>&nbsp;&nbsp;step 1&nbsp;&nbsp;act: lookup_error {'code': 'E101'}&nbsp;&nbsp;->&nbsp;&nbsp;{"code": "E101", "name": "Sensor timeout", "severity": "medium", "acti<br>&nbsp;&nbsp;step 2&nbsp;&nbsp;act: close_incident {'code': 'E101'}&nbsp;&nbsp;->&nbsp;&nbsp;{"error": {"code": "not_approved", "message": "a person did not approv&nbsp;&nbsp; [error]<br>&nbsp;&nbsp;final: I could not finish: a person did not approve closing E101.<br><br>4. a customer asks (no person is asked)<br>&nbsp;&nbsp;step 1&nbsp;&nbsp;act: lookup_error {'code': 'E104'}&nbsp;&nbsp;->&nbsp;&nbsp;{"error": {"code": "permission_denied", "message": "this user may not&nbsp;&nbsp; [error]<br>&nbsp;&nbsp;final: I could not finish: this user may not read error records.<br><br>closed now: ['E104']</div><p>In run 1 the person said yes and the incident was closed. Run 2 shows that closing twice is safe (<code>already_closed: true</code>). In run 3 the answer was no, so nothing changed and the model explained why. In run 4 a customer was refused <em>before</em> any person was asked.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c approval</code>). You need no database and no model.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Update <code>agent.py</code> and <code>pretend_agent.py</code>, add <code>approval_demo.py</code>, and run it. Match the four runs.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Run goal 1 without an approver (leave out <code>approve=</code>). <strong>Predict first:</strong> is the incident closed? What is the final text?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Move the approval <em>before</em> the permission check in <code>close_incident</code>. Run run 4 again. What goes wrong, and for whom?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Write the tests of the template. Then answer in your notebook, for <strong>three</strong> features of your own project, whether they should be an agent, a workflow or one call, using the five questions in Stuck.</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Ask a person before a risky tool&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The tool never runs, even when the approver says yes</strong>: check that <code>approve</code> returns <code>True</code> (not just a truthy string), and that <code>run_agent</code> passes it down to <code>call_tool</code>.</li><li><strong>The set of closed incidents does not change between runs</strong>: pass the same <code>closed</code> set to every run.</li><li><strong>mypy: the approver type</strong>: it is <code>Callable[[str, dict[str, Any]], bool]</code>.</li></ul><details><summary>Five questions for Step 4</summary><pre><code>Can I write the steps down in advance?          yes -&gt; a workflow (fixed steps), not an agent
+Does one tool call answer it?                    yes -&gt; a single call, not a loop
+Is a wrong answer cheap and easy to undo?        no  -&gt; keep a person in the loop
+Do I need to explain every step afterwards?      yes -&gt; a workflow or a very good trace
+Is a slow, costly, unpredictable run acceptable? no  -&gt; do not use an agent</code></pre></details><details><summary>Solution: Step 2</summary><p>No approver means no: the incident is not closed, and the model explains that a person did not approve it. A missing approver must never mean &ldquo;allowed&rdquo;. Fail closed, as with roles.</p></details><details><summary>Solution: Step 3</summary><p>A customer would be asked to approve closing an incident that they are not allowed to close, and only then be refused. In a real app the person asked is a <em>staff member watching the screen</em>, who is bothered by requests that should never have reached them. Rights first, then input, then approval.</p></details><details><summary>Template: tests</summary><pre><code>import json
+
+from my_ai_project.agent import GIVE_UP, Decision, Step, call_tool, run_agent
+from my_ai_project.pretend_agent import PretendAgentModel, StubbornModel
+
+
+class Scripted:
+    def __init__(self, decisions: list[Decision]) -&gt; None:
+        self.decisions = decisions
+        self.seen: list[int] = []
+
+    def decide(self, goal: str, steps: list[Step]) -&gt; Decision:
+        self.seen.append(len(steps))
+        return self.decisions.pop(0)
+
+
+def act(tool: str, **tool_input: str) -&gt; Decision:
+    return Decision(&quot;thinking&quot;, tool=tool, tool_input=dict(tool_input))
+
+
+def test_the_agent_acts_observes_and_answers() -&gt; None:
+    model = Scripted([act(&quot;lookup_error&quot;, code=&quot;E104&quot;), Decision(&quot;done&quot;, answer=&quot;E104 is high.&quot;)])
+    run = run_agent(&quot;goal&quot;, model, &quot;staff&quot;)
+    assert run.stopped == &quot;done&quot; and run.final == &quot;E104 is high.&quot;
+    assert [(s.tool, s.is_error) for s in run.steps] == [(&quot;lookup_error&quot;, False)]
+    assert model.seen == [0, 1]   # the second decision saw the first step
+
+
+def test_the_step_limit_stops_a_model_that_never_answers() -&gt; None:
+    run = run_agent(&quot;goal&quot;, StubbornModel(), &quot;staff&quot;, max_steps=4)
+    assert run.stopped == &quot;max_steps&quot; and run.final == GIVE_UP and len(run.steps) == 4
+
+
+def test_a_tool_error_is_an_observation_not_a_crash() -&gt; None:
+    run = run_agent(&quot;goal&quot;, Scripted([act(&quot;lookup_error&quot;, code=&quot;E999&quot;), Decision(&quot;x&quot;, answer=&quot;no such code&quot;)]), &quot;staff&quot;)
+    assert run.steps[0].is_error and &quot;unknown_error_code&quot; in run.steps[0].observation
+
+
+def test_the_role_applies_to_every_tool() -&gt; None:
+    assert call_tool(&quot;list_error_codes&quot;, {}, &quot;customer&quot;)[1] is True
+    observation, is_error = call_tool(&quot;list_error_codes&quot;, {}, &quot;staff&quot;)
+    assert not is_error and len(json.loads(observation)) == 7
+
+
+def test_the_pretend_model_compares_severities() -&gt; None:
+    run = run_agent(&quot;Which of E101, E104 and E106 is the most severe?&quot;, PretendAgentModel(), &quot;staff&quot;)
+    assert [s.tool_input[&quot;code&quot;] for s in run.steps] == [&quot;E101&quot;, &quot;E104&quot;, &quot;E106&quot;]
+    assert run.final == &quot;E104 is the most severe (high).&quot;
+
+
+def test_the_pretend_model_stops_when_a_tool_is_refused() -&gt; None:
+    run = run_agent(&quot;Which of E101 and E104 is the most severe?&quot;, PretendAgentModel(), &quot;customer&quot;)
+    assert len(run.steps) == 1 and run.final.startswith(&quot;I could not finish&quot;)
+
+
+def test_a_risky_tool_waits_for_a_person_and_changes_nothing_without_a_yes() -&gt; None:
+    closed: set[str] = set()
+    asked: list[tuple[str, dict[str, str]]] = []
+
+    def no(name: str, tool_input: dict[str, str]) -&gt; bool:
+        asked.append((name, tool_input))
+        return False
+
+    run = run_agent(&quot;Close incident E104.&quot;, PretendAgentModel(), &quot;staff&quot;, approve=no, closed=closed)
+    assert asked == [(&quot;close_incident&quot;, {&quot;code&quot;: &quot;E104&quot;})]
+    assert closed == set() and run.final == &quot;I could not finish: a person did not approve closing E104.&quot;
+
+
+def test_a_yes_closes_it_and_closing_twice_is_safe() -&gt; None:
+    closed: set[str] = set()
+    for _ in range(2):
+        run = run_agent(&quot;Close incident E104.&quot;, PretendAgentModel(), &quot;staff&quot;, approve=lambda n, i: True, closed=closed)
+        assert run.final == &quot;Closed E104.&quot;
+    assert closed == {&quot;E104&quot;}
+    assert json.loads(run.steps[-1].observation)[&quot;already_closed&quot;] is True
+
+
+def test_no_approver_means_no() -&gt; None:
+    closed: set[str] = set()
+    run_agent(&quot;Close incident E104.&quot;, PretendAgentModel(), &quot;staff&quot;, closed=closed)
+    assert closed == set()
+
+
+def test_a_person_is_never_asked_about_something_not_allowed_or_invalid() -&gt; None:
+    asked: list[str] = []
+
+    def spy(name: str, tool_input: dict[str, str]) -&gt; bool:
+        asked.append(name)
+        return True
+
+    closed: set[str] = set()
+    run_agent(&quot;Close incident E104.&quot;, PretendAgentModel(), &quot;customer&quot;, approve=spy, closed=closed)
+    assert asked == [] and closed == set()
+    assert call_tool(&quot;close_incident&quot;, {&quot;code&quot;: &quot;104&quot;}, &quot;staff&quot;, spy, closed)[1] is True
+    assert call_tool(&quot;close_incident&quot;, {&quot;code&quot;: &quot;E999&quot;}, &quot;staff&quot;, spy, closed)[1] is True
+    assert asked == []</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Which tools need a human approval?</li><li>Why check the rights before asking a person?</li><li>When should you use a workflow instead of an agent?</li></ol><details><summary>Answers</summary><ol><li>The ones that change something, send something or delete something. Read-only tools do not.</li><li>So that nobody is asked to approve something that is not allowed or not valid; it wastes attention and trains people to click yes.</li><li>When you can write the steps down in advance. Use an agent only when the next step really depends on what the last one found.</li></ol></details></section>
+<section id="game-day95" class="game"><h2><span class="n">+</span> &middot; Game: Approval Check <span class="t">5 min</span></h2>
+<p><p>You put a person in the loop before a risky tool. Read the run, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day95-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day95-play">Start the game</button></div>
+<div id="day95-round" hidden><div class="gtop"><span id="day95-num">Round 1</span><span id="day95-score">Score 0</span></div>
+<pre hidden><code id="day95-code"></code></pre><div class="q" id="day95-q"></div><div class="choices" id="day95-opts"></div>
+<div class="fb" id="day95-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day95-next" hidden>Next round</button></p></div>
+<div id="day95-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day95",[{"c": "run_agent('Close incident E104.', ..., 'staff', approve=person_says(True))", "q": "What is the result of the close?", "o": ["{\"closed\": \"E104\", \"already_closed\": false}", "not_approved", "permission_denied"], "a": 0, "out": "      >>> a person is asked: allow close_incident {'code': 'E104'}?  answer: yes\n  step 2  act: close_incident {'code': 'E104'}  ->  {\"closed\": \"E104\", \"already_closed\": false}\n  final: Closed E104.", "why": "A person said yes to that exact call."}, {"c": "the same run again, with the same closed set", "q": "What does the result say?", "o": ["already_closed: true, and it is not an error", "An error: already closed", "closed: false"], "a": 0, "out": "  step 2  act: close_incident {'code': 'E104'}  ->  {\"closed\": \"E104\", \"already_closed\": true}", "why": "A risky action should be safe to repeat."}, {"c": "run_agent('Close incident E101.', ..., approve=person_says(False))", "q": "What happens?", "o": ["not_approved: nothing changes, and the model explains", "It closes anyway", "The loop crashes"], "a": 0, "out": "  step 2  act: close_incident {'code': 'E101'}  ->  {\"error\": {\"code\": \"not_approved\", \"message\": \"a person did not approv   [error]\n  final: I could not finish: a person did not approve closing E101.", "why": "No means no, and the model gets a result it can explain."}, {"c": "run_agent('Close incident E104.', ..., 'customer', approve=person_says(True))", "q": "Is a person asked?", "o": ["No: the customer is refused first", "Yes, then refused", "Yes, then closed"], "a": 0, "out": "  step 1  act: lookup_error {'code': 'E104'}  ->  {\"error\": {\"code\": \"permission_denied\", \"message\": \"this user may not   [error]\n  final: I could not finish: this user may not read error records.", "why": "Rights come before approval, so nobody is asked about something not allowed."}, {"c": "run_agent('Close incident E104.', ...)   # no approve argument", "q": "Is the incident closed?", "o": ["No: no approver means no", "Yes", "Only for staff"], "a": 0, "out": "(test: closed == set())", "why": "A missing approver must never mean allowed. Fail closed."}, {"c": "Order of the checks in close_incident", "q": "Which order?", "o": ["Rights, input, approval, action", "Approval, rights, input, action", "Action, then approval"], "a": 0, "out": "(permission_denied, invalid_input, unknown_error_code, not_approved, then the action)", "why": "Do not ask a person about a call that is not allowed or not valid."}, {"c": "Can I write the steps down in advance?", "q": "If yes, what should I build?", "o": ["A workflow, not an agent", "An agent with more steps", "Nothing"], "a": 0, "out": "(a judgement, no output)", "why": "An agent is the most flexible and the least predictable design."}],["Approval rookie", "Approval regular", "Human-in-the-loop builder"],"Ask a person before a risky tool, check rights then input then approval then act, make the action safe to repeat, treat no approver as no, and use a workflow when you can write the steps down.");</script>
+<p><small>Tick &ldquo;Play the Approval Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a risky tool behind a human approval, with the checks in the right order and an action that is safe to repeat, tests that prove nothing changes without a yes, and a short test for whether you need an agent at all.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 95 checklist.</li><li>Share one line in the comments: which action in your project must always have a human yes?</li><li><strong>Next:</strong> Thursday is mixed practice: you write a loop with stop rules and a test, from a blank file.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

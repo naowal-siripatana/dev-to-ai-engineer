@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 96 - Mixed practice: a loop with a stop rule and a test</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 96 &middot; LEVEL 7: TOOLS &middot; MIXED PRACTICE</div><h1>Mixed practice: a loop with a stop rule and a test</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write a loop with three stop rules and tests for each, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>In which order do you check rights, input, approval and action?</li><li>Name one question that tells you to use a workflow and not an agent.</li></ol><details><summary>Answers</summary><ol><li>Rights, then input, then approval, then action.</li><li>For example: &ldquo;Can I write the steps down in advance?&rdquo; Yes means a workflow.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You get a contract, and you write the loop yourself, from a blank file. It is the agent loop with the model and the tools taken out, so you can see the stop rules clearly and test them without anything else.</p><pre><code>loop.py
+  run_loop(decide, act, max_steps=5) -&gt; LoopResult
+    decide(history) -&gt; an action, or None when it is finished.
+        an action is a tuple (name, argument); the history is a list of (action, result)
+    act(action) -&gt; a result string
+  three stop rules, and the result says which one fired (stopped):
+    &quot;done&quot;             decide returned None
+    &quot;repeated_action&quot;  decide asked for an action that is already in the history.
+                       Stop BEFORE acting on it: doing it again would give the same result
+    &quot;max_steps&quot;        after max_steps actions, whatever happens
+  the result also holds the history (every action and its result)
+
+loop_demo.py runs three decide functions with max_steps=4 and prints the stop rule and the actions:
+  plan_then_stop     reads &#x27;calibration&#x27;, then &#x27;wifi&#x27;, then returns None
+  always_the_same    always reads &#x27;calibration&#x27;
+  never_stops        reads &#x27;topic-0&#x27;, &#x27;topic-1&#x27;, ... for ever</code></pre><p><strong>Predict first</strong>, before you run anything: what will each of the three functions print for <code>stopped</code>, and how many actions will be in each history? Why is &ldquo;repeated action&rdquo; a good sign that a model is stuck?</p></section>
+<section><h2><span class="n">3</span> &middot; Do it <span class="t">25 min</span></h2><ol><li>Write <code>loop.py</code> and <code>loop_demo.py</code> in <code>my-ai-project</code>. Do not open the solution until you have tried for 15 minutes.</li><li>Run it. Compare the three lines with your prediction.</li><li>Write the tests: one for each stop rule, one that checks that the repeated action is <strong>not executed</strong>, and one for <code>max_steps=0</code>. A test must not need a model.</li><li>Run <code>uv run pytest</code> and <code>uv run mypy src tests</code>. Commit: <code>git add .</code> and <code>git commit -m &quot;Add a loop with three stop rules&quot;</code>.</li></ol><details><summary>Hint: where to start</summary><p>A <code>while len(history) &lt; max_steps</code> loop. Inside: ask <code>decide(history)</code>. If it is <code>None</code>, return <code>done</code>. If the action is already one of the actions in the history, return <code>repeated_action</code>. Otherwise call <code>act</code>, append the pair, and go round again. After the loop, return <code>max_steps</code>.</p></details><details><summary>Solution</summary><pre><code>from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Literal
+
+Action = tuple[str, str]   # (what to do, its argument): hashable, so repeats are easy to spot
+Record = tuple[Action, str]   # an action and what came back
+
+
+@dataclass
+class LoopResult:
+    stopped: Literal[&quot;done&quot;, &quot;max_steps&quot;, &quot;repeated_action&quot;]
+    history: list[Record] = field(default_factory=list)
+
+
+def run_loop(decide: Callable[[list[Record]], Action | None], act: Callable[[Action], str], max_steps: int = 5) -&gt; LoopResult:
+    &quot;&quot;&quot;A loop with three stop rules.
+
+    done:            decide returns None.
+    repeated_action: decide asks for an action that is already in the history. Doing it again would give the same result,
+                     so the loop is stuck. It stops before acting.
+    max_steps:       after max_steps actions, whatever happens.&quot;&quot;&quot;
+    history: list[Record] = []
+    while len(history) &lt; max_steps:
+        action = decide(history)
+        if action is None:
+            return LoopResult(&quot;done&quot;, history)
+        if any(action == done_action for done_action, _ in history):
+            return LoopResult(&quot;repeated_action&quot;, history)
+        history.append((action, act(action)))
+    return LoopResult(&quot;max_steps&quot;, history)</code></pre><p><code>loop_demo.py</code>:</p><pre><code>from my_ai_project.loop import Action, Record, run_loop
+
+DOCS = {&quot;calibration&quot;: &quot;Calibrate once a month.&quot;, &quot;wifi&quot;: &quot;2.4 GHz only.&quot;, &quot;battery&quot;: &quot;About 8 hours.&quot;}
+
+
+def act(action: Action) -&gt; str:
+    name, argument = action
+    return DOCS.get(argument, &quot;not found&quot;) if name == &quot;read&quot; else &quot;?&quot;
+
+
+def plan_then_stop(history: list[Record]) -&gt; Action | None:
+    topics = [&quot;calibration&quot;, &quot;wifi&quot;]
+    return (&quot;read&quot;, topics[len(history)]) if len(history) &lt; len(topics) else None
+
+
+def always_the_same(history: list[Record]) -&gt; Action | None:
+    return (&quot;read&quot;, &quot;calibration&quot;)
+
+
+def never_stops(history: list[Record]) -&gt; Action | None:
+    return (&quot;read&quot;, f&quot;topic-{len(history)}&quot;)
+
+
+for name, decide in [(&quot;plan_then_stop&quot;, plan_then_stop), (&quot;always_the_same&quot;, always_the_same), (&quot;never_stops&quot;, never_stops)]:
+    result = run_loop(decide, act, max_steps=4)
+    print(f&quot;{name:&lt;16} stopped={result.stopped:&lt;16} actions={[a for a, _ in result.history]}&quot;)</code></pre><div class="out"><b>You should see</b><br>plan_then_stop&nbsp;&nbsp; stopped=done&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; actions=[('read', 'calibration'), ('read', 'wifi')]<br>always_the_same&nbsp;&nbsp;stopped=repeated_action&nbsp;&nbsp;actions=[('read', 'calibration')]<br>never_stops&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;stopped=max_steps&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;actions=[('read', 'topic-0'), ('read', 'topic-1'), ('read', 'topic-2'), ('read', 'topic-3')]</div></details><details><summary>Read the three results</summary><p>The first function finishes by itself. The second asks for the same action again, and the loop stops <em>before</em> running it a second time: one action in the history, not two. The third never repeats, so only the step limit can stop it.</p><p>Why is a repeated action a good stop rule? The same call gives the same result, so doing it again cannot help. It is the most common way a stuck agent behaves. Note its limit: it only sees <em>exact</em> repeats. A model that asks for a slightly different action every time (<code>topic-0</code>, <code>topic-1</code>, <code>topic-2</code>, as in the third function) is not caught, and only the step limit stops it. The step limit is the safety net under every other rule.</p></details><details><summary>Template: tests</summary><pre><code>from my_ai_project.loop import Action, Record, run_loop
+
+
+class Recorder:
+    &quot;&quot;&quot;An act function that remembers every action it was asked to do.&quot;&quot;&quot;
+
+    def __init__(self) -&gt; None:
+        self.calls: list[Action] = []
+
+    def __call__(self, action: Action) -&gt; str:
+        self.calls.append(action)
+        return &quot;ok&quot;
+
+
+def test_it_stops_when_the_decision_is_done() -&gt; None:
+    act = Recorder()
+
+    def decide(history: list[Record]) -&gt; Action | None:
+        return (&quot;read&quot;, &quot;a&quot;) if not history else None
+
+    result = run_loop(decide, act)
+    assert result.stopped == &quot;done&quot; and act.calls == [(&quot;read&quot;, &quot;a&quot;)]
+
+
+def test_it_stops_before_a_repeated_action_and_does_not_act_on_it() -&gt; None:
+    act = Recorder()
+    result = run_loop(lambda h: (&quot;read&quot;, &quot;a&quot;), act, max_steps=5)
+    assert result.stopped == &quot;repeated_action&quot;
+    assert len(act.calls) == 1   # the second request was never executed
+
+
+def test_it_stops_after_max_steps() -&gt; None:
+    result = run_loop(lambda h: (&quot;read&quot;, str(len(h))), lambda a: &quot;ok&quot;, max_steps=3)
+    assert result.stopped == &quot;max_steps&quot; and len(result.history) == 3
+
+
+def test_the_history_is_passed_to_decide() -&gt; None:
+    seen: list[int] = []
+
+    def decide(history: list[Record]) -&gt; Action | None:
+        seen.append(len(history))
+        return (&quot;read&quot;, str(len(history))) if len(history) &lt; 2 else None
+
+    run_loop(decide, lambda a: &quot;ok&quot;)
+    assert seen == [0, 1, 2]
+
+
+def test_zero_steps_means_no_action() -&gt; None:
+    result = run_loop(lambda h: (&quot;read&quot;, &quot;a&quot;), lambda a: &quot;ok&quot;, max_steps=0)
+    assert result.stopped == &quot;max_steps&quot; and result.history == []</code></pre></details></section>
+<section><h2><span class="n">4</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does the loop check for a repeated action <em>before</em> acting?</li><li>Which stop rule is the last safety net, and why do you need it even with the others?</li><li>Why is it useful to return <em>which</em> rule stopped the loop?</li></ol><details><summary>Answers</summary><ol><li>Acting again would repeat the cost (or the side effect) for no new information.</li><li>The step limit: other rules catch the patterns you thought of, and a model can fail in a way you did not think of, such as asking for a slightly different action every time.</li><li>So that you, a log and a test can tell a normal finish from a stuck run, and decide what to tell the user.</li></ol></details></section>
+<section id="game-day96" class="game"><h2><span class="n">+</span> &middot; Game: Stop Rule Check <span class="t">5 min</span></h2>
+<p><p>You test a loop with three stop rules. Read the function, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day96-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day96-play">Start the game</button></div>
+<div id="day96-round" hidden><div class="gtop"><span id="day96-num">Round 1</span><span id="day96-score">Score 0</span></div>
+<pre hidden><code id="day96-code"></code></pre><div class="q" id="day96-q"></div><div class="choices" id="day96-opts"></div>
+<div class="fb" id="day96-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day96-next" hidden>Next round</button></p></div>
+<div id="day96-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day96",[{"c": "plan_then_stop: reads 'calibration', then 'wifi', then returns None", "q": "What is stopped, and how many actions?", "o": ["done, 2 actions", "max_steps, 4 actions", "repeated_action, 1 action"], "a": 0, "out": "plan_then_stop   stopped=done             actions=[('read', 'calibration'), ('read', 'wifi')]", "why": "decide returned None, so the work is finished."}, {"c": "always_the_same: always ('read', 'calibration')", "q": "What is stopped, and how many actions were run?", "o": ["repeated_action, 1 action", "max_steps, 4 actions", "done, 0 actions"], "a": 0, "out": "always_the_same  stopped=repeated_action  actions=[('read', 'calibration')]", "why": "The second request is stopped before it is executed."}, {"c": "never_stops: ('read', 'topic-0'), ('read', 'topic-1'), ...   # max_steps=4", "q": "Which rule stops it?", "o": ["max_steps, after 4 actions", "repeated_action", "done"], "a": 0, "out": "never_stops      stopped=max_steps        actions=[('read', 'topic-0'), ('read', 'topic-1'), ('read', 'topic-2'), ('read', 'topic-3')]", "why": "No action repeats, so only the limit can stop it."}, {"c": "run_loop(decide, act, max_steps=0)", "q": "What happens?", "o": ["max_steps, with an empty history", "done", "An error"], "a": 0, "out": "(test: result.stopped == 'max_steps' and result.history == [])", "why": "With no steps allowed, nothing runs."}, {"c": "Why check for a repeated action before acting?", "q": "What is the reason?", "o": ["The same call gives the same result: doing it again only costs", "It is faster to write", "The model asks for it"], "a": 0, "out": "(test: len(act.calls) == 1)", "why": "Acting again repeats the cost or the side effect for no new information."}, {"c": "A model that asks for ('read', 'topic-0'), ('read', 'topic-1'), ('read', 'topic-2'), ... for ever", "q": "Which rule catches it?", "o": ["Only max_steps: no action is an exact repeat", "repeated_action", "done"], "a": 0, "out": "never_stops      stopped=max_steps        actions=[('read', 'topic-0'), ('read', 'topic-1'), ('read', 'topic-2'), ('read', 'topic-3')]", "why": "The repeated-action rule only sees exact repeats. The step limit is the safety net."}],["Stop rule rookie", "Stop rule regular", "Loop tester"],"A loop needs stop rules: done, a repeated action (stop before acting), and a step limit as the safety net, and a result that says which one fired.");</script>
+<p><small>Tick &ldquo;Play the Stop Rule Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a loop with three stop rules that does not repeat an action, from a blank file, with tests that need no model.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 96 checklist.</li><li>Share one line in the comments: which stop rule would you add next?</li><li><strong>Next:</strong> Friday is a teach-back: you explain agent versus workflow.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
