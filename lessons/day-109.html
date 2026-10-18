@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 109 - AGENTS.md / CLAUDE.md and context for code</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 109 &middot; LEVEL 9: CODING AGENTS</div><h1>AGENTS.md / CLAUDE.md and context for code</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write an instructions file that a new agent session can use, with every command tested.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Name two things to look at in the steps of a coding agent.</li><li>Why is a git branch the first limit you set?</li></ol><details><summary>Answers</summary><ol><li>Did it read before it edited, and did it run something to check its own work (also: did it touch files outside the task).</li><li>Any change can be thrown away, and the diff against the main branch shows exactly what the agent did.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You start a new agent session in your repository. It knows nothing about your project: not that tests need no model, not that every search must take the user&rsquo;s role, not that the answers in the demos come from a stand-in. How does it find out, and who has to write that down?</strong></p><details><summary>Guess first, then open</summary><p>A coding agent has <strong>no memory</strong> of your project between sessions. It learns what it can from the files it reads, and from one file that is loaded at the start: an <strong>instructions file</strong> (<code>AGENTS.md</code>, or <code>CLAUDE.md</code> for Claude Code). <em>You</em> write it, once, and it works for every session after. It is documentation that is read, every time.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: write what the agent cannot guess</h3>
+<p>The agent can read your code, so do not repeat it. Write what it <em>cannot</em> see: the exact commands (and in which order), where the important things live, the rules that a newcomer gets wrong in the first week, what &ldquo;done&rdquo; means, and which decisions need a human. The best test of every line: &ldquo;would a good new colleague do the wrong thing without it?&rdquo;</p>
+<h3>Piece 2: keep it short, true and tested</h3>
+<p>A long file is read less well, and a <strong>wrong</strong> file is worse than none: the agent will trust it. So keep it to a page, run every command in it yourself (one by one, on a clean checkout if you can), and update it in the same pull request that changes the thing it describes. Never put a secret in it: it goes into Git, and into the agent&rsquo;s context.</p>
+<h3>Piece 3: different tools, one file</h3>
+<p>Tools look for different file names. <code>AGENTS.md</code> is a common convention that several tools read; Claude Code reads <code>CLAUDE.md</code>. You do not need two copies: keep the real content in <code>AGENTS.md</code>, and make <code>CLAUDE.md</code> a one-line file that imports it with <code>@AGENTS.md</code>. A file that is loaded for the whole session also costs context tokens every time (Day 58), which is one more reason to keep it short.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> it is the <code>README</code> for a very fast colleague who forgets everything every night, mixed with an <code>.editorconfig</code> and a contributing guide. The <em>commands</em> section is what you would put in the build instructions of any solution, and &ldquo;ask first&rdquo; is your list of changes that need a design review.</div>
+<div class="box cap"><strong>Capstone:</strong> the Module 9 checkpoint needs an <code>AGENTS.md</code> in the <code>ai-knowledge-assistant</code> repository describing its stack, conventions and test commands. You write it today, and use it on Saturday.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>The six parts of a good file:</p><pre><code>what this is        two or three sentences: the stack and the purpose
+commands            the exact commands to install, run, test, type-check, evaluate
+layout              where things live, in a few lines (not a copy of the file tree)
+rules               the things a newcomer would get wrong: roles, secrets, naming of stand-ins
+done means          what to run and show before saying &#x27;done&#x27;
+ask first           the changes that need a human decision</code></pre><p>The real file for <code>my-ai-project</code> (39 lines). The commands are the ones used in the earlier lessons (<code>pytest</code>, <code>mypy</code> and <code>run_golden.py</code> were run again for this file), and every rule comes from something that went wrong, or nearly went wrong, in an earlier lesson (the role filter from Day 79, the stand-ins from Day 91, the golden table from Day 105):</p><pre><code># AGENTS.md: my-ai-project (the PumpGuard assistant)
+
+## What this is
+A Python service (FastAPI) that answers questions about a fictional pump monitor from a small knowledge base (`data/kb`):
+hybrid search (pgvector and keywords), cited answers, user roles, and a tool loop. A .NET gateway and a React page sit in
+front of it (other folders). The product is fictional; there is no real customer data.
+
+## Commands
+    uv sync
+    docker compose up -d            # Postgres with pgvector on port 5433 (throwaway credentials)
+    uv run python ingest.py         # chunk, embed and store the knowledge base
+    uv run pytest -q                # needs no model and no key; database tests skip when the database is down
+    uv run mypy src tests           # must stay clean
+    uv run python run_golden.py     # the score table (18 questions); compare it with the baseline I saved
+    uv run uvicorn my_ai_project.api:app --port 8000
+
+## Layout
+- `src/my_ai_project/`: `api.py` routes, `deps.py` dependencies, `store.py` SQL, `hybrid.py` search, `rag.py` pipeline,
+  `grounding.py` prompt and citations, `tool_design.py` / `agent.py` / `tool_loop.py` tools, `golden.py` / `scoring.py` evaluation.
+- `tests/`: one file per module, with fakes for the model, the embedder and the store.
+- `data/kb/` the pages, `data/golden.jsonl` the golden questions.
+
+## Rules
+- Every search and every tool takes the user&#x27;s role (`allowed_kinds`). Never add a path that skips it.
+- A tool&#x27;s error is a result (`is_error`), not an exception. A tool that changes data needs a person&#x27;s approval first.
+- A stdio MCP server never prints to standard output; use `logging`.
+- Models in tests and demos are stand-ins (`Pretend...`, `Simulated...`). Keep them named as such, and never present
+  their answers as a real model&#x27;s.
+- No secrets in Git: keys come from environment variables, and `.env` is ignored.
+- Type hints everywhere. Small functions. No new dependency without asking.
+
+## Before you say you are done
+1. Run `pytest` and `mypy`, and show the results.
+2. If you touched retrieval, prompts, thresholds or chunking: run `run_golden.py` before and after and show both tables.
+   Do not accept a change that makes a question fail that passed before.
+3. Show the diff, and list what you did not test.
+
+## Ask first
+Changing a prompt in `grounding.py`, the minimum similarity, the chunk size, the database schema, or anything about deployment.</code></pre><p>And <code>CLAUDE.md</code>, one line:</p><pre><code># CLAUDE.md
+@AGENTS.md</code></pre><p>Notice what is <em>not</em> in the file: the history of the project, a description of every function, style advice such as &ldquo;write clean code&rdquo;, and any key. Compare it with a bad one:</p><pre><code># Notes for the AI
+Please write clean, high-quality, well-tested code. Follow best practices. Be careful.
+This project uses AI and is very important. (and 300 more lines of history of the project...)
+To run the tests use pytest_run_all.sh     &lt;- the file was deleted two months ago</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c docs/agents-md</code>).</p>
+<h3><span class="step">Step 1</span> Write it</h3>
+<p>Write <code>AGENTS.md</code> for <strong>your</strong> repository, using the six parts. Start from the one above, and change it to match your project. Write <code>CLAUDE.md</code> with the one line.</p>
+<h3><span class="step">Step 2</span> Test every command</h3>
+<p>Run each command in the file, one by one. Fix the file (or the project) when one fails. <strong>Predict first:</strong> how many of your commands will fail on the first try?</p>
+<h3><span class="step">Step 3</span> Cut it</h3>
+<p>Read it as a new colleague. For every line, ask: &ldquo;would they do the wrong thing without it?&rdquo; Delete the lines where the answer is no. Aim for under 60 lines.</p>
+<h3><span class="step">Step 4</span> Try it on an agent</h3>
+<p>Start a <strong>new</strong> agent session and give it a small task that touches a rule of your file (for example: &ldquo;add a search function&rdquo;, which must take the role). Did it follow the rule? Did it run the commands of &ldquo;done means&rdquo;? Write down what it did, and what it missed. If it missed something, was the line in the file unclear, or missing?</p>
+<p>Commit: <code>git add AGENTS.md CLAUDE.md</code> and <code>git commit -m &quot;Add AGENTS.md and CLAUDE.md&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The agent ignores the file</strong>: check the file name and the folder (the repository root), and that you started a <em>new</em> session after you created it.</li><li><strong>The file grows every week</strong>: move long explanations into <code>docs/</code> and link to them in one line. Keep only the rules.</li><li><strong>You are not sure a rule is needed</strong>: if it has never gone wrong, leave it out; add it the first time it does.</li><li><strong>Two tools, two files</strong>: keep one real file and import it, as shown.</li></ul><details><summary>Solution: Step 2 (what to expect)</summary><p>Most people find that at least one command in their first draft fails: a missing step (start the database first), a wrong folder, or a command that only works on their machine. Each failure you fix is a mistake the agent will no longer make. That is the main value of Step 2.</p></details><details><summary>Solution: Step 4 (how to judge)</summary><p>Do not count the file as a success because the agent <em>read</em> it. Check what it <em>did</em>: the role in the new function, the tests it ran, whether it showed the diff and said what it did not test. If it missed a rule, make the line shorter and more concrete (&ldquo;every search takes <code>allowed_kinds</code>&rdquo; works better than &ldquo;respect permissions&rdquo;) and try again.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What should an instructions file contain, and what should it leave out?</li><li>Why is a wrong file worse than no file?</li><li>How do you serve two tools that look for different file names?</li></ol><details><summary>Answers</summary><ol><li>What the agent cannot guess: commands, layout, rules newcomers get wrong, what done means, what needs a human decision. It leaves out what the code already says, history, vague style advice and secrets.</li><li>The agent trusts it, so a wrong command or a stale rule sends it the wrong way with confidence.</li><li>Keep the content in one file (<code>AGENTS.md</code>) and make the other (<code>CLAUDE.md</code>) a one-line file that imports it.</li></ol></details></section>
+<section id="game-day109" class="game"><h2><span class="n">+</span> &middot; Game: Instructions File <span class="t">5 min</span></h2>
+<p><p>You write AGENTS.md. Pick what belongs in it.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day109-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day109-play">Start the game</button></div>
+<div id="day109-round" hidden><div class="gtop"><span id="day109-num">Round 1</span><span id="day109-score">Score 0</span></div>
+<pre hidden><code id="day109-code"></code></pre><div class="q" id="day109-q"></div><div class="choices" id="day109-opts"></div>
+<div class="fb" id="day109-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day109-next" hidden>Next round</button></p></div>
+<div id="day109-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day109",[{"c": "A line for AGENTS.md", "q": "Which line belongs?", "o": ["uv run pytest -q   # needs no model; database tests skip when it is down", "Write clean, high-quality code", "The project began in September and..."], "a": 0, "out": "## Commands\n    uv run pytest -q  ...", "why": "Exact commands are what an agent cannot guess."}, {"c": "A rule for AGENTS.md", "q": "Which rule is best?", "o": ["Every search and every tool takes the user's role (allowed_kinds)", "Respect permissions", "Be secure"], "a": 0, "out": "- Every search and every tool takes the user's role (`allowed_kinds`). Never add a path that skips it.", "why": "Concrete and checkable."}, {"c": "A wrong command in the file: pytest_run_all.sh (deleted long ago)", "q": "Why is it worse than no line?", "o": ["The agent trusts it and goes the wrong way with confidence", "It makes the file long", "It breaks Git"], "a": 0, "out": "(run every command in the file yourself)", "why": "A wrong file is worse than none."}, {"c": "How many lines?", "q": "What is a good size?", "o": ["About a page, under 60 lines", "300 lines of history", "One word"], "a": 0, "out": "AGENTS.md: 39 lines   CLAUDE.md: 1 line", "why": "A long file is read less well and costs context tokens in every session."}, {"c": "CLAUDE.md", "q": "What does it contain?", "o": ["@AGENTS.md: one line that imports the real file", "A copy of AGENTS.md", "The API key"], "a": 0, "out": "@AGENTS.md", "why": "One real file serves several tools."}, {"c": "A key in AGENTS.md", "q": "Is it allowed?", "o": ["Never: the file goes into Git and into the agent's context", "Yes, if it is a test key", "Only in CLAUDE.md"], "a": 0, "out": "(keys come from environment variables; .env is ignored)", "why": "Keep secrets out of files an agent reads."}, {"c": "Done means", "q": "What do you write there?", "o": ["What to run and show before saying done: tests, types, the score table, the diff, what was not tested", "That the agent is finished", "A date"], "a": 0, "out": "## Before you say you are done\n1. Run pytest and mypy ...", "why": "It sets the standard the agent holds itself to."}],["File rookie", "File regular", "Instructions writer"],"An instructions file holds what an agent cannot guess: tested commands, layout, concrete rules, what done means and what to ask first; short, true, and without secrets.");</script>
+<p><small>Tick &ldquo;Play the Instructions File game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> an <code>AGENTS.md</code> that a new agent session can use, with every command tested, a <code>CLAUDE.md</code> that imports it, and a first test of whether an agent follows it.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 109 checklist.</li><li>Share one line in the comments: which rule of yours did the agent miss?</li><li><strong>Next:</strong> Thursday is mixed practice: you ask an agent for a small feature, from a prompt you write yourself, and review its diff.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

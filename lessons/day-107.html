@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 107 - AI coding assistants versus agents</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 107 &middot; LEVEL 9: CODING AGENTS</div><h1>AI coding assistants versus agents</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to give a coding agent one small task, read its steps, and judge how it worked.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What goes into a golden item?</li><li>Why is a change checked against the whole table and not only the fixed question?</li></ol><details><summary>Answers</summary><ol><li>An id, the question, the expected sources, optional phrases for the answer, and whether it should be refused.</li><li>A change that fixes one question often breaks another.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You ask a chat assistant to &ldquo;add a --top-k option to my script&rdquo;. It writes a snippet. You paste it in, run the script, find a problem, and go back. Now imagine that it could read your files, make the edit, run the script, see the problem and fix it, all on its own. What changes for you?</strong></p><details><summary>Guess first, then open</summary><p>The loop you were doing by hand (read, edit, run, look) moves inside the tool: that is an <strong>agent</strong>. It is the loop of Day 93 with tools for files and commands. You do less typing and more <strong>checking</strong>, because the changes arrive fast, in several places, and some of them you did not ask for.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: an assistant suggests, an agent acts</h3>
+<p>An AI <strong>coding assistant</strong> (a chat window, or completion in your editor) gives you text, and you decide what to do with it. A <strong>coding agent</strong> runs in your repository with tools: it <em>searches and reads</em> files, <em>edits</em> them, and <em>runs commands</em> (tests, scripts, git). It repeats think, act and observe until it believes the task is done. The table below shows the difference.</p>
+<h3>Piece 2: its steps are visible, and you should read them</h3>
+<p>A good agent shows what it did: which files it read, what it changed, which commands it ran and what came back. Reading the steps tells you whether it <em>understood</em> the code (did it look before it edited?) and whether it <em>checked</em> its own work (did it run something?). An agent that edits without reading, or says &ldquo;done&rdquo; without running anything, is one to watch.</p>
+<h3>Piece 3: you set the limits</h3>
+<p>You decide the branch it works on, the size of the task, which commands it may run without asking, and what it must never touch. These limits do the same job as the step limit and the approval of Week 14, only now the agent writes the code that goes into <em>your</em> repository. The most important limit comes after the work: <strong>you read the diff</strong>, like a pull request.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> compare it to IDE refactoring tools. A refactoring does one well-defined change that you can trust. An agent does a <em>loosely defined</em> change in several files, so it is closer to a new colleague who sends you a pull request: useful, fast, sometimes wrong, and your name is on the merge.</div>
+<div class="box cap"><strong>Capstone:</strong> Module 9 ends with a feature of <code>ai-knowledge-assistant</code> built by a coding agent and reviewed by you, with an instructions file in the repository.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>The two tools side by side:</p><pre><code>                      AI coding assistant (chat, completion)        coding agent
+what it sees          the code you paste or the open file           the whole repository, by reading files and searching
+what it does          suggests text; YOU apply it                   edits files and runs commands itself
+the loop              you ask, it answers, you act                  think, act, observe, again, until it thinks it is done
+who runs the tests    you                                           it can run them, and read the result
+main risk             a wrong suggestion you copy blindly           a wrong change across many files, made fast, with commands run
+your job              check each suggestion                         limit the task, then review the whole diff</code></pre><div class="box"><strong>Who did this?</strong> The task below was really done by a coding agent (Claude Code, working in the repository with its read, edit and shell tools). The steps, the outputs and the diff are real. Another agent would take other steps, and the same agent may take other steps tomorrow. What matters is the shape.</div><p>The task, as it was given:</p><pre><code>On branch feature/top-k of my-ai-project:
+Add a --top-k option to run_golden.py (default 3). Use it for the retrieval and for the pipeline,
+and in the table header. Run the script to check it, and run pytest and mypy.
+Do not change any other file.</code></pre><p>The steps it took:</p><pre><code>step  tool   what the agent did                                          what it learned
+ 1    shell  grep for top_k and hit@3 in run_golden.py                   top_k=3 is written in 2 calls; &#x27;hit@3&#x27; is in 2 prints
+ 2    read   run_golden.py, lines 28 to 55                               the loop and the two prints
+ 3    edit   top_k=3 -&gt; top_k=args.top_k in the two calls                (the file changed)
+ 4    edit   the table header: hit@3 -&gt; hit@{top_k}                      (the file changed)
+ 5    edit   the summary line: hit@3 -&gt; hit@{top_k}                      (the file changed)
+ 6    edit   add the --top-k argument (default 3)                        (the file changed)
+ 7    shell  run the script: default, --top-k 1, --top-k 0; then pytest  default: 11/18 as before; top-k 1 works (10/18);
+                                                                         top-k 0 runs and prints nonsense; pytest: 147 passed
+ 8    edit   reject --top-k outside 1 to 10 (the limits of the API)      (the file changed)
+ 9    shell  --top-k 0 again, the default again, mypy, git diff, commit   error message; 11/18; mypy clean; 5 lines added, 4 changed</code></pre><p>Look at steps 7 to 9. After the edit, the agent <em>ran</em> the script with a value the task did not mention (<code>--top-k 1</code>, and then <code>0</code>) and <strong>looked at the result</strong>:</p><div class="out"><b>You should see</b><br>id&nbsp;&nbsp; hit@1&nbsp;&nbsp;rank&nbsp;&nbsp;refused&nbsp;&nbsp;result why<br>q07&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks '15 seconds'<br>q08&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks 'sensor cable'<br>q09&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks 'CSV'<br>q12&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks '0 to 45'<br>q13&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAIL&nbsp;&nbsp; refused a question that can be answered<br>q15&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks 'water damage'<br>q17&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; answered a question that should be refused<br>q18&nbsp;&nbsp;no&nbsp;&nbsp;&nbsp;&nbsp; -&nbsp;&nbsp;&nbsp;&nbsp; yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAIL&nbsp;&nbsp; refused a question that can be answered<br><br>passed 10/18 (56%)&nbsp;&nbsp; hit@1 93%&nbsp;&nbsp; MRR 0.93&nbsp;&nbsp; refusal accuracy 83%</div><div class="out"><b>You should see</b><br>passed 3/18 (17%)   hit@0 0%   MRR 0.00   refusal accuracy 17%</div><p>With <code>--top-k 0</code> the script ran without an error and printed nonsense (a 0% hit rate and a 17% pass rate). The agent noticed, and added a check. After the fix:</p><div class="out"><b>You should see</b><br>run_golden.py: error: --top-k must be between 1 and 10 (the same limits as the API)<br>passed 11/18 (61%)   hit@3 100%   MRR 0.97   refusal accuracy 89%<br>Success: no issues found in 1 source file</div><p>The final diff:</p><pre><code>diff --git a/run_golden.py b/run_golden.py
+index d7c56f5..62e8c78 100644
+--- a/run_golden.py
++++ b/run_golden.py
+@@ -15,10 +15,13 @@ from my_ai_project.store import ChunkStore
+ parser = argparse.ArgumentParser(description=&quot;Run the golden questions through the RAG pipeline and score them.&quot;)
+ parser.add_argument(&quot;--golden&quot;, default=&quot;data/golden.jsonl&quot;)
+ parser.add_argument(&quot;--role&quot;, default=&quot;staff&quot;)
++parser.add_argument(&quot;--top-k&quot;, type=int, default=3, help=&quot;how many pages to retrieve and to give to the writer&quot;)
+ parser.add_argument(&quot;--keyword-weight&quot;, type=float, default=1.0, help=&quot;below 1 trusts the keyword search less&quot;)
+ parser.add_argument(&quot;--report&quot;, default=&quot;reports/golden-latest.json&quot;)
+ parser.add_argument(&quot;--min-pass&quot;, type=float, default=0.0, help=&quot;exit with 1 if the pass rate is lower (a regression gate)&quot;)
+ args = parser.parse_args()
++if not 1 &lt;= args.top_k &lt;= 10:
++    parser.error(&quot;--top-k must be between 1 and 10 (the same limits as the API)&quot;)
+ 
+ store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+ chunks = store.all_chunks()
+@@ -30,10 +33,10 @@ except GoldenError as err:
+ embedder, keywords, writer = FastEmbedder(), KeywordIndex(chunks), SimulatedWriter()   # the writer is a stand-in, NOT a real model
+ kinds = allowed_kinds(args.role)
+ results = []
+-print(f&quot;{&#x27;id&#x27;:&lt;5}{&#x27;hit@3&#x27;:&lt;7}{&#x27;rank&#x27;:&lt;6}{&#x27;refused&#x27;:&lt;9}{&#x27;result&#x27;:&lt;7}why&quot;)
++print(f&quot;{&#x27;id&#x27;:&lt;5}{f&#x27;hit@{args.top_k}&#x27;:&lt;7}{&#x27;rank&#x27;:&lt;6}{&#x27;refused&#x27;:&lt;9}{&#x27;result&#x27;:&lt;7}why&quot;)
+ for item in items:
+-    found = hybrid_search(item.question, embedder, store, keywords, top_k=3, allowed_kinds=kinds, keyword_weight=args.keyword_weight)
+-    answer = answer_question(item.question, embedder, store, keywords, writer, top_k=3, allowed_kinds=kinds, keyword_weight=args.keyword_weight)
++    found = hybrid_search(item.question, embedder, store, keywords, top_k=args.top_k, allowed_kinds=kinds, keyword_weight=args.keyword_weight)
++    answer = answer_question(item.question, embedder, store, keywords, writer, top_k=args.top_k, allowed_kinds=kinds, keyword_weight=args.keyword_weight)
+     outcome = Outcome(item, list(dict.fromkeys(f.doc_id for f in found)), answer.text, answer.refused, list(dict.fromkeys(s.doc_id for s in answer.sources)))
+     result = score_one(outcome)
+     results.append(result)
+@@ -41,7 +44,7 @@ for item in items:
+     print(f&quot;{result.id:&lt;5}{hit:&lt;7}{str(result.rank or &#x27;-&#x27;):&lt;6}{&#x27;yes&#x27; if outcome.refused else &#x27;no&#x27;:&lt;9}{&#x27;pass&#x27; if result.passed else &#x27;FAIL&#x27;:&lt;7}{result.why}&quot;)
+ 
+ summary = summarize(results)
+-print(f&quot;\npassed {summary.passed}/{summary.total} ({summary.pass_rate:.0%})   hit@3 {summary.hit_rate:.0%}   MRR {summary.mrr:.2f}   refusal accuracy {summary.refusal_accuracy:.0%}&quot;)
++print(f&quot;\npassed {summary.passed}/{summary.total} ({summary.pass_rate:.0%})   hit@{args.top_k} {summary.hit_rate:.0%}   MRR {summary.mrr:.2f}   refusal accuracy {summary.refusal_accuracy:.0%}&quot;)
+ Path(args.report).parent.mkdir(parents=True, exist_ok=True)
+ Path(args.report).write_text(json.dumps(to_report(results, summary), indent=2), encoding=&quot;utf-8&quot;)
+ if summary.pass_rate &lt; args.min_pass:</code></pre><p>The task asked for the option, and said nothing about <code>0</code> or <code>11</code>. The agent added the check on its own, using the limits of the API as a guide. That is a good sign. It is also a <strong>decision that you must agree with</strong>: reading the diff is how you find out.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Use <strong>any</strong> coding agent you have: Claude Code, an agent mode in your editor, or another tool. Work in <code>my-ai-project</code>.</p>
+<h3><span class="step">Step 1</span> Prepare</h3>
+<p>Commit what you have, and make a branch: <code>git switch -c feature/top-k</code>. Check that <code>uv run pytest</code> and <code>uv run mypy src tests</code> pass, and save your <code>run_golden.py</code> table as the baseline.</p>
+<h3><span class="step">Step 2</span> Give it the same small task</h3>
+<p>Give the agent the task text above (or a close one). Let it work, and <strong>watch its steps</strong>. Do not help.</p>
+<h3><span class="step">Step 3</span> Write down its steps</h3>
+<p>Fill in a table like the one in the worked example: the step, the tool, what it did, what it learned. (If your agent runs several commands in one step, list them separately.) Mark the steps where it <em>read</em> before it edited, and the steps where it <em>ran</em> something to check.</p>
+<h3><span class="step">Step 4</span> Judge it</h3>
+<p>Answer in your notebook: Did it read before it edited? Did it check its own work? Did it touch a file you did not expect? Did it make a decision that the task did not ask for? Then read <code>git diff</code>, line by line, before you read its own summary.</p>
+<p>Commit if you are happy: <code>git add .</code> and <code>git commit -m &quot;Add --top-k to run_golden.py&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The agent asks for permission to run commands</strong>: that is good. Allow the test and the script commands, and read any other command before you allow it.</li><li><strong>The agent changed more files than you expected</strong>: do not merge. Ask why, or throw the branch away (<code>git switch main</code>, <code>git branch -D feature/top-k</code>) and give a smaller task.</li><li><strong>You have no coding agent</strong>: do the task yourself with a chat assistant, and write the table as if you were the agent. You will see which steps were really yours.</li><li><strong>Its answer differs from the diff</strong>: believe the diff. The summary is what the agent <em>says</em>; the diff is what it <em>did</em>.</li></ul><details><summary>Rules before you start</summary><pre><code>Before you let an agent work:
+ - a git branch (so every change can be thrown away)
+ - a small, clear task (one feature, one fix)
+ - permission to read and edit files, but ask before commands that delete, install or reach the network
+ - no secrets in reach (.env, keys, production data)
+ - tests and a type check that it can run
+After it works:
+ - read the whole diff before you read the explanation</code></pre></details><details><summary>What to look for in the steps</summary><p>Good signs: it searched or read before it edited, it ran the script or the tests after, it looked at the output, and it fixed something it saw. Warning signs: it edited a file it never read, it said &ldquo;done&rdquo; without running anything, it ran a command you did not expect, or it changed files outside the task.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What is the difference between a coding assistant and a coding agent?</li><li>Why read the steps, and not only the result?</li><li>Why work on a branch?</li></ol><details><summary>Answers</summary><ol><li>An assistant suggests text and you apply it. An agent reads and edits files and runs commands itself, in a loop.</li><li>The steps show whether it understood the code (it read first) and checked its work (it ran something). The result alone does not.</li><li>So that any change can be thrown away, and the diff against the main branch shows exactly what the agent did.</li></ol></details></section>
+<section id="game-day107" class="game"><h2><span class="n">+</span> &middot; Game: Agent Steps <span class="t">5 min</span></h2>
+<p><p>You watch a coding agent work. Read the step, pick what it means, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day107-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day107-play">Start the game</button></div>
+<div id="day107-round" hidden><div class="gtop"><span id="day107-num">Round 1</span><span id="day107-score">Score 0</span></div>
+<pre hidden><code id="day107-code"></code></pre><div class="q" id="day107-q"></div><div class="choices" id="day107-opts"></div>
+<div class="fb" id="day107-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day107-next" hidden>Next round</button></p></div>
+<div id="day107-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day107",[{"c": "Task: add --top-k to run_golden.py. Step 1: grep for top_k and hit@3.", "q": "Why is this a good first step?", "o": ["It looks before it edits", "It already knows the file", "It checks the tests"], "a": 0, "out": "top_k=3 is written in 2 calls; 'hit@3' is in 2 prints", "why": "Reading before editing is the first good sign."}, {"c": "run_golden.py with the default value, after the edit", "q": "What does the agent check?", "o": ["That nothing changed: still 11/18", "That it got faster", "That hit@3 is 0"], "a": 0, "out": "passed 11/18 (61%)   hit@3 100%   MRR 0.97   refusal accuracy 89%", "why": "The default behaviour must not change."}, {"c": "run_golden.py --top-k 1", "q": "What does the header say?", "o": ["hit@1: it follows the option", "hit@3", "Nothing"], "a": 0, "out": "id   hit@1  rank  refused  result why\n...\npassed 10/18 (56%)   hit@1 93%   MRR 0.93   refusal accuracy 83%", "why": "The agent also changed the two hard-coded labels."}, {"c": "run_golden.py --top-k 0", "q": "What happens?", "o": ["It runs and prints nonsense: hit@0 0%", "An error", "It uses 3"], "a": 0, "out": "passed 3/18 (17%)   hit@0 0%   MRR 0.00   refusal accuracy 17%", "why": "Nothing stopped a wrong value."}, {"c": "The agent adds: if not 1 <= args.top_k <= 10: parser.error(...)", "q": "Was this in the task?", "o": ["No: the agent decided it, and you must agree by reading the diff", "Yes", "It is a bug"], "a": 0, "out": "run_golden.py: error: --top-k must be between 1 and 10 (the same limits as the API)", "why": "A good decision, but still a decision you review."}, {"c": "Assistant versus agent", "q": "Which is the agent?", "o": ["It reads files, edits them and runs commands in a loop", "It suggests text that you paste", "It only completes the line you type"], "a": 0, "out": "(think, act, observe)", "why": "The loop moves inside the tool, so your job becomes checking."}, {"c": "Before the agent works", "q": "Which limit comes first?", "o": ["A git branch", "A bigger model", "A longer prompt"], "a": 0, "out": "git switch -c feature/top-k", "why": "Any change can be thrown away, and the diff shows what it did."}],["Agent rookie", "Agent regular", "Agent watcher"],"A coding agent reads, edits and runs commands in a loop; read its steps (did it look first, did it check?); set a branch and a small task; and read the diff before the summary.");</script>
+<p><small>Tick &ldquo;Play the Agent Steps game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a small task given to a coding agent, a table of its steps, a judgement of how it worked, and a habit: read the diff before the summary.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 107 checklist.</li><li>Share one line in the comments: did your agent check its own work?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you write the instructions file for your repository, so that the agent starts each session knowing your rules.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

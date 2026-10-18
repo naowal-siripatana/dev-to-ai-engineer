@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 110 - Mixed practice: ask an agent for a feature and review the diff</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 110 &middot; LEVEL 9: CODING AGENTS &middot; MIXED PRACTICE</div><h1>Mixed practice: ask an agent for a feature and review the diff</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write a prompt for an agent and review its diff with a checklist, running it with wrong input.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What should an instructions file contain?</li><li>Why is a wrong instructions file worse than none?</li></ol><details><summary>Answers</summary><ol><li>What the agent cannot guess: commands, layout, rules newcomers get wrong, what done means, what needs a human decision.</li><li>The agent trusts it, so a wrong command or a stale rule sends it the wrong way with confidence.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The task <span class="t">5 min</span></h2><p>Today you ask an agent for <strong>one small feature</strong>, and then you review what it did like a pull request. The prompt is yours to write, from a blank file. A good prompt has four parts:</p><pre><code>goal      what I want, in one sentence, and the user&#x27;s view of it
+look at   the files that matter (so it does not wander), and the instructions file
+rules     what it must not touch or add
+done      what it must run and show before it says &#x27;done&#x27;
+(and say what NOT to do: &#x27;do not refactor&#x27;, &#x27;do not rename&#x27;)</code></pre><p>The feature: <strong><code>run_golden.py --only q03,q07</code></strong>, which runs only the questions you name. Write your prompt, in your notebook, before you look at mine. Then, <strong>predict</strong>: what is the most likely thing the agent will get wrong?</p></section>
+<section><h2><span class="n">3</span> &middot; Do it <span class="t">25 min</span></h2><ol><li><strong>Branch.</strong> <code>git switch -c feature/only</code>. Check that <code>pytest</code> and <code>mypy</code> pass.</li><li><strong>Ask.</strong> Give your prompt to your agent. Let it work.</li><li><strong>Review.</strong> Do <em>not</em> read its summary yet. Read <code>git diff</code> line by line with the checklist below, and <strong>run</strong> the feature yourself, with a normal input and with a wrong one.</li><li><strong>Write your findings</strong>: each with how you found it (<em>observed in a run</em>, or <em>read in the diff</em>).</li><li><strong>Fix or ask</strong>: fix the findings (or ask the agent to), run <code>pytest</code>, <code>mypy</code> and <code>run_golden.py</code> again, and commit.</li></ol><pre><code>1  Does it do what I asked? (run it, with a normal input)
+2  What happens with a wrong, empty or odd input?
+3  Can it fail silently? (an error that looks like success)
+4  What does it overwrite, delete or send? (files, reports, data)
+5  Are there tests, and do they test the new behaviour, not just run?
+6  Is every changed line needed? (no unrelated edits)
+7  Secrets, privacy, permissions: anything new?
+8  Did tests, types and the golden table pass, and did I see it myself?</code></pre><details><summary>An example prompt</summary><pre><code>GOAL      Add --only to run_golden.py, so that I can run a few questions, for example --only q03,q07.
+LOOK AT   run_golden.py and src/my_ai_project/golden.py. Follow AGENTS.md.
+RULES     Do not change scoring.py. Do not add a dependency.
+DONE      Show me: the diff, the output of one --only run, pytest and mypy.
+          Tell me what you did not test.</code></pre></details><details><summary>Solution: what the agent wrote the first time</summary><p>This is the real first version, from a coding agent (Claude Code), given a prompt like the one above. It is short and it does what was asked:</p><pre><code>diff --git a/run_golden.py b/run_golden.py
+index d7c56f5..9bfc7e1 100644
+--- a/run_golden.py
++++ b/run_golden.py
+@@ -15,6 +15,7 @@ from my_ai_project.store import ChunkStore
+ parser = argparse.ArgumentParser(description=&quot;Run the golden questions through the RAG pipeline and score them.&quot;)
+ parser.add_argument(&quot;--golden&quot;, default=&quot;data/golden.jsonl&quot;)
+ parser.add_argument(&quot;--role&quot;, default=&quot;staff&quot;)
++parser.add_argument(&quot;--only&quot;, help=&quot;comma-separated question ids to run, for example q03,q07&quot;)
+ parser.add_argument(&quot;--keyword-weight&quot;, type=float, default=1.0, help=&quot;below 1 trusts the keyword search less&quot;)
+ parser.add_argument(&quot;--report&quot;, default=&quot;reports/golden-latest.json&quot;)
+ parser.add_argument(&quot;--min-pass&quot;, type=float, default=0.0, help=&quot;exit with 1 if the pass rate is lower (a regression gate)&quot;)
+@@ -27,6 +28,10 @@ try:
+ except GoldenError as err:
+     raise SystemExit(f&quot;golden file is wrong: {err}&quot;)
+ 
++if args.only:
++    wanted = set(args.only.split(&quot;,&quot;))
++    items = [item for item in items if item.id in wanted]
++
+ embedder, keywords, writer = FastEmbedder(), KeywordIndex(chunks), SimulatedWriter()   # the writer is a stand-in, NOT a real model
+ kinds = allowed_kinds(args.role)
+ results = []</code></pre><p>Then the review: the feature was run with a normal input and with odd ones:</p><div class="out"><b>You should see</b><br>$ run_golden.py --only q03,q07<br>q03&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass<br>q07&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks '15 seconds'<br>passed 1/2 (50%)&nbsp;&nbsp; hit@3 100%&nbsp;&nbsp; MRR 1.00&nbsp;&nbsp; refusal accuracy 100%<br><br>$ run_golden.py --only q3,q7&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(a typo: q3 and q7 do not exist)<br>id&nbsp;&nbsp; hit@3&nbsp;&nbsp;rank&nbsp;&nbsp;refused&nbsp;&nbsp;result why<br><br>passed 0/0 (0%)&nbsp;&nbsp; hit@3 0%&nbsp;&nbsp; MRR 0.00&nbsp;&nbsp; refusal accuracy 0%<br>exit code: 0<br><br>$ run_golden.py --only q3 --min-pass 0.8<br>pass rate 0% is under the minimum 80%<br>exit code: 1</div><p>The findings:</p><pre><code>finding                                                              how it was found
+A  A typo in --only is ignored: it runs 0 questions, prints              OBSERVED: ran --only q3,q7: &#x27;passed 0/0&#x27;, exit code 0
+   &#x27;passed 0/0&#x27; and exits 0. A CI job would be green and test nothing.
+B  A partial run writes the SAME report file as a full run, so              READ from the diff: the report path did not change
+   running --only replaces the full report with a 2-question one.
+C  &#x27;q03, q07&#x27; (with a space) would not match &#x27; q07&#x27; and would be            READ from the diff: no strip()
+   ignored silently, like A.
+D  No test for the new behaviour.                                           READ: the diff has no test file</code></pre></details><details><summary>Solution: the fixes</summary><p>After the review, the diff of the fixes: a small function <code>select_items</code> in <code>golden.py</code> (so that it can be tested), an error for an unknown id, <code>strip()</code> on each name, a separate report file for partial runs, and tests:</p><pre><code>diff --git a/run_golden.py b/run_golden.py
+index 9bfc7e1..516d53c 100644
+--- a/run_golden.py
++++ b/run_golden.py
+@@ -5,7 +5,7 @@ from pathlib import Path
+ 
+ from my_ai_project.access import allowed_kinds
+ from my_ai_project.embedder import FastEmbedder
+-from my_ai_project.golden import GoldenError, load_golden
++from my_ai_project.golden import GoldenError, load_golden, select_items
+ from my_ai_project.hybrid import KeywordIndex, hybrid_search
+ from my_ai_project.rag import answer_question
+ from my_ai_project.scoring import Outcome, score_one, summarize, to_report
+@@ -17,9 +17,10 @@ parser.add_argument(&quot;--golden&quot;, default=&quot;data/golden.jsonl&quot;)
+ parser.add_argument(&quot;--role&quot;, default=&quot;staff&quot;)
+ parser.add_argument(&quot;--only&quot;, help=&quot;comma-separated question ids to run, for example q03,q07&quot;)
+ parser.add_argument(&quot;--keyword-weight&quot;, type=float, default=1.0, help=&quot;below 1 trusts the keyword search less&quot;)
+-parser.add_argument(&quot;--report&quot;, default=&quot;reports/golden-latest.json&quot;)
++parser.add_argument(&quot;--report&quot;, default=None, help=&quot;default: reports/golden-latest.json, or reports/golden-partial.json with --only&quot;)
+ parser.add_argument(&quot;--min-pass&quot;, type=float, default=0.0, help=&quot;exit with 1 if the pass rate is lower (a regression gate)&quot;)
+ args = parser.parse_args()
++report_path = Path(args.report or (&quot;reports/golden-partial.json&quot; if args.only else &quot;reports/golden-latest.json&quot;))   # a partial run must not overwrite the full report
+ 
+ store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+ chunks = store.all_chunks()
+@@ -28,9 +29,10 @@ try:
+ except GoldenError as err:
+     raise SystemExit(f&quot;golden file is wrong: {err}&quot;)
+ 
+-if args.only:
+-    wanted = set(args.only.split(&quot;,&quot;))
+-    items = [item for item in items if item.id in wanted]
++try:
++    items = select_items(items, args.only)
++except GoldenError as err:
++    raise SystemExit(f&quot;cannot run: {err}&quot;)
+ 
+ embedder, keywords, writer = FastEmbedder(), KeywordIndex(chunks), SimulatedWriter()   # the writer is a stand-in, NOT a real model
+ kinds = allowed_kinds(args.role)
+@@ -47,7 +49,7 @@ for item in items:
+ 
+ summary = summarize(results)
+ print(f&quot;\npassed {summary.passed}/{summary.total} ({summary.pass_rate:.0%})   hit@3 {summary.hit_rate:.0%}   MRR {summary.mrr:.2f}   refusal accuracy {summary.refusal_accuracy:.0%}&quot;)
+-Path(args.report).parent.mkdir(parents=True, exist_ok=True)
+-Path(args.report).write_text(json.dumps(to_report(results, summary), indent=2), encoding=&quot;utf-8&quot;)
++report_path.parent.mkdir(parents=True, exist_ok=True)
++report_path.write_text(json.dumps(to_report(results, summary), indent=2), encoding=&quot;utf-8&quot;)
+ if summary.pass_rate &lt; args.min_pass:
+     raise SystemExit(f&quot;pass rate {summary.pass_rate:.0%} is under the minimum {args.min_pass:.0%}&quot;)
+diff --git a/src/my_ai_project/golden.py b/src/my_ai_project/golden.py
+index e9d717d..dba2158 100644
+--- a/src/my_ai_project/golden.py
++++ b/src/my_ai_project/golden.py
+@@ -43,3 +43,17 @@ def load_golden(path: Path, known_doc_ids: set[str]) -&gt; list[GoldenItem]:
+         if unknown:
+             raise GoldenError(f&quot;{item.id}: expected source {unknown[0]!r} is not in the knowledge base&quot;)
+     return items
++
++
++def select_items(items: list[GoldenItem], only: str | None) -&gt; list[GoldenItem]:
++    &quot;&quot;&quot;Keep only the questions named in a comma-separated list of ids. A name that does not exist is an error, never ignored.&quot;&quot;&quot;
++    if only is None:
++        return items
++    wanted = [name.strip() for name in only.split(&quot;,&quot;) if name.strip()]
++    known = {item.id for item in items}
++    unknown = [name for name in wanted if name not in known]
++    if unknown:
++        raise GoldenError(f&quot;unknown question id {unknown[0]!r}: use ids from {sorted(known)[0]} to {sorted(known)[-1]}&quot;)
++    if not wanted:
++        raise GoldenError(&quot;--only names no question&quot;)
++    return [item for item in items if item.id in wanted]
+diff --git a/tests/test_golden.py b/tests/test_golden.py
+index 97bbe58..17f283d 100644
+--- a/tests/test_golden.py
++++ b/tests/test_golden.py
+@@ -2,7 +2,7 @@ from pathlib import Path
+ 
+ import pytest
+ 
+-from my_ai_project.golden import GoldenError, GoldenItem, load_golden
++from my_ai_project.golden import GoldenError, GoldenItem, load_golden, select_items
+ 
+ KNOWN = {&quot;manual-calibration&quot;, &quot;faq-wifi&quot;, &quot;error-e104&quot;}
+ 
+@@ -46,3 +46,21 @@ def test_duplicate_ids_are_caught(tmp_path: Path) -&gt; None:
+ def test_a_broken_line_names_its_number(tmp_path: Path) -&gt; None:
+     with pytest.raises(GoldenError, match=&quot;line 2&quot;):
+         load_golden(write(tmp_path, GOOD, &quot;{not json&quot;), KNOWN)
++
++
++ITEMS = [GoldenItem(id=f&quot;q0{n}&quot;, question=&quot;x&quot;, expected_sources=[&quot;faq-wifi&quot;]) for n in range(1, 5)]
++
++
++def test_only_keeps_the_named_questions_and_ignores_spaces() -&gt; None:
++    assert [i.id for i in select_items(ITEMS, &quot;q03, q01&quot;)] == [&quot;q01&quot;, &quot;q03&quot;]
++    assert select_items(ITEMS, None) == ITEMS
++
++
++def test_a_wrong_id_is_an_error_not_an_empty_run() -&gt; None:
++    with pytest.raises(GoldenError, match=&quot;unknown question id &#x27;q3&#x27;&quot;):
++        select_items(ITEMS, &quot;q3,q01&quot;)
++
++
++def test_naming_no_question_is_an_error() -&gt; None:
++    with pytest.raises(GoldenError, match=&quot;names no question&quot;):
++        select_items(ITEMS, &quot; , &quot;)</code></pre><div class="out"><b>You should see</b><br>$ run_golden.py --only q3,q7<br>cannot run: unknown question id 'q3': use ids from q01 to q18&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(exit code 1)<br><br>$ run_golden.py --only "q03, q07"<br>q07&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks '15 seconds'<br>passed 1/2 (50%)&nbsp;&nbsp; hit@3 100%&nbsp;&nbsp; MRR 1.00&nbsp;&nbsp; refusal accuracy 100%<br><br>$ run_golden.py&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(the full run still writes the full report)<br>passed 11/18 (61%)&nbsp;&nbsp; hit@3 100%&nbsp;&nbsp; MRR 0.97&nbsp;&nbsp; refusal accuracy 89%<br>reports/: golden-latest.json&nbsp;&nbsp;golden-partial.json<br><br>pytest: 150 passed, 4 skipped&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mypy: Success: no issues found in 61 source files</div></details><details><summary>Read what happened</summary><p>The first version was <em>fine for the happy path</em> and the tests passed (they did not test the new option). The three real problems were all about <strong>what happens when something is wrong</strong>: a typo that looks like success, and a file overwritten. None of them would have been found by reading the agent&rsquo;s summary. They were found by running the feature with a wrong input, and by reading the diff with the questions of the checklist. This is the skill of the week.</p></details></section>
+<section><h2><span class="n">4</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Which four parts does a good prompt for an agent have?</li><li>Why run the feature yourself with a wrong input?</li><li>Why is &ldquo;the tests pass&rdquo; not enough?</li></ol><details><summary>Answers</summary><ol><li>The goal, the files to look at (and the instructions file), the rules (what not to touch or add), and what it must show when done.</li><li>Agents (and people) write for the happy path; the problems are in the wrong, empty and odd inputs, and in silent failures.</li><li>The tests only check what someone thought of. The new behaviour may have no test, and a test can pass while the feature is wrong.</li></ol></details></section>
+<section id="game-day110" class="game"><h2><span class="n">+</span> &middot; Game: Review the Diff <span class="t">5 min</span></h2>
+<p><p>You review an agent's feature (--only). Read the run, pick the verdict, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day110-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day110-play">Start the game</button></div>
+<div id="day110-round" hidden><div class="gtop"><span id="day110-num">Round 1</span><span id="day110-score">Score 0</span></div>
+<pre hidden><code id="day110-code"></code></pre><div class="q" id="day110-q"></div><div class="choices" id="day110-opts"></div>
+<div class="fb" id="day110-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day110-next" hidden>Next round</button></p></div>
+<div id="day110-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day110",[{"c": "run_golden.py --only q03,q07", "q": "Does it do what was asked?", "o": ["Yes: it ran 2 questions", "No", "It ran all 18"], "a": 0, "out": "q03  yes    1     no       pass\nq07  yes    1     no       FAIL   the answer lacks '15 seconds'\npassed 1/2 (50%)", "why": "The normal case works."}, {"c": "run_golden.py --only q3,q7      # a typo", "q": "What happens?", "o": ["It runs 0 questions, prints passed 0/0 and exits with code 0", "It stops with an error", "It runs all questions"], "a": 0, "out": "passed 0/0 (0%)   hit@3 0%   MRR 0.00   refusal accuracy 0%\nexit code: 0", "why": "A silent failure: a CI job would be green and test nothing."}, {"c": "run_golden.py --only q3 --min-pass 0.8", "q": "What does the gate do?", "o": ["Fails, but only because 0% is under 80%, not because of the typo", "Reports the typo", "Passes"], "a": 0, "out": "pass rate 0% is under the minimum 80%\nexit code: 1", "why": "The right outcome for the wrong reason."}, {"c": "The diff did not change the report path", "q": "What is the problem?", "o": ["A partial run overwrites the full report (read from the diff)", "Nothing", "The report is too big"], "a": 0, "out": "(fixed: partial runs write reports/golden-partial.json)", "why": "Always ask what a change overwrites."}, {"c": "pytest: all green, before and after the feature", "q": "What do the green tests prove?", "o": ["Little: no test covered the new option", "That the feature works", "That the typo is handled"], "a": 0, "out": "pytest: 147 passed (the diff had no test file)", "why": "A test only checks what someone thought of."}, {"c": "After the fixes", "q": "What happens with a typo?", "o": ["cannot run: unknown question id 'q3', exit code 1", "passed 0/0", "It runs all"], "a": 0, "out": "cannot run: unknown question id 'q3': use ids from q01 to q18   (exit code 1)", "why": "An unknown name is an error, never ignored."}, {"c": "A good prompt for an agent", "q": "How many parts?", "o": ["Four: goal, files to look at, rules, and what to show when done", "One: the goal", "Two: goal and deadline"], "a": 0, "out": "GOAL / LOOK AT / RULES / DONE", "why": "The 'done' part makes it show proof."}],["Reviewer rookie", "Reviewer regular", "Diff reviewer"],"Review an agent's diff by running the feature with wrong input and by asking questions of the diff (silent failures, what it overwrites, tests for the new behaviour); green tests alone are not enough.");</script>
+<p><small>Tick &ldquo;Play the Review the Diff game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a prompt with four parts, a feature built by an agent, a line-by-line review with a checklist, findings written with how you found them, and fixes that you verified.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 110 checklist.</li><li>Share one line in the comments: what did your agent get wrong?</li><li><strong>Next:</strong> Friday is a teach-back: you explain how to review AI-written code.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

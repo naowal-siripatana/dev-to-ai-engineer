@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 112 - Project Lab 16: AGENTS.md and a feature built by an agent</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 112 &middot; LEVEL 9: CODING AGENTS &middot; PROJECT LAB</div><h1>Project Lab 16: AGENTS.md and a feature built by an agent</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to use a coding agent on a real feature and review its work like a pull request, with proof that nothing got worse.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Name two questions of the review checklist.</li><li>Why read the diff before the agent&rsquo;s summary?</li></ol><details><summary>Answers</summary><ol><li>For example: what happens with a wrong or empty input? Can it fail silently? What does it overwrite or log? Are there tests for the new behaviour?</li><li>The summary is what the agent says it did; the diff is what it did.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p>This is the <strong>Module 9 checkpoint</strong>: an instructions file, and one real feature built end to end by a coding agent, reviewed by you like a pull request. By the end:</p><ul><li><code>AGENTS.md</code> (and a one-line <code>CLAUDE.md</code>) in your repository, with commands that work.</li><li>A feature built by an agent on its own branch: the <strong>question log</strong> of <code>/api/ask</code>.</li><li>The agent&rsquo;s <strong>first version</strong> committed alone, your <strong>review</strong> with findings (how found, how serious), and a second commit with the fixes and tests.</li><li>Proof that nothing got worse (tests, types, the golden table), and a <strong>pull request description</strong>.</li></ul><div class="box cap"><strong>Capstone:</strong> this is the working method you will use for the rest of the project, and the story to tell a reviewer: &ldquo;I use a coding agent, and here is how I keep control of what it writes.&rdquo;</div><div class="box"><strong>Who did this?</strong> The feature below was really built by a coding agent (Claude Code, working in the repository) from a prompt like the one in this lesson. The diffs, the runs and the findings are real. Your agent will write other code and you will find other problems; that is the point. The assistant&rsquo;s answers in the demo come from the simulated writer (not a real model).</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Cut the work in small pieces:</p><ol><li><strong>The instructions file</strong>: <code>AGENTS.md</code> and <code>CLAUDE.md</code> (Day 109), committed on <code>main</code>.</li><li><strong>The branch</strong> and the prompt.</li><li><strong>The agent works.</strong> You watch the steps, and commit its first version <em>alone</em>.</li><li><strong>The review</strong>: run, read, write findings.</li><li><strong>The fixes</strong>, with tests, as a second commit.</li><li><strong>The proof</strong>: tests, types, golden table, a real run.</li><li><strong>The PR description</strong>, and the merge.</li></ol></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2><h3>Step 1: the instructions file</h3><p>If you did not finish it on Day 109, do it now. Here is the one used in this lesson, to compare with yours:</p><pre><code># AGENTS.md: my-ai-project (the PumpGuard assistant)
+
+## What this is
+A Python service (FastAPI) that answers questions about a fictional pump monitor from a small knowledge base (`data/kb`):
+hybrid search (pgvector and keywords), cited answers, user roles, and a tool loop. A .NET gateway and a React page sit in
+front of it (other folders). The product is fictional; there is no real customer data.
+
+## Commands
+    uv sync
+    docker compose up -d            # Postgres with pgvector on port 5433 (throwaway credentials)
+    uv run python ingest.py         # chunk, embed and store the knowledge base
+    uv run pytest -q                # needs no model and no key; database tests skip when the database is down
+    uv run mypy src tests           # must stay clean
+    uv run python run_golden.py     # the score table (18 questions); compare it with the baseline I saved
+    uv run uvicorn my_ai_project.api:app --port 8000
+
+## Layout
+- `src/my_ai_project/`: `api.py` routes, `deps.py` dependencies, `store.py` SQL, `hybrid.py` search, `rag.py` pipeline,
+  `grounding.py` prompt and citations, `tool_design.py` / `agent.py` / `tool_loop.py` tools, `golden.py` / `scoring.py` evaluation.
+- `tests/`: one file per module, with fakes for the model, the embedder and the store.
+- `data/kb/` the pages, `data/golden.jsonl` the golden questions.
+
+## Rules
+- Every search and every tool takes the user&#x27;s role (`allowed_kinds`). Never add a path that skips it.
+- A tool&#x27;s error is a result (`is_error`), not an exception. A tool that changes data needs a person&#x27;s approval first.
+- A stdio MCP server never prints to standard output; use `logging`.
+- Models in tests and demos are stand-ins (`Pretend...`, `Simulated...`). Keep them named as such, and never present
+  their answers as a real model&#x27;s.
+- No secrets in Git: keys come from environment variables, and `.env` is ignored.
+- Type hints everywhere. Small functions. No new dependency without asking.
+
+## Before you say you are done
+1. Run `pytest` and `mypy`, and show the results.
+2. If you touched retrieval, prompts, thresholds or chunking: run `run_golden.py` before and after and show both tables.
+   Do not accept a change that makes a question fail that passed before.
+3. Show the diff, and list what you did not test.
+
+## Ask first
+Changing a prompt in `grounding.py`, the minimum similarity, the chunk size, the database schema, or anything about deployment.</code></pre><h3>Step 2: the branch and the prompt</h3><p><code>git switch -c feature/question-log</code>. A prompt with the four parts (goal, look at, rules, done):</p><pre><code>GOAL      Log every question that is asked on POST /api/ask, so that I can later see what users ask and where the assistant refuses.
+          One JSON line per question, appended to logs/questions.jsonl (the path can be changed with the environment variable QUESTION_LOG):
+          time (UTC, ISO), the role, the question, whether it was refused, and the document ids that were cited.
+LOOK AT   src/my_ai_project/api.py (the ask route), deps.py (how dependencies are made) and tests/test_ask_api.py. Follow AGENTS.md.
+RULES     Do NOT log the answer text. Do not change what the API returns. Do not add a dependency.
+DONE      Show me: the diff, pytest, mypy, and one real run of the endpoint with the log line it wrote.
+          Tell me what you did not test.</code></pre><h3>Step 3: let the agent work</h3><p>Give it the prompt, and watch the steps, as on Monday. When it says it is done, <strong>commit its first version alone</strong> (<code>git add</code> only the files it changed on purpose), so that the review is a real diff and your fixes are a second commit. This is the real first version:</p><pre><code>diff --git a/src/my_ai_project/api.py b/src/my_ai_project/api.py
+index b814b2c..f4e2415 100644
+--- a/src/my_ai_project/api.py
++++ b/src/my_ai_project/api.py
+@@ -13,7 +13,7 @@ from my_ai_project.llm import LlmError
+ from my_ai_project.structured import StructuredOutputError, ask_structured, extract_json, schema_prompt
+ from my_ai_project.extractor import Extraction, ExtractionError, extract
+ from my_ai_project.access import allowed_kinds
+-from my_ai_project.deps import EmbedderDep, KeywordsDep, LlmDep, RoleDep, StoreDep, SummaryDep, ToolModelDep, WriterDep
++from my_ai_project.deps import EmbedderDep, KeywordsDep, LlmDep, QuestionLogDep, RoleDep, StoreDep, SummaryDep, ToolModelDep, WriterDep
+ from my_ai_project.pipeline import retrieve
+ from my_ai_project.rag import answer_question
+ from my_ai_project.tool_loop import assist
+@@ -184,11 +184,14 @@ class AskResponse(BaseModel):
+ 
+ 
+ @app.post(&quot;/api/ask&quot;)
+-def ask(request: AskRequest, embedder: EmbedderDep, store: StoreDep, keywords: KeywordsDep, writer: WriterDep, role: RoleDep) -&gt; AskResponse:
++def ask(
++    request: AskRequest, embedder: EmbedderDep, store: StoreDep, keywords: KeywordsDep, writer: WriterDep, role: RoleDep, log: QuestionLogDep
++) -&gt; AskResponse:
+     try:
+         result = answer_question(request.question, embedder, store, keywords, writer, top_k=request.top_k, allowed_kinds=allowed_kinds(role))
+     except psycopg.OperationalError as err:
+         raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
++    log.record(role, request.question, result.refused, [s.doc_id for s in result.sources])
+     sources = [
+         SearchHit(citation=f.citation, doc_id=f.doc_id, chunk_index=f.chunk_index, title=f.title, kind=f.kind, text=f.text, similarity=f.similarity)
+         for f in result.sources
+diff --git a/src/my_ai_project/deps.py b/src/my_ai_project/deps.py
+index 019b226..3b5afbd 100644
+--- a/src/my_ai_project/deps.py
++++ b/src/my_ai_project/deps.py
+@@ -1,4 +1,5 @@
+ import os
++from pathlib import Path
+ from functools import lru_cache
+ from typing import Annotated
+ 
+@@ -13,6 +14,7 @@ from my_ai_project.access import ALLOWED_KINDS
+ from my_ai_project.grounding import Writer
+ from my_ai_project.hybrid import KeywordIndex
+ from my_ai_project.pipeline import Searcher
++from my_ai_project.question_log import QuestionLog
+ from my_ai_project.simulated import SimulatedWriter
+ from my_ai_project.tool_loop import AnthropicToolModel, PretendToolModel, ToolModel
+ from my_ai_project.services import SummaryService
+@@ -95,3 +97,10 @@ def get_tool_model() -&gt; ToolModel:
+ 
+ 
+ ToolModelDep = Annotated[ToolModel, Depends(get_tool_model)]
++
++
++def get_question_log() -&gt; QuestionLog:
++    return QuestionLog(Path(os.environ.get(&quot;QUESTION_LOG&quot;, &quot;logs/questions.jsonl&quot;)))
++
++
++QuestionLogDep = Annotated[QuestionLog, Depends(get_question_log)]
+diff --git a/src/my_ai_project/question_log.py b/src/my_ai_project/question_log.py
+new file mode 100644
+index 0000000..9af81a8
+--- /dev/null
++++ b/src/my_ai_project/question_log.py
+@@ -0,0 +1,16 @@
++import json
++from datetime import datetime, timezone
++from pathlib import Path
++
++
++class QuestionLog:
++    &quot;&quot;&quot;Appends one JSON line for every question that was asked: when, by which role, the question, and what happened.&quot;&quot;&quot;
++
++    def __init__(self, path: Path) -&gt; None:
++        self.path = path
++
++    def record(self, role: str, question: str, refused: bool, sources: list[str]) -&gt; None:
++        self.path.parent.mkdir(parents=True, exist_ok=True)
++        line = {&quot;time&quot;: datetime.now(timezone.utc).isoformat(), &quot;role&quot;: role, &quot;question&quot;: question, &quot;refused&quot;: refused, &quot;sources&quot;: sources}
++        with self.path.open(&quot;a&quot;, encoding=&quot;utf-8&quot;) as file:
++            file.write(json.dumps(line) + &quot;\n&quot;)
+diff --git a/tests/test_question_log.py b/tests/test_question_log.py
+new file mode 100644
+index 0000000..01409b6
+--- /dev/null
++++ b/tests/test_question_log.py
+@@ -0,0 +1,41 @@
++import json
++from collections.abc import Iterator
++from pathlib import Path
++
++import pytest
++from fastapi.testclient import TestClient
++
++from my_ai_project.api import app
++from my_ai_project.deps import get_embedder, get_keywords, get_question_log, get_store, get_writer
++from my_ai_project.embedder import FakeEmbedder
++from my_ai_project.hybrid import KeywordIndex
++from my_ai_project.question_log import QuestionLog
++from my_ai_project.simulated import SimulatedWriter
++from test_ask_api import CHUNKS, InMemoryStore
++
++
++def test_a_record_is_one_json_line(tmp_path: Path) -&gt; None:
++    log = QuestionLog(tmp_path / &quot;logs&quot; / &quot;questions.jsonl&quot;)
++    log.record(&quot;staff&quot;, &quot;What does error E104 mean?&quot;, False, [&quot;error-e104&quot;])
++    log.record(&quot;customer&quot;, &quot;Where can I buy a coffee?&quot;, True, [])
++    lines = (tmp_path / &quot;logs&quot; / &quot;questions.jsonl&quot;).read_text(encoding=&quot;utf-8&quot;).splitlines()
++    first = json.loads(lines[0])
++    assert len(lines) == 2
++    assert first[&quot;role&quot;] == &quot;staff&quot; and first[&quot;sources&quot;] == [&quot;error-e104&quot;] and first[&quot;refused&quot;] is False
++
++
++@pytest.fixture
++def client(tmp_path: Path) -&gt; Iterator[TestClient]:
++    app.dependency_overrides[get_embedder] = FakeEmbedder
++    app.dependency_overrides[get_store] = InMemoryStore
++    app.dependency_overrides[get_keywords] = lambda: KeywordIndex(CHUNKS)
++    app.dependency_overrides[get_writer] = SimulatedWriter
++    app.dependency_overrides[get_question_log] = lambda: QuestionLog(tmp_path / &quot;questions.jsonl&quot;)
++    yield TestClient(app)
++    app.dependency_overrides.clear()
++
++
++def test_asking_writes_a_log_line(client: TestClient, tmp_path: Path) -&gt; None:
++    client.post(&quot;/api/ask&quot;, json={&quot;question&quot;: &quot;Is it true that the battery lasts about eight hours?&quot;})
++    line = json.loads((tmp_path / &quot;questions.jsonl&quot;).read_text(encoding=&quot;utf-8&quot;).splitlines()[0])
++    assert line[&quot;question&quot;].startswith(&quot;Is it true&quot;) and line[&quot;role&quot;] == &quot;customer&quot;</code></pre><h3>Step 4: review it</h3><p>Do not read its summary. Run the checklist of Day 110. The agent&rsquo;s tests passed, so run them, and then look at what the run left behind:</p><div class="out"><b>You should see</b><br>$ uv run pytest -q<br>149 passed, 4 skipped<br><br>$ git status --short<br>?? logs/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;- a folder in the repository that nobody asked for<br><br>$ head -2 logs/questions.jsonl<br>{"time": "2026-10-18T01:35:08.318384+00:00", "role": "staff", "question": "E101 Sensor timeout. The sensor did not answer. Check the sensor cable and restart the monitor.", "refused": false, "sources": ["error-e101"]}<br>{"time": "2026-10-18T01:35:08.321144+00:00", "role": "customer", "question": "E101 Sensor timeout. The sensor did not answer. Check the sensor cable and restart the monitor.", "refused": false, "sources": ["manual-install"]}</div><p>Finding A was <strong>observed</strong>: the green tests were writing user questions into a folder of the repository. The other findings come from reading the diff with the questions of the checklist. Write yours in this form:</p><pre><code>finding                                                                 how it was found                          severity
+A  The tests pass but WRITE INTO THE REPOSITORY: the old API tests                 OBSERVED: pytest, then git status       high
+   do not override the log, so every test run adds lines to logs/questions.jsonl,
+   a folder that is not in .gitignore. One &#x27;git add .&#x27; would commit user questions.
+B  If the log cannot be written (disk full, no permission), record()               READ: no try/except around the write    high
+   raises, the route fails, and the user loses an answer that was ready.
+C  Only the happy path is tested: no test for a refusal, none for                  READ: the tests added                    medium
+   a log that cannot be written.
+D  The question text is stored as typed. Users may type personal data.            READ: the diff                           note
+   (A limit for now: the log is local and ignored by Git. Retention is not handled.)
+E  Appending from several workers at once is not guaranteed to be safe.            READ: the diff                           note
+   (Fine for one worker; write it down.)</code></pre><h3>Step 5: fix it</h3><p>The fixes, as a second commit: logging never raises, tests keep the log out of the repository (<code>tests/conftest.py</code>), <code>logs/</code> in <code>.gitignore</code>, and two more tests (an unwritable log, a refusal):</p><pre><code>diff --git a/.gitignore b/.gitignore
+index 6c8298f..70a02d9 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -3,3 +3,4 @@ __pycache__/
+ .mypy_cache/
+ reports/
+ *.pyc
++logs/
+diff --git a/src/my_ai_project/question_log.py b/src/my_ai_project/question_log.py
+index 9af81a8..d0ac0e0 100644
+--- a/src/my_ai_project/question_log.py
++++ b/src/my_ai_project/question_log.py
+@@ -1,7 +1,10 @@
+ import json
++import logging
+ from datetime import datetime, timezone
+ from pathlib import Path
+ 
++logger = logging.getLogger(&quot;question_log&quot;)
++
+ 
+ class QuestionLog:
+     &quot;&quot;&quot;Appends one JSON line for every question that was asked: when, by which role, the question, and what happened.&quot;&quot;&quot;
+@@ -10,7 +13,11 @@ class QuestionLog:
+         self.path = path
+ 
+     def record(self, role: str, question: str, refused: bool, sources: list[str]) -&gt; None:
+-        self.path.parent.mkdir(parents=True, exist_ok=True)
++        &quot;&quot;&quot;Never raises: a log that cannot be written must not cost the user their answer.&quot;&quot;&quot;
+         line = {&quot;time&quot;: datetime.now(timezone.utc).isoformat(), &quot;role&quot;: role, &quot;question&quot;: question, &quot;refused&quot;: refused, &quot;sources&quot;: sources}
+-        with self.path.open(&quot;a&quot;, encoding=&quot;utf-8&quot;) as file:
+-            file.write(json.dumps(line) + &quot;\n&quot;)
++        try:
++            self.path.parent.mkdir(parents=True, exist_ok=True)
++            with self.path.open(&quot;a&quot;, encoding=&quot;utf-8&quot;) as file:
++                file.write(json.dumps(line) + &quot;\n&quot;)
++        except OSError as err:
++            logger.warning(&quot;could not write the question log %s: %s&quot;, self.path, err)
+diff --git a/tests/conftest.py b/tests/conftest.py
+new file mode 100644
+index 0000000..a3d7a31
+--- /dev/null
++++ b/tests/conftest.py
+@@ -0,0 +1,9 @@
++from pathlib import Path
++
++import pytest
++
++
++@pytest.fixture(autouse=True)
++def question_log_in_a_temporary_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -&gt; None:
++    &quot;&quot;&quot;No test may write into the real logs/ folder of the repository.&quot;&quot;&quot;
++    monkeypatch.setenv(&quot;QUESTION_LOG&quot;, str(tmp_path / &quot;default-questions.jsonl&quot;))
+diff --git a/tests/test_question_log.py b/tests/test_question_log.py
+index 01409b6..c6f8909 100644
+--- a/tests/test_question_log.py
++++ b/tests/test_question_log.py
+@@ -39,3 +39,17 @@ def test_asking_writes_a_log_line(client: TestClient, tmp_path: Path) -&gt; None:
+     client.post(&quot;/api/ask&quot;, json={&quot;question&quot;: &quot;Is it true that the battery lasts about eight hours?&quot;})
+     line = json.loads((tmp_path / &quot;questions.jsonl&quot;).read_text(encoding=&quot;utf-8&quot;).splitlines()[0])
+     assert line[&quot;question&quot;].startswith(&quot;Is it true&quot;) and line[&quot;role&quot;] == &quot;customer&quot;
++
++
++def test_an_unwritable_log_does_not_break_the_answer(client: TestClient, tmp_path: Path) -&gt; None:
++    blocker = tmp_path / &quot;not-a-folder&quot;
++    blocker.write_text(&quot;x&quot;, encoding=&quot;utf-8&quot;)
++    app.dependency_overrides[get_question_log] = lambda: QuestionLog(blocker / &quot;questions.jsonl&quot;)
++    response = client.post(&quot;/api/ask&quot;, json={&quot;question&quot;: &quot;Is it true that the battery lasts about eight hours?&quot;})
++    assert response.status_code == 200 and response.json()[&quot;refused&quot;] is False
++
++
++def test_a_refusal_is_logged_as_refused(client: TestClient, tmp_path: Path) -&gt; None:
++    client.post(&quot;/api/ask&quot;, json={&quot;question&quot;: &quot;Where can I buy a coffee?&quot;})
++    line = json.loads((tmp_path / &quot;questions.jsonl&quot;).read_text(encoding=&quot;utf-8&quot;).splitlines()[0])
++    assert line[&quot;refused&quot;] is True and line[&quot;sources&quot;] == []</code></pre><h3>Step 6: prove nothing got worse</h3><div class="out"><b>You should see</b><br>$ uv run pytest -q<br>151 passed, 4 skipped<br>$ ls logs<br>ls: logs: No such file or directory&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (the tests no longer touch the repository)<br>$ uv run mypy src tests<br>Success: no issues found in 63 source files<br>$ uv run python run_golden.py<br>passed 11/18 (61%)&nbsp;&nbsp; hit@3 100%&nbsp;&nbsp; MRR 0.97&nbsp;&nbsp; refusal accuracy 89%&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(the same as before the feature)</div><p>Then run the real thing, and read the log lines:</p><div class="out"><b>You should see</b><br>$ QUESTION_LOG=/tmp/q.jsonl uv run uvicorn my_ai_project.api:app --port 8000<br>$ curl -X POST localhost:8000/api/ask -H "x-demo-role: staff" -H "content-type: application/json" -d '{"question": "What does error E104 mean?"}'<br>{"question":"What does error E104 mean?","answer":"The storage is above 95 percent [error-e104#0].","refused":false, ...}<br>$ curl -X POST localhost:8000/api/ask -H "content-type: application/json" -d '{"question": "Where can I buy a coffee?"}'<br>{"question":"Where can I buy a coffee?","answer":"I could not find that in the knowledge base.","refused":true, ...}<br><br>$ cat /tmp/q.jsonl<br>{"time": "2026-10-18T01:36:05.670088+00:00", "role": "staff", "question": "What does error E104 mean?", "refused": false, "sources": ["error-e104"]}<br>{"time": "2026-10-18T01:36:05.692660+00:00", "role": "customer", "question": "Where can I buy a coffee?", "refused": true, "sources": []}</div><h3>Step 7: write the PR description, and merge</h3><p>Write the description as if someone else must approve it. It is also where you say what you did <em>not</em> test:</p><pre><code>Add a question log to /api/ask
+
+What      Every call of POST /api/ask appends one JSON line to logs/questions.jsonl (QUESTION_LOG changes the path):
+          time, role, question, refused, cited document ids. The answer text is not logged. The API response is unchanged.
+Why       To see what users ask and where the assistant refuses, as input for the next golden questions.
+How       QuestionLog (question_log.py), a dependency (get_question_log), one call in the route.
+          record() never raises: a failed write is a warning, not a failed request.
+Tested    pytest 151 passed (new: a line is written; a refusal is logged as refused; an unwritable log does not break the answer;
+          no test writes into the repository, see tests/conftest.py). mypy clean. run_golden.py unchanged (11/18).
+          Ran the real endpoint and read the log lines.
+Not tested  Several workers writing at once. Retention. A very large log.
+Risks     The log holds the question text as typed, which may contain personal data. It is local and ignored by Git.
+          Needs a retention rule before any real use.</code></pre><p>Add the new rule to <code>AGENTS.md</code>, so that the next session knows:</p><pre><code>- The question log (logs/) holds what users typed: never commit it, never log answer text or secrets, and no test may write into the repository.</code></pre><p>Merge with <code>git switch main</code> and <code>git merge --no-ff feature/question-log</code>.</p></section>
+<section><h2><span class="n">5</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The agent changed more than the feature</strong>: send it back, or throw the branch away and give a smaller task. A big diff cannot be reviewed.</li><li><strong>You found nothing</strong>: look again with the checklist, one question at a time, and run the feature with a wrong input and with a failure (a log path that cannot be written). &ldquo;I found nothing&rdquo; is also a result; write what you checked.</li><li><strong>The agent argues with a finding</strong>: you decide. Ask for a test that shows the problem, then fix it.</li><li><strong>Tests need the database</strong>: they skip when it is down. For the golden table you need the database and the data (<code>ingest.py</code>).</li></ul><details><summary>README line for the log</summary><pre><code>## Question log
+
+    QUESTION_LOG=logs/questions.jsonl   # where /api/ask appends one JSON line per question (default shown)
+    Fields: time (UTC), role, question, refused, sources (document ids). Not logged: the answer text.
+    The folder is ignored by Git. The log holds user input: treat it as private.</code></pre></details></section>
+<section><h2><span class="n">6</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Run the checklist, and push.</p><pre><code>[ ] AGENTS.md and CLAUDE.md are in the repository and every command in AGENTS.md works
+[ ] the prompt has a goal, files to look at, rules and a &#x27;done&#x27; list
+[ ] the agent&#x27;s first version is committed on its own (so the review is a real diff)
+[ ] my review is written: each finding says how I found it (observed or read) and how serious it is
+[ ] the findings are fixed (or ruled out in writing) and each important one has a test
+[ ] pytest and mypy pass, the golden table is not worse, and I ran the real endpoint
+[ ] the PR description is written; the branch is merged; AGENTS.md has the new rule if needed</code></pre><p><code>git push</code>. Keep your review notes: they are part of your portfolio.</p></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why commit the agent&rsquo;s first version on its own?</li><li>Which finding was observed, and which were read? Why does the difference matter?</li><li>What goes in a PR description besides what changed?</li></ol><details><summary>Answers</summary><ol><li>So that the review is a real diff, and your fixes are a separate commit: you can show what the agent wrote and what you changed.</li><li>The test litter was observed by running pytest and git status; the unwritable log and the missing tests were read from the diff. Observed findings are certain; read ones are risks you should confirm with a test.</li><li>Why, how it was tested, what was not tested, and the risks. A reviewer needs the honest list of what is not covered.</li></ol></details></section>
+<section id="game-day112" class="game"><h2><span class="n">+</span> &middot; Game: Question Log Review <span class="t">5 min</span></h2>
+<p><p>You review the agent's question log. Read the finding, pick what it is, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day112-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day112-play">Start the game</button></div>
+<div id="day112-round" hidden><div class="gtop"><span id="day112-num">Round 1</span><span id="day112-score">Score 0</span></div>
+<pre hidden><code id="day112-code"></code></pre><div class="q" id="day112-q"></div><div class="choices" id="day112-opts"></div>
+<div class="fb" id="day112-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day112-next" hidden>Next round</button></p></div>
+<div id="day112-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day112",[{"c": "uv run pytest -q   then   git status --short", "q": "What do you see after the first version?", "o": ["149 passed, and ?? logs/ in the repository", "Only green tests", "Failing tests"], "a": 0, "out": "149 passed, 4 skipped\n?? logs/", "why": "Green tests, a folder nobody asked for."}, {"c": "head -2 logs/questions.jsonl", "q": "What is in the repository folder?", "o": ["Questions typed in the tests, with role and sources", "Answers", "Nothing"], "a": 0, "out": "{\"time\": \"...\", \"role\": \"staff\", \"question\": \"E101 Sensor timeout. ...\", \"refused\": false, \"sources\": [\"error-e101\"]}", "why": "One 'git add .' would commit user questions (finding A)."}, {"c": "record() writes the file with no try/except", "q": "What happens if the disk is full?", "o": ["The route fails and the user loses a ready answer", "Nothing", "The log is skipped without any trace"], "a": 0, "out": "(fixed: a failed write is a warning; test: an unwritable log still gives 200)", "why": "Logging must never break the request."}, {"c": "tests/conftest.py (autouse fixture)", "q": "What does it do?", "o": ["Sends the log of every test to a temporary folder", "Starts the database", "Skips the tests"], "a": 0, "out": "ls logs\nls: logs: No such file or directory", "why": "No test may write into the repository."}, {"c": "After the fixes", "q": "What is the golden table?", "o": ["Unchanged: 11/18, hit@3 100%, MRR 0.97", "Better", "Worse"], "a": 0, "out": "passed 11/18 (61%)   hit@3 100%   MRR 0.97   refusal accuracy 89%", "why": "A change outside retrieval must not move the table."}, {"c": "The log holds the question text as typed", "q": "What do you write in the PR?", "o": ["A risk: it may contain personal data; local, ignored by Git, needs a retention rule", "Nothing", "That it is anonymous"], "a": 0, "out": "Risks: The log holds the question text as typed, which may contain personal data.", "why": "State what you did not solve."}, {"c": "Commit the agent's first version alone", "q": "Why?", "o": ["Your fixes become a separate commit, and the review is a real diff", "Git requires it", "To hide the fixes"], "a": 0, "out": "feature/question-log: first version, then 'Review fixes' (two commits)", "why": "You can show what it wrote and what you changed."}],["PR rookie", "PR regular", "Agent reviewer"],"Review the agent's feature like a PR: run the tests and look at what they leave behind, ask what happens when a call fails, fix with tests, prove the score table did not move, and write the risks in the PR.");</script>
+<p><small>Tick &ldquo;Play the Question Log Review game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> an instructions file, a feature built by a coding agent, a written review that found a real problem that the green tests hid, fixes with tests, proof that the score table did not get worse, and a PR description with an honest list of risks. That is the Module 9 checkpoint.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 112 checklist.</li><li>Share one line in the comments: what was the most serious finding in your review?</li><li><strong>Next:</strong> Sunday is the review: a self-test on coding agents, and the plan for Module 10, problem framing and design.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
