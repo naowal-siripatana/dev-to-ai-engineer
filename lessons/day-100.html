@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 100 - Why evaluation comes first</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 100 &middot; LEVEL 8: EVALUATION</div><h1>Why evaluation comes first</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to find three ways your assistant fails by reading real answers, and say why a score must come before tuning.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What did the human-in-the-loop step protect you from?</li><li>Name one stop rule for an agent loop.</li></ol><details><summary>Answers</summary><ol><li>A risky tool (one that changes something) running by mistake: a person approves the exact call first.</li><li>A maximum number of steps, or stopping before a repeated action.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You change one thing in your assistant: the chunk size, the prompt, the minimum similarity. How do you know whether it got better or worse? &ldquo;I tried three questions and they looked fine&rdquo;?</strong></p><details><summary>Guess first, then open</summary><p>You do not know. A few good-looking answers prove little, and a change that fixes one question often breaks another. <strong>Evaluation</strong> means a fixed set of questions with expected results and a script that scores them, so that every change gets a number. It comes <em>first</em>: before you tune anything, you need a way to see whether tuning helps.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: you cannot improve what you do not measure</h3>
+<p>Without a score, every change is a guess, and you will keep the changes that <em>feel</em> good. With a score, you can see that a change made one thing better and two things worse. In AI work the surprise is the normal case, because the parts depend on each other.</p>
+<h3>Piece 2: find the ways it fails, from real runs</h3>
+<p>Start by looking. Run a handful of different questions, read every answer, and write down the <strong>kinds</strong> of failure you see. For a RAG assistant there are three common ones: it finds the <strong>wrong page</strong> (and answers from it with confidence), it <strong>answers when it should refuse</strong>, and it <strong>refuses when it could have helped</strong>. Each kind needs its own check, and later its own fix.</p>
+<h3>Piece 3: one number cannot fix everything</h3>
+<p>The assistant has settings, such as the minimum similarity for answering. Moving one setting often trades one failure for another. That is exactly why you need many questions and a table: so that you see the trade, and do not fix one question while breaking three.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> a golden set is a regression test suite for behaviour you cannot assert with an <code>Assert.Equal</code>. The score table is your CI result, and &ldquo;a change that fixes one case and breaks another&rdquo; is something you already know from refactoring without tests.</div>
+<div class="box cap"><strong>Capstone:</strong> Module 8 is one week. At the end of it, <code>ai-knowledge-assistant</code> has a golden set of 15 to 20 questions and a script that prints a score table. Every later change is judged by that table.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Six questions through the real pipeline (retrieval, the refusal rule, the grounded answer), as <em>staff</em> so that the error pages are included. <code>failure_probe.py</code>:</p><pre><code>import os
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.hybrid import KeywordIndex
+from my_ai_project.rag import answer_question
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkStore
+
+QUESTIONS = [
+    &quot;How often should I calibrate the sensor?&quot;,
+    &quot;What does error E104 mean?&quot;,
+    &quot;How do I install the monitor?&quot;,
+    &quot;Where can I buy a coffee?&quot;,
+    &quot;How much does the monitor cost?&quot;,
+    &quot;Is it waterproof?&quot;,
+]
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+embedder, keywords, writer = FastEmbedder(), KeywordIndex(store.all_chunks()), SimulatedWriter()   # the writer is a stand-in
+for question in QUESTIONS:
+    result = answer_question(question, embedder, store, keywords, writer, allowed_kinds=allowed_kinds(&quot;staff&quot;))
+    sources = &quot;, &quot;.join(s.citation for s in result.sources) or &quot;no source&quot;
+    print(f&quot;{question}\n   {result.text}\n   sources: {sources}&quot; + (f&quot;  (refused: {result.reason})&quot; if result.refused else &quot;&quot;))</code></pre><div class="box"><strong>The writer is a stand-in.</strong> The answers come from the simulated writer of Day 72, which is <strong>not a real model</strong>: it writes the first sentence of the top page. The <em>retrieval</em> (which pages were found, and their similarity) is real. Keep this in mind: some failures belong to the retrieval, some to the writer.</div><div class="out"><b>You should see</b><br>How often should I calibrate the sensor?<br>&nbsp;&nbsp; Calibrate the sensor once a month [manual-calibration#0].<br>&nbsp;&nbsp; sources: [manual-calibration#0]<br>What does error E104 mean?<br>&nbsp;&nbsp; The storage is above 95 percent [error-e104#0].<br>&nbsp;&nbsp; sources: [error-e104#0]<br>How do I install the monitor?<br>&nbsp;&nbsp; Hold the power button for 5 seconds until the light blinks [faq-reset#0].<br>&nbsp;&nbsp; sources: [faq-reset#0]<br>Where can I buy a coffee?<br>&nbsp;&nbsp; I could not find that in the knowledge base.<br>&nbsp;&nbsp; sources: no source&nbsp;&nbsp;(refused: best similarity 0.46 is under 0.6)<br>How much does the monitor cost?<br>&nbsp;&nbsp; The monitor has a two year warranty on manufacturing faults [faq-warranty#0].<br>&nbsp;&nbsp; sources: [faq-warranty#0]<br>Is it waterproof?<br>&nbsp;&nbsp; I could not find that in the knowledge base.<br>&nbsp;&nbsp; sources: no source&nbsp;&nbsp;(refused: best similarity 0.54 is under 0.6)</div><p>Read it as a user would. Four of the six look plausible. Look harder:</p><ul><li><strong>Install</strong>: the question was about mounting the monitor and the answer is how to reset it, with a citation, in a calm voice. This is the worst kind: <em>wrong, cited and confident</em>.</li><li><strong>Cost</strong>: the knowledge base has no price, and the assistant answered with the warranty.</li><li><strong>Waterproof</strong>: it refused, but the knowledge base does say to keep the unit away from water spray, and that water damage is not covered.</li></ul></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c evaluation</code>). The database must be running, with the chunks of Day 67.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>failure_probe.py</code> and run it. Match the six answers. Before you read my notes, write for each answer one word: <em>good</em>, <em>wrong</em> or <em>doubtful</em>.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Add three questions of <strong>your own</strong> to the probe (one easy, one with an exact code, one that your knowledge base cannot answer). <strong>Predict first:</strong> which will fail? Run it and compare.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Change the minimum similarity of <code>answer_question</code> (the <code>min_score</code> argument, now 0.6) to 0.5, then to 0.7. <strong>Predict first:</strong> which of the six answers change? Does one number fix the failures?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Write <code>notes/failures.md</code>: <strong>three</strong> ways your assistant fails, each with a real question from a run, what it said, what it should have said, the type of failure, and <em>how a script could detect it automatically</em>. This is the plan for the whole week.</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Find three ways the assistant fails&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>Different answers from mine</strong>: your knowledge base or your chunking may differ. That is fine; use your own results.</li><li><strong>Every answer is &ldquo;not found&rdquo;</strong>: check that you ask as <code>staff</code> (the error pages are for staff) and that <code>ingest.py</code> was run.</li><li><strong>You cannot tell good from wrong</strong>: open the page the answer cites and read it next to the question. That is the whole skill.</li></ul><details><summary>Solution: Step 1 (my labels)</summary><p>Calibration: good. E104: good (though only the first sentence; the action is missing). Install: <strong>wrong</strong>. Coffee: good (a correct refusal). Cost: <strong>wrong</strong> (it should have refused). Waterproof: <strong>doubtful</strong> (a refusal, where a partial answer exists).</p></details><details><summary>Solution: Step 3</summary><div class="out"><b>You should see</b><br>min_score&nbsp;&nbsp;calibrate&nbsp;&nbsp;E104&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; install&nbsp;&nbsp;&nbsp;&nbsp;coffee&nbsp;&nbsp; cost&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; waterproof<br>0.5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;answered&nbsp;&nbsp; answered&nbsp;&nbsp; answered&nbsp;&nbsp; refused&nbsp;&nbsp;answered&nbsp;&nbsp; refused<br>0.6&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;answered&nbsp;&nbsp; answered&nbsp;&nbsp; answered&nbsp;&nbsp; refused&nbsp;&nbsp;answered&nbsp;&nbsp; refused<br>0.7&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;answered&nbsp;&nbsp; refused&nbsp;&nbsp;&nbsp;&nbsp;answered&nbsp;&nbsp; refused&nbsp;&nbsp;refused&nbsp;&nbsp;&nbsp;&nbsp;refused</div><p>At 0.5 nothing changes: the waterproof question is still refused, but by the <em>writer</em> (no word of the question is in the page), not by the gate. At 0.7 the cost question is refused (good), <strong>but the E104 question is refused too</strong> (bad: its best similarity is 0.63). One number trades one failure for another, and the install failure is not about this number at all (the right page was never retrieved). You need a table of many questions to see this.</p></details><details><summary>Solution: Step 4 (a model)</summary><pre><code>notes/failures.md
+
+1. WRONG PAGE, SAID WITH CONFIDENCE
+   Question : How do I install the monitor?
+   Said     : Hold the power button for 5 seconds until the light blinks [faq-reset#0].
+   Should   : Mount the monitor on a flat wall ... [manual-install#0]
+   Type     : retrieval miss: the right page was not in the top 3
+   Detect   : the expected source is not among the retrieved pages
+
+2. ANSWERED WHEN IT SHOULD REFUSE
+   Question : How much does the monitor cost?
+   Said     : The monitor has a two year warranty on manufacturing faults [faq-warranty#0].
+   Should   : I could not find that in the knowledge base.
+   Type     : a real citation to a page that does not answer the question
+   Detect   : the question is marked &#x27;should refuse&#x27; and the assistant answered
+
+3. REFUSED WHEN PART OF THE ANSWER EXISTS
+   Question : Is it waterproof?
+   Said     : I could not find that in the knowledge base.
+   Should   : keep it away from water spray; water damage is not covered by the warranty
+   Type     : a refusal where a partial answer was possible
+   Detect   : the question is marked &#x27;answerable&#x27; and the assistant refused</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does evaluation come before tuning?</li><li>Name the three ways a RAG assistant fails, from today&rsquo;s run.</li><li>Why can raising the minimum similarity make things worse?</li></ol><details><summary>Answers</summary><ol><li>Without a score you cannot tell whether a change helped, and a change that fixes one question often breaks another.</li><li>It finds the wrong page and answers confidently; it answers when it should refuse; it refuses when part of an answer exists.</li><li>It refuses more questions, including good ones: at 0.7 the correct E104 answer is refused together with the cost question.</li></ol></details></section>
+<section id="game-day100" class="game"><h2><span class="n">+</span> &middot; Game: Failure Finder <span class="t">5 min</span></h2>
+<p><p>You probe your assistant. Read the question, pick the verdict, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day100-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day100-play">Start the game</button></div>
+<div id="day100-round" hidden><div class="gtop"><span id="day100-num">Round 1</span><span id="day100-score">Score 0</span></div>
+<pre hidden><code id="day100-code"></code></pre><div class="q" id="day100-q"></div><div class="choices" id="day100-opts"></div>
+<div class="fb" id="day100-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day100-next" hidden>Next round</button></p></div>
+<div id="day100-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day100",[{"c": "How do I install the monitor?", "q": "What is the verdict on this answer?", "o": ["Wrong, cited and confident: it answered how to reset", "Good", "Correctly refused"], "a": 0, "out": "   Hold the power button for 5 seconds until the light blinks [faq-reset#0].\n   sources: [faq-reset#0]", "why": "The right page was not in the top 3, and the assistant answered from another page."}, {"c": "How much does the monitor cost?", "q": "What is the verdict?", "o": ["It answered when it should have refused", "Good", "Correctly refused"], "a": 0, "out": "   The monitor has a two year warranty on manufacturing faults [faq-warranty#0].\n   sources: [faq-warranty#0]", "why": "The knowledge base has no price. A real citation does not make the answer relevant."}, {"c": "Is it waterproof?", "q": "What is the verdict?", "o": ["Doubtful: it refused, but part of the answer exists", "Wrong: it should answer yes", "Good: nothing is known"], "a": 0, "out": "   I could not find that in the knowledge base.\n   sources: no source  (refused: best similarity 0.54 is under 0.6)", "why": "The pages say to keep the unit away from water spray, and that water damage is not covered."}, {"c": "Where can I buy a coffee?", "q": "What is the verdict?", "o": ["Good: a correct refusal (best similarity 0.46)", "Wrong", "Doubtful"], "a": 0, "out": "   I could not find that in the knowledge base.\n   sources: no source  (refused: best similarity 0.46 is under 0.6)", "why": "Nothing in the knowledge base is close, so the assistant refuses."}, {"c": "min_score 0.5 / 0.6 / 0.7   for the six questions", "q": "What happens at 0.7?", "o": ["The cost question is refused (good), but so is the E104 question (bad)", "Everything is fixed", "Nothing changes"], "a": 0, "out": "0.7   answered  refused(E104)  answered  refused  refused(cost)  refused", "why": "One number trades one failure for another."}, {"c": "Does raising min_score fix the install answer?", "q": "Why not?", "o": ["The right page was never retrieved: it is not about that number", "It does", "The number is too low"], "a": 0, "out": "install: answered at 0.5, 0.6 and 0.7", "why": "A retrieval miss needs a retrieval fix."}, {"c": "Why evaluation first?", "q": "What is the reason?", "o": ["Without a score you cannot tell if a change helped", "Scores make answers better by themselves", "It is a rule of the course"], "a": 0, "out": "(a judgement, no output)", "why": "A change that fixes one question often breaks another."}],["Failure rookie", "Failure regular", "Failure finder"],"Evaluation comes first: read real answers, name the kinds of failure (wrong page, answered when it should refuse, refused when it could help), and remember that one setting trades one failure for another.");</script>
+<p><small>Tick &ldquo;Play the Failure Finder game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a probe of six real questions, a labelled list of what is good, wrong and doubtful, a first look at how one setting trades failures, and a written plan of three failure types with ways to detect them.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 100 checklist.</li><li>Share one line in the comments: which failure surprised you most?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you write a golden set of questions with expected sources, and learn the metrics.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

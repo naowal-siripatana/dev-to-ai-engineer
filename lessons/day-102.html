@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 102 - Golden datasets and metrics</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 102 &middot; LEVEL 8: EVALUATION</div><h1>Golden datasets and metrics</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write golden questions with expected sources, validate the file, and say what hit@3, rank, MRR and refusal accuracy measure.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does evaluation come before tuning?</li><li>Which of the three failures was &ldquo;wrong, cited and confident&rdquo;?</li></ol><details><summary>Answers</summary><ol><li>Without a score you cannot tell whether a change helped, and a change that fixes one question often breaks another.</li><li>The wrong page found: the install question was answered with the reset page.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You want to write 20 test questions for your assistant. What must each one contain, so that a script (not you) can say &ldquo;right&rdquo; or &ldquo;wrong&rdquo;?</strong></p><details><summary>Guess first, then open</summary><p>The <strong>question</strong>, and what you expect: the <strong>source page(s)</strong> that should be found, and, for a question the knowledge base cannot answer, the fact that the assistant should <strong>refuse</strong>. That file is a <strong>golden dataset</strong>: a small set of questions with the answers you accept as correct.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: the shape of a golden item</h3>
+<p>One line of JSON per question (<strong>JSONL</strong>): an <code>id</code>, the <code>question</code>, the <code>expected_sources</code> (the document ids that should be found; any one of them counts), optional <code>must_contain</code> phrases for the answer, and <code>should_refuse</code> for the questions you want refused. A question to refuse has no expected sources. The file is code: it needs <em>validation</em>, because a typo in an expected source would silently make a good answer look wrong.</p>
+<h3>Piece 2: a few metrics, each for one job</h3>
+<p>Keep the metrics simple and separate. <strong>Retrieval</strong> metrics say whether the right page was found (hit@3, rank, MRR). <strong>Behaviour</strong> metrics say whether it refused correctly. A <strong>pass</strong> says the whole question is right. Looking at them <em>apart</em> tells you which part of the pipeline to fix: a miss in retrieval and a bad answer from the writer are different problems.</p>
+<h3>Piece 3: write the set with care</h3>
+<p>Fifteen to twenty good questions beat a hundred careless ones. Write the questions as a user would, check each expected source by reading the page, and make sure each has <em>one</em> verdict. A question on which careful people disagree is not a good test. And remember: the more you tune against the same questions, the more the score flatters you. Keep a few questions you do not look at while tuning.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> a golden item is a test case with a typed expected value, loaded from a data file like a <code>[Theory]</code> with <code>[MemberData]</code>. The validator is the check that your test data is itself correct, like a schema check on a fixture file.</div>
+<div class="box cap"><strong>Capstone:</strong> on Saturday you grow this file to 15 to 20 questions. Today you build the loader and write the first five.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>The metrics in one table:</p><pre><code>hit@3    Is any expected page among the 3 retrieved pages?                    yes / no per question
+rank     At which position (1, 2, 3) is the first expected page?              1, 2, 3 or none
+MRR      The average of 1/rank over the questions (none counts as 0).         ranks 1, 2, none  -&gt;  (1 + 0.5 + 0) / 3 = 0.5
+refusal  Did it refuse exactly when it should?                                yes / no per question
+pass     The whole question is right: found, cited right, no wrong refusal.   yes / no per question</code></pre><p>The loader, in <code>src/my_ai_project/golden.py</code>. It validates every line, rejects a refusal with sources and an answerable question without sources, finds duplicate ids, and checks that each expected source exists in your knowledge base:</p><pre><code>import json
+from pathlib import Path
+
+from pydantic import BaseModel, Field, ValidationError, model_validator
+
+
+class GoldenItem(BaseModel):
+    &quot;&quot;&quot;One question with the answer you expect: the sources that should be found, and whether the assistant should refuse.&quot;&quot;&quot;
+
+    id: str = Field(min_length=1)
+    question: str = Field(min_length=1)
+    expected_sources: list[str] = Field(default_factory=list)   # doc ids; finding any one of them counts as a hit
+    must_contain: list[str] = Field(default_factory=list)       # phrases the answer text must contain
+    should_refuse: bool = False
+
+    @model_validator(mode=&quot;after&quot;)
+    def check_the_expectation(self) -&gt; &quot;GoldenItem&quot;:
+        if self.should_refuse and (self.expected_sources or self.must_contain):
+            raise ValueError(f&quot;{self.id}: a question that should be refused has no expected sources or phrases&quot;)
+        if not self.should_refuse and not self.expected_sources:
+            raise ValueError(f&quot;{self.id}: an answerable question needs at least one expected source&quot;)
+        return self
+
+
+class GoldenError(Exception):
+    &quot;&quot;&quot;The golden file is wrong. Fix the file before you trust any score.&quot;&quot;&quot;
+
+
+def load_golden(path: Path, known_doc_ids: set[str]) -&gt; list[GoldenItem]:
+    items: list[GoldenItem] = []
+    for number, line in enumerate(path.read_text(encoding=&quot;utf-8&quot;).splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            items.append(GoldenItem.model_validate(json.loads(line)))
+        except (json.JSONDecodeError, ValidationError) as err:
+            raise GoldenError(f&quot;{path.name} line {number}: {err}&quot;) from err
+    ids = [item.id for item in items]
+    if len(ids) != len(set(ids)):
+        raise GoldenError(f&quot;{path.name}: duplicate ids: {sorted({i for i in ids if ids.count(i) &gt; 1})}&quot;)
+    for item in items:
+        unknown = [source for source in item.expected_sources if source not in known_doc_ids]
+        if unknown:
+            raise GoldenError(f&quot;{item.id}: expected source {unknown[0]!r} is not in the knowledge base&quot;)
+    return items</code></pre><p>The first five questions, in <code>data/golden-5.jsonl</code> (four to answer, one to refuse):</p><pre><code>{&quot;id&quot;: &quot;q01&quot;, &quot;question&quot;: &quot;How often should I calibrate the sensor?&quot;, &quot;expected_sources&quot;: [&quot;manual-calibration&quot;], &quot;must_contain&quot;: [&quot;once a month&quot;]}
+{&quot;id&quot;: &quot;q02&quot;, &quot;question&quot;: &quot;Which Wi-Fi band does the monitor support?&quot;, &quot;expected_sources&quot;: [&quot;faq-wifi&quot;, &quot;manual-network-setup&quot;], &quot;must_contain&quot;: [&quot;2.4 GHz&quot;]}
+{&quot;id&quot;: &quot;q03&quot;, &quot;question&quot;: &quot;What does error E104 mean?&quot;, &quot;expected_sources&quot;: [&quot;error-e104&quot;], &quot;must_contain&quot;: [&quot;95 percent&quot;]}
+{&quot;id&quot;: &quot;q04&quot;, &quot;question&quot;: &quot;How do I silence the alarm?&quot;, &quot;expected_sources&quot;: [&quot;faq-alarm-sound&quot;], &quot;must_contain&quot;: [&quot;Silent&quot;]}
+{&quot;id&quot;: &quot;q05&quot;, &quot;question&quot;: &quot;Where can I buy a coffee?&quot;, &quot;expected_sources&quot;: [], &quot;should_refuse&quot;: true}</code></pre><p>A script that loads the file and checks it. <code>check_golden.py</code>:</p><pre><code>import os
+from pathlib import Path
+
+from my_ai_project.golden import GoldenError, load_golden
+from my_ai_project.store import ChunkStore
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+known = {chunk.doc_id for chunk in store.all_chunks()}
+try:
+    items = load_golden(Path(&quot;data/golden.jsonl&quot;), known)
+except GoldenError as err:
+    raise SystemExit(f&quot;golden file is wrong: {err}&quot;)
+refusals = sum(item.should_refuse for item in items)
+print(f&quot;{len(items)} golden questions: {len(items) - refusals} to answer, {refusals} to refuse; every expected source exists&quot;)</code></pre><div class="out"><b>You should see</b><br>5 golden questions: 4 to answer, 1 to refuse; every expected source exists</div><p>Now make a typo on purpose in an expected source (<code>error-e140</code> instead of <code>error-e104</code>) and run it again:</p><div class="out"><b>You should see</b><br>golden file is wrong: q03: expected source 'error-e140' is not in the knowledge base</div><p>Without the check, that typo would have made a correct answer look like a failure, and you would have gone looking for a bug in the pipeline.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c golden</code>). The database must be running, with the chunks of Day 67.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>golden.py</code>, <code>data/golden-5.jsonl</code> and <code>check_golden.py</code>. Run it and match the line. Then make the typo and see the error.</p>
+<h3><span class="step">Step 2</span> Write your own five</h3>
+<p>Write <strong>five new questions</strong> of your own in <code>data/golden-mine.jsonl</code>: three normal ones, one with an exact code, one to refuse. For each, <strong>open the page</strong> and copy the document id. Run the check on your file (change the path in the script).</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Write a refusal question with an expected source, and an answerable question with none. Read the two errors. Why does the loader refuse both?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Write the tests of the template. Then look at your five with the checklist in Stuck: is any of them a bad golden question? Rewrite it.</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Add the golden item model and five questions&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;expected source ... is not in the knowledge base&rdquo;</strong>: the id is <code>kind-name</code>, for example <code>error-e104</code> or <code>faq-wifi</code>. Print the ids with <code>sorted({c.doc_id for c in store.all_chunks()})</code>.</li><li><strong>&ldquo;line N: ...&rdquo; for a valid-looking line</strong>: JSONL needs one complete JSON object per line, with double quotes, and no trailing commas.</li><li><strong>mypy: the return type of the validator</strong>: it returns the item itself, typed as <code>&quot;GoldenItem&quot;</code>.</li></ul><details><summary>Checklist for good questions</summary><pre><code>A good golden question
+  - is something a real user would type (not copied from the page)
+  - has an expected source you checked by reading the page
+  - has ONE clear verdict: answer (with sources) or refuse
+  - is not so easy that anything passes, nor so odd that nothing could
+
+A bad golden question
+  - &#x27;Tell me about the monitor&#x27;        (no single expected page)
+  - &#x27;Is it waterproof?&#x27;                (even two careful people may disagree about the verdict)
+  - the same question written 5 ways   (it measures one thing 5 times)</code></pre></details><details><summary>Solution: Step 3</summary><p>A refusal with expected sources contradicts itself (you cannot expect a source to be found for a question the assistant should refuse), and an answerable question with no expected source cannot be scored. The loader stops both at once, with the id in the message, so you fix the file before you trust any number.</p></details><details><summary>Template: tests</summary><pre><code>from pathlib import Path
+
+import pytest
+
+from my_ai_project.golden import GoldenError, GoldenItem, load_golden
+
+KNOWN = {&quot;manual-calibration&quot;, &quot;faq-wifi&quot;, &quot;error-e104&quot;}
+
+
+def write(tmp_path: Path, *lines: str) -&gt; Path:
+    path = tmp_path / &quot;golden.jsonl&quot;
+    path.write_text(&quot;\n&quot;.join(lines) + &quot;\n&quot;, encoding=&quot;utf-8&quot;)
+    return path
+
+
+GOOD = &#x27;{&quot;id&quot;: &quot;q1&quot;, &quot;question&quot;: &quot;How often?&quot;, &quot;expected_sources&quot;: [&quot;manual-calibration&quot;], &quot;must_contain&quot;: [&quot;once a month&quot;]}&#x27;
+REFUSE = &#x27;{&quot;id&quot;: &quot;q2&quot;, &quot;question&quot;: &quot;Coffee?&quot;, &quot;should_refuse&quot;: true}&#x27;
+
+
+def test_a_good_file_loads(tmp_path: Path) -&gt; None:
+    items = load_golden(write(tmp_path, GOOD, &quot;&quot;, REFUSE), KNOWN)
+    assert [i.id for i in items] == [&quot;q1&quot;, &quot;q2&quot;] and items[1].should_refuse
+
+
+def test_an_answerable_question_needs_a_source() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;needs at least one expected source&quot;):
+        GoldenItem(id=&quot;q&quot;, question=&quot;x&quot;)
+
+
+def test_a_refusal_has_no_sources() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;has no expected sources&quot;):
+        GoldenItem(id=&quot;q&quot;, question=&quot;x&quot;, should_refuse=True, expected_sources=[&quot;faq-wifi&quot;])
+
+
+def test_a_typo_in_a_source_is_caught(tmp_path: Path) -&gt; None:
+    bad = GOOD.replace(&quot;manual-calibration&quot;, &quot;manual-calibraton&quot;)
+    with pytest.raises(GoldenError, match=&quot;&#x27;manual-calibraton&#x27; is not in the knowledge base&quot;):
+        load_golden(write(tmp_path, bad), KNOWN)
+
+
+def test_duplicate_ids_are_caught(tmp_path: Path) -&gt; None:
+    with pytest.raises(GoldenError, match=&quot;duplicate ids&quot;):
+        load_golden(write(tmp_path, GOOD, GOOD), KNOWN)
+
+
+def test_a_broken_line_names_its_number(tmp_path: Path) -&gt; None:
+    with pytest.raises(GoldenError, match=&quot;line 2&quot;):
+        load_golden(write(tmp_path, GOOD, &quot;{not json&quot;), KNOWN)</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What are the parts of a golden item?</li><li>What does MRR measure, and what is it for ranks 1, 2 and none?</li><li>Why does the loader check the expected sources against the knowledge base?</li></ol><details><summary>Answers</summary><ol><li>An id, the question, the expected sources (any one counts), optional phrases that the answer must contain, and whether it should be refused.</li><li>How high the first expected page is, on average: the mean of 1/rank, with 0 for none. For 1, 2 and none: (1 + 0.5 + 0) / 3 = 0.5.</li><li>So that a typo in the golden file is caught as a file error, and does not look like a pipeline failure.</li></ol></details></section>
+<section id="game-day102" class="game"><h2><span class="n">+</span> &middot; Game: Golden Set Check <span class="t">5 min</span></h2>
+<p><p>You build a golden set. Read the line or call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day102-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day102-play">Start the game</button></div>
+<div id="day102-round" hidden><div class="gtop"><span id="day102-num">Round 1</span><span id="day102-score">Score 0</span></div>
+<pre hidden><code id="day102-code"></code></pre><div class="q" id="day102-q"></div><div class="choices" id="day102-opts"></div>
+<div class="fb" id="day102-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day102-next" hidden>Next round</button></p></div>
+<div id="day102-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day102",[{"c": "python check_golden.py   # data/golden-5.jsonl", "q": "What does it print?", "o": ["5 questions: 4 to answer, 1 to refuse; every expected source exists", "An error", "Nothing"], "a": 0, "out": "5 golden questions: 4 to answer, 1 to refuse; every expected source exists", "why": "The file is valid."}, {"c": "\"expected_sources\": [\"error-e140\"]   # a typo for error-e104", "q": "What happens?", "o": ["The loader stops: the source is not in the knowledge base", "The question fails in the pipeline", "Nothing"], "a": 0, "out": "golden file is wrong: q03: expected source 'error-e140' is not in the knowledge base", "why": "A typo must be a file error, not a pipeline failure."}, {"c": "{\"id\": \"q9\", \"question\": \"Coffee?\", \"should_refuse\": true, \"expected_sources\": [\"faq-wifi\"]}", "q": "Is it valid?", "o": ["No: a refusal has no expected sources", "Yes", "Only for staff"], "a": 0, "out": "ValueError: a question that should be refused has no expected sources or phrases", "why": "It contradicts itself."}, {"c": "{\"id\": \"q9\", \"question\": \"How often?\"}", "q": "Is it valid?", "o": ["No: an answerable question needs at least one expected source", "Yes", "Yes, with a default"], "a": 0, "out": "ValueError: an answerable question needs at least one expected source", "why": "It could not be scored."}, {"c": "ranks 1, 2 and none", "q": "What is the MRR?", "o": ["0.5: (1 + 0.5 + 0) / 3", "1.0", "0.33"], "a": 0, "out": "(1 + 1/2 + 0) / 3 = 0.5", "why": "The average of 1/rank, with 0 for a miss."}, {"c": "\"Is it waterproof?\" as a golden question", "q": "What is the problem?", "o": ["Careful people may disagree on the verdict", "It is too easy", "It has no expected source"], "a": 0, "out": "(a judgement, no output)", "why": "A good golden question has one clear verdict."}, {"c": "Tune against the same questions for months", "q": "What is the risk?", "o": ["The score flatters you: keep a few questions you do not look at", "None", "The questions get easier"], "a": 0, "out": "(a judgement, no output)", "why": "You may fit the questions and not the real users."}],["Golden rookie", "Golden regular", "Golden set builder"],"A golden item has a question and what you expect; validate the file so a typo is a file error; keep metrics separate (retrieval, refusals, pass); write a few good questions with one clear verdict each.");</script>
+<p><small>Tick &ldquo;Play the Golden Set Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a golden item with validation, a loader that catches typos and contradictions, your first five questions with expected sources, and a clear idea of the metrics.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 102 checklist.</li><li>Share one line in the comments: which question was hardest to give a single verdict?</li><li><strong>Next:</strong> Thursday is mixed practice: you score five questions by hand first, then by script.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

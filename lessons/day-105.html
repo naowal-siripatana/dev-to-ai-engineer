@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 105 - Project Lab 15: the golden set and the score table</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 105 &middot; LEVEL 8: EVALUATION &middot; PROJECT LAB</div><h1>Project Lab 15: the golden set and the score table</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to score your pipeline on 18 questions with one table, find a failure in it, try a fix, and check that nothing else got worse.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why are the exact phrase checks sometimes too strict?</li><li>Why does the golden loader refuse a refusal question that has expected sources?</li></ol><details><summary>Answers</summary><ol><li>A good answer can word a fact in a way that does not contain your phrase (a paraphrase), and it would fail unfairly.</li><li>It contradicts itself: you cannot expect a page to be found for a question the assistant should refuse.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p>This is the <strong>Module 8 checkpoint</strong>. By the end:</p><ul><li><code>data/golden.jsonl</code>: <strong>18 questions</strong> with expected sources (15 to answer, 3 to refuse).</li><li><code>run_golden.py</code>: a script that runs every question through the real pipeline and prints <strong>one score table</strong>: hit@3, rank, refusals, pass or fail with the reason, and a summary (pass rate, hit@3, MRR, refusal accuracy). It writes a JSON report, and can act as a <strong>gate</strong> (exit code 1 below a minimum).</li><li>The <strong>loop</strong> of evaluation-driven work: baseline, read the failures, change one thing, run again, compare.</li></ul><div class="box cap"><strong>Capstone:</strong> from now on, every change to <code>ai-knowledge-assistant</code> is judged by this table, and the table is part of your story for a reviewer: &ldquo;I measured it, and here is what failed.&rdquo;</div><div class="box"><strong>What is real, and what is not.</strong> The retrieval numbers (hit@3, rank, MRR) are real: real embeddings in PostgreSQL with pgvector. The answers come from the <strong>simulated writer</strong> (a stand-in that writes the first sentence of the top page, NOT a real model). So the failures marked &ldquo;the answer lacks ...&rdquo; belong to that stand-in. With a real model they will be different, and you should run the script with one when you can.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Cut the work in small pieces, and commit after each one:</p><ol><li><strong>The golden set</strong>: grow your file to 18 questions, and validate it.</li><li><strong>The scoring</strong>: one function that scores one question, one that summarises.</li><li><strong>The script</strong>: table, summary, report, gate.</li><li><strong>Tests</strong> for the scoring, with no database and no model.</li><li><strong>The loop</strong>: baseline, read, change one thing, compare.</li><li><strong>README</strong> and push.</li></ol></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2><h3>Step 1: the golden set</h3><p>Extend <code>data/golden.jsonl</code> from your five to 18 questions. These are mine; write yours in your own words, and <strong>open every expected page</strong>. Note that <code>q18</code> (&ldquo;Is it waterproof?&rdquo;) is a question on which I changed my mind: on Day 78 I called the refusal a mistake, and here I expect an answer from the safety page and the warranty. A different person could expect a refusal. Decide, and write down why.</p><pre><code>{&quot;id&quot;: &quot;q01&quot;, &quot;question&quot;: &quot;How often should I calibrate the sensor?&quot;, &quot;expected_sources&quot;: [&quot;manual-calibration&quot;], &quot;must_contain&quot;: [&quot;once a month&quot;]}
+{&quot;id&quot;: &quot;q02&quot;, &quot;question&quot;: &quot;Which Wi-Fi band does the monitor support?&quot;, &quot;expected_sources&quot;: [&quot;faq-wifi&quot;, &quot;manual-network-setup&quot;], &quot;must_contain&quot;: [&quot;2.4 GHz&quot;]}
+{&quot;id&quot;: &quot;q03&quot;, &quot;question&quot;: &quot;What does error E104 mean?&quot;, &quot;expected_sources&quot;: [&quot;error-e104&quot;], &quot;must_contain&quot;: [&quot;95 percent&quot;]}
+{&quot;id&quot;: &quot;q04&quot;, &quot;question&quot;: &quot;How do I silence the alarm?&quot;, &quot;expected_sources&quot;: [&quot;faq-alarm-sound&quot;], &quot;must_contain&quot;: [&quot;Silent&quot;]}
+{&quot;id&quot;: &quot;q05&quot;, &quot;question&quot;: &quot;Where can I buy a coffee?&quot;, &quot;expected_sources&quot;: [], &quot;should_refuse&quot;: true}
+{&quot;id&quot;: &quot;q06&quot;, &quot;question&quot;: &quot;How long does the battery last on a full charge?&quot;, &quot;expected_sources&quot;: [&quot;faq-battery-life&quot;], &quot;must_contain&quot;: [&quot;8 hours&quot;]}
+{&quot;id&quot;: &quot;q07&quot;, &quot;question&quot;: &quot;How do I restore factory settings?&quot;, &quot;expected_sources&quot;: [&quot;faq-reset&quot;], &quot;must_contain&quot;: [&quot;15 seconds&quot;]}
+{&quot;id&quot;: &quot;q08&quot;, &quot;question&quot;: &quot;What should I do when the monitor shows E101?&quot;, &quot;expected_sources&quot;: [&quot;error-e101&quot;], &quot;must_contain&quot;: [&quot;sensor cable&quot;]}
+{&quot;id&quot;: &quot;q09&quot;, &quot;question&quot;: &quot;Can I export my readings?&quot;, &quot;expected_sources&quot;: [&quot;faq-data-export&quot;], &quot;must_contain&quot;: [&quot;CSV&quot;]}
+{&quot;id&quot;: &quot;q10&quot;, &quot;question&quot;: &quot;How do I update the firmware?&quot;, &quot;expected_sources&quot;: [&quot;manual-firmware-update&quot;, &quot;error-e106&quot;], &quot;must_contain&quot;: [&quot;Check for updates&quot;]}
+{&quot;id&quot;: &quot;q11&quot;, &quot;question&quot;: &quot;Where is the serial number?&quot;, &quot;expected_sources&quot;: [&quot;faq-serial-number&quot;], &quot;must_contain&quot;: [&quot;label&quot;]}
+{&quot;id&quot;: &quot;q12&quot;, &quot;question&quot;: &quot;What is the operating temperature?&quot;, &quot;expected_sources&quot;: [&quot;manual-safety&quot;], &quot;must_contain&quot;: [&quot;0 to 45&quot;]}
+{&quot;id&quot;: &quot;q13&quot;, &quot;question&quot;: &quot;What does E103 mean?&quot;, &quot;expected_sources&quot;: [&quot;error-e103&quot;], &quot;must_contain&quot;: [&quot;45 degrees&quot;]}
+{&quot;id&quot;: &quot;q14&quot;, &quot;question&quot;: &quot;How do I install the monitor?&quot;, &quot;expected_sources&quot;: [&quot;manual-install&quot;], &quot;must_contain&quot;: [&quot;flat wall&quot;]}
+{&quot;id&quot;: &quot;q15&quot;, &quot;question&quot;: &quot;Does the warranty cover water damage?&quot;, &quot;expected_sources&quot;: [&quot;faq-warranty&quot;], &quot;must_contain&quot;: [&quot;water damage&quot;]}
+{&quot;id&quot;: &quot;q16&quot;, &quot;question&quot;: &quot;What is the capital of France?&quot;, &quot;expected_sources&quot;: [], &quot;should_refuse&quot;: true}
+{&quot;id&quot;: &quot;q17&quot;, &quot;question&quot;: &quot;How much does the monitor cost?&quot;, &quot;expected_sources&quot;: [], &quot;should_refuse&quot;: true}
+{&quot;id&quot;: &quot;q18&quot;, &quot;question&quot;: &quot;Is it waterproof?&quot;, &quot;expected_sources&quot;: [&quot;manual-safety&quot;, &quot;faq-warranty&quot;], &quot;must_contain&quot;: [&quot;water&quot;]}</code></pre><p>Run <code>check_golden.py</code>. It must say <code>18 golden questions: 15 to answer, 3 to refuse; every expected source exists</code>.</p><h3>Step 2: scoring</h3><p><code>src/my_ai_project/scoring.py</code>. One question gives a <code>Result</code>. The rule for a pass is simple and strict, and the <code>why</code> names the <em>first</em> thing that failed:</p><pre><code>from dataclasses import asdict, dataclass
+
+from my_ai_project.golden import GoldenItem
+
+
+@dataclass
+class Outcome:
+    &quot;&quot;&quot;What the pipeline did for one golden question.&quot;&quot;&quot;
+
+    item: GoldenItem
+    retrieved: list[str]   # doc ids of the retrieved chunks, best first, each once
+    answer: str
+    refused: bool
+    cited: list[str]       # doc ids that the answer cites
+
+
+@dataclass
+class Result:
+    id: str
+    hit: bool | None            # None for a question that should be refused
+    rank: int | None            # 1 = the first retrieved page was expected; None = not retrieved
+    refusal_ok: bool            # did it refuse exactly when it should?
+    citation_ok: bool | None    # every cited page is an expected one (None when nothing to check)
+    contains_ok: bool | None    # every required phrase is in the answer (None when nothing to check)
+    passed: bool
+    why: str                    # the first thing that failed, or &quot;&quot;
+
+
+@dataclass
+class Summary:
+    total: int
+    passed: int
+    pass_rate: float
+    hit_rate: float             # over the answerable questions
+    mrr: float                  # mean reciprocal rank, over the answerable questions
+    refusal_accuracy: float     # over all questions
+
+
+def rank_of(expected: list[str], retrieved: list[str]) -&gt; int | None:
+    for position, doc_id in enumerate(retrieved, start=1):
+        if doc_id in expected:
+            return position
+    return None
+
+
+def score_one(outcome: Outcome) -&gt; Result:
+    item = outcome.item
+    refusal_ok = outcome.refused == item.should_refuse
+    if item.should_refuse:
+        return Result(item.id, None, None, refusal_ok, None, None, refusal_ok, &quot;&quot; if refusal_ok else &quot;answered a question that should be refused&quot;)
+    rank = rank_of(item.expected_sources, outcome.retrieved)
+    hit = rank is not None
+    if outcome.refused:
+        return Result(item.id, hit, rank, False, None, None, False, &quot;refused a question that can be answered&quot;)
+    wrong = [doc for doc in outcome.cited if doc not in item.expected_sources]
+    citation_ok = not wrong
+    missing = [phrase for phrase in item.must_contain if phrase.lower() not in outcome.answer.lower()]
+    contains_ok = not missing
+    why = &quot;&quot;
+    if not hit:
+        why = &quot;no expected source in the retrieved pages&quot;
+    elif not citation_ok:
+        why = f&quot;cited a page that is not expected: {wrong[0]}&quot;
+    elif not contains_ok:
+        why = f&quot;the answer lacks {missing[0]!r}&quot;
+    return Result(item.id, hit, rank, True, citation_ok, contains_ok, why == &quot;&quot;, why)
+
+
+def summarize(results: list[Result]) -&gt; Summary:
+    answerable = [r for r in results if r.hit is not None]
+    total = len(results)
+    passed = sum(r.passed for r in results)
+    return Summary(
+        total=total,
+        passed=passed,
+        pass_rate=passed / total if total else 0.0,
+        hit_rate=sum(bool(r.hit) for r in answerable) / len(answerable) if answerable else 0.0,
+        mrr=sum(1 / r.rank for r in answerable if r.rank) / len(answerable) if answerable else 0.0,
+        refusal_accuracy=sum(r.refusal_ok for r in results) / total if total else 0.0,
+    )
+
+
+def to_report(results: list[Result], summary: Summary) -&gt; dict[str, object]:
+    return {&quot;summary&quot;: asdict(summary), &quot;results&quot;: [asdict(r) for r in results]}</code></pre><h3>Step 3: the script</h3><p>First a small change so that the fusion can trust the two lists differently (the default changes nothing); you need it for the experiment below:</p><pre><code># hybrid.py: let the fusion trust the two lists differently (the default, 1.0, changes nothing)
+def reciprocal_rank_fusion(rankings, k=60, weights=None):
+    weights = weights or [1.0] * len(rankings)
+    for ranking, weight in zip(rankings, weights):
+        for position, chunk in enumerate(ranking, start=1):
+            fused[chunk.citation] = fused.get(chunk.citation, 0.0) + weight / (k + position)
+    ...
+
+def hybrid_search(question, embedder, store, keywords, top_k=3, pool=10, allowed_kinds=None, keyword_weight=1.0):
+    ...
+    return reciprocal_rank_fusion([by_meaning, by_words], weights=[1.0, keyword_weight])[:top_k]
+
+# rag.py: answer_question(..., keyword_weight=1.0) passes it on to hybrid_search</code></pre><p><code>run_golden.py</code>:</p><pre><code>import argparse
+import json
+import os
+from pathlib import Path
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.golden import GoldenError, load_golden
+from my_ai_project.hybrid import KeywordIndex, hybrid_search
+from my_ai_project.rag import answer_question
+from my_ai_project.scoring import Outcome, score_one, summarize, to_report
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkStore
+
+parser = argparse.ArgumentParser(description=&quot;Run the golden questions through the RAG pipeline and score them.&quot;)
+parser.add_argument(&quot;--golden&quot;, default=&quot;data/golden.jsonl&quot;)
+parser.add_argument(&quot;--role&quot;, default=&quot;staff&quot;)
+parser.add_argument(&quot;--keyword-weight&quot;, type=float, default=1.0, help=&quot;below 1 trusts the keyword search less&quot;)
+parser.add_argument(&quot;--report&quot;, default=&quot;reports/golden-latest.json&quot;)
+parser.add_argument(&quot;--min-pass&quot;, type=float, default=0.0, help=&quot;exit with 1 if the pass rate is lower (a regression gate)&quot;)
+args = parser.parse_args()
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+chunks = store.all_chunks()
+try:
+    items = load_golden(Path(args.golden), {chunk.doc_id for chunk in chunks})
+except GoldenError as err:
+    raise SystemExit(f&quot;golden file is wrong: {err}&quot;)
+
+embedder, keywords, writer = FastEmbedder(), KeywordIndex(chunks), SimulatedWriter()   # the writer is a stand-in, NOT a real model
+kinds = allowed_kinds(args.role)
+results = []
+print(f&quot;{&#x27;id&#x27;:&lt;5}{&#x27;hit@3&#x27;:&lt;7}{&#x27;rank&#x27;:&lt;6}{&#x27;refused&#x27;:&lt;9}{&#x27;result&#x27;:&lt;7}why&quot;)
+for item in items:
+    found = hybrid_search(item.question, embedder, store, keywords, top_k=3, allowed_kinds=kinds, keyword_weight=args.keyword_weight)
+    answer = answer_question(item.question, embedder, store, keywords, writer, top_k=3, allowed_kinds=kinds, keyword_weight=args.keyword_weight)
+    outcome = Outcome(item, list(dict.fromkeys(f.doc_id for f in found)), answer.text, answer.refused, list(dict.fromkeys(s.doc_id for s in answer.sources)))
+    result = score_one(outcome)
+    results.append(result)
+    hit = &quot;-&quot; if result.hit is None else (&quot;yes&quot; if result.hit else &quot;no&quot;)
+    print(f&quot;{result.id:&lt;5}{hit:&lt;7}{str(result.rank or &#x27;-&#x27;):&lt;6}{&#x27;yes&#x27; if outcome.refused else &#x27;no&#x27;:&lt;9}{&#x27;pass&#x27; if result.passed else &#x27;FAIL&#x27;:&lt;7}{result.why}&quot;)
+
+summary = summarize(results)
+print(f&quot;\npassed {summary.passed}/{summary.total} ({summary.pass_rate:.0%})   hit@3 {summary.hit_rate:.0%}   MRR {summary.mrr:.2f}   refusal accuracy {summary.refusal_accuracy:.0%}&quot;)
+Path(args.report).parent.mkdir(parents=True, exist_ok=True)
+Path(args.report).write_text(json.dumps(to_report(results, summary), indent=2), encoding=&quot;utf-8&quot;)
+if summary.pass_rate &lt; args.min_pass:
+    raise SystemExit(f&quot;pass rate {summary.pass_rate:.0%} is under the minimum {args.min_pass:.0%}&quot;)</code></pre><h3>Step 4: tests</h3><p>The scoring is pure code, so it is tested with made-up outcomes, with no database and no model:</p><pre><code>from my_ai_project.golden import GoldenItem
+from my_ai_project.scoring import Outcome, rank_of, score_one, summarize
+
+ITEM = GoldenItem(id=&quot;q1&quot;, question=&quot;How often?&quot;, expected_sources=[&quot;manual-calibration&quot;], must_contain=[&quot;once a month&quot;])
+REFUSE = GoldenItem(id=&quot;q2&quot;, question=&quot;Coffee?&quot;, should_refuse=True)
+
+
+def outcome(item: GoldenItem, retrieved: list[str], answer: str = &quot;&quot;, refused: bool = False, cited: list[str] | None = None) -&gt; Outcome:
+    return Outcome(item, retrieved, answer, refused, cited or [])
+
+
+def test_rank_is_the_position_of_the_first_expected_page() -&gt; None:
+    assert rank_of([&quot;a&quot;, &quot;b&quot;], [&quot;x&quot;, &quot;b&quot;, &quot;a&quot;]) == 2
+    assert rank_of([&quot;a&quot;], [&quot;x&quot;, &quot;y&quot;]) is None
+
+
+def test_a_good_answer_passes() -&gt; None:
+    result = score_one(outcome(ITEM, [&quot;manual-calibration&quot;], &quot;Calibrate once a month [x].&quot;, cited=[&quot;manual-calibration&quot;]))
+    assert result.passed and result.hit and result.rank == 1 and result.why == &quot;&quot;
+
+
+def test_a_retrieval_miss_is_named() -&gt; None:
+    result = score_one(outcome(ITEM, [&quot;faq-reset&quot;], &quot;Hold the button.&quot;, cited=[&quot;faq-reset&quot;]))
+    assert not result.passed and result.hit is False and &quot;no expected source&quot; in result.why
+
+
+def test_a_wrong_citation_fails_even_when_the_page_was_retrieved() -&gt; None:
+    result = score_one(outcome(ITEM, [&quot;faq-reset&quot;, &quot;manual-calibration&quot;], &quot;once a month&quot;, cited=[&quot;faq-reset&quot;]))
+    assert not result.passed and result.hit and &quot;not expected: faq-reset&quot; in result.why
+
+
+def test_a_missing_phrase_fails() -&gt; None:
+    result = score_one(outcome(ITEM, [&quot;manual-calibration&quot;], &quot;Calibrate the sensor.&quot;, cited=[&quot;manual-calibration&quot;]))
+    assert not result.passed and &quot;lacks &#x27;once a month&#x27;&quot; in result.why
+
+
+def test_refusing_an_answerable_question_fails() -&gt; None:
+    result = score_one(outcome(ITEM, [&quot;manual-calibration&quot;], &quot;not found&quot;, refused=True))
+    assert not result.passed and result.refusal_ok is False and result.hit is True
+
+
+def test_a_refusal_passes_only_when_the_assistant_refuses() -&gt; None:
+    assert score_one(outcome(REFUSE, [], &quot;not found&quot;, refused=True)).passed
+    wrong = score_one(outcome(REFUSE, [&quot;faq-warranty&quot;], &quot;two years&quot;, cited=[&quot;faq-warranty&quot;]))
+    assert not wrong.passed and wrong.hit is None
+
+
+def test_the_summary_counts_hits_over_answerable_questions_only() -&gt; None:
+    results = [
+        score_one(outcome(ITEM, [&quot;manual-calibration&quot;], &quot;once a month&quot;, cited=[&quot;manual-calibration&quot;])),
+        score_one(outcome(ITEM, [&quot;x&quot;, &quot;manual-calibration&quot;], &quot;once a month&quot;, cited=[&quot;manual-calibration&quot;])),
+        score_one(outcome(REFUSE, [], &quot;not found&quot;, refused=True)),
+    ]
+    summary = summarize(results)
+    assert summary.total == 3 and summary.passed == 3
+    assert summary.hit_rate == 1.0 and summary.mrr == 0.75   # (1 + 1/2) / 2
+    assert summary.refusal_accuracy == 1.0
+
+
+def test_an_empty_run_does_not_divide_by_zero() -&gt; None:
+    assert summarize([]).pass_rate == 0.0</code></pre><p>Run <code>uv run pytest</code> and <code>uv run mypy src tests</code>.</p></section>
+<section><h2><span class="n">5</span> &middot; Run it, and use it <span class="t">30 min</span></h2><h3>1. The baseline</h3><p>Run <code>uv run python run_golden.py</code> and <strong>save the table</strong>. This is the number to beat:</p><div class="out"><b>You should see</b><br>id&nbsp;&nbsp; hit@3&nbsp;&nbsp;rank&nbsp;&nbsp;refused&nbsp;&nbsp;result why<br>q01&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q02&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q03&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q04&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q05&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp; yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pass&nbsp;&nbsp; <br>q06&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q07&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks '15 seconds'<br>q08&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks 'sensor cable'<br>q09&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks 'CSV'<br>q10&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q11&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q12&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks '0 to 45'<br>q13&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q14&nbsp;&nbsp;no&nbsp;&nbsp;&nbsp;&nbsp; -&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; no expected source in the retrieved pages<br>q15&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks 'water damage'<br>q16&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp; yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pass&nbsp;&nbsp; <br>q17&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; answered a question that should be refused<br>q18&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;2&nbsp;&nbsp;&nbsp;&nbsp; yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAIL&nbsp;&nbsp; refused a question that can be answered<br><br>passed 10/18 (56%)&nbsp;&nbsp; hit@3 93%&nbsp;&nbsp; MRR 0.90&nbsp;&nbsp; refusal accuracy 89%</div><p>Read it row by row. Ten pass. Look at the <em>kinds</em> of failure, and ask whose problem each one is:</p><pre><code>what failed                                   questions            whose problem is it?
+retrieval miss (right page not found)         q14 (before the fix) the search: fixed with query stop words
+answer lacks a phrase from the right page     q07 q08 q09 q12 q15  the stand-in writer (first sentence only)
+answered a question that should be refused    q17                  the refusal rule: the best score 0.68 passed the gate
+refused a question that can be answered       q18                  the refusal rule: a disagreement about the verdict, and the gate</code></pre><h3>2. Find the cause of the retrieval miss (q14)</h3><p>&ldquo;How do I install the monitor?&rdquo; found the reset page, not the install page. Print the two lists of the hybrid search for that question:</p><div class="out"><b>You should see</b><br>vector pool:  manual-install#0 is FIRST<br>keyword pool: faq-reset, faq-alarm-sound, faq-battery-life, manual-safety, manual-firmware-update, ...   (manual-install is not in it)</div><p>The vector search had the install page <em>first</em>. The keyword search did not have it at all, because the page never uses the word &ldquo;install&rdquo; (it says &ldquo;Mount the monitor...&rdquo;; and there is no stemming), and it ranked <code>faq-reset</code> first because its title (&ldquo;How do I reset the monitor?&rdquo;) shares the words <em>how, do, i, the, monitor</em> with the question. The fusion believed the keyword list, and the right page fell out of the top 3. <strong>Hybrid search made this question worse.</strong> You would never have seen it with five questions.</p><h3>3. Try the obvious fix, and measure it</h3><p>&ldquo;Trust the keyword list less&rdquo; sounds right. Run the script with <code>--keyword-weight</code> 0.7, 0.5 and 0.3:</p><div class="out"><b>You should see</b><br>keyword weight&nbsp;&nbsp; passed&nbsp;&nbsp; hit@3&nbsp;&nbsp; MRR&nbsp;&nbsp;&nbsp;&nbsp;what changed<br>1.0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;10/18&nbsp;&nbsp;&nbsp;&nbsp;93%&nbsp;&nbsp;&nbsp;&nbsp; 0.90&nbsp;&nbsp; (the baseline)<br>0.7&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 9/18&nbsp;&nbsp;&nbsp;&nbsp;93%&nbsp;&nbsp;&nbsp;&nbsp; 0.87&nbsp;&nbsp; q03 (E104) now cites error-e101: it fell to rank 2<br>0.5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 9/18&nbsp;&nbsp;&nbsp;&nbsp;93%&nbsp;&nbsp;&nbsp;&nbsp; 0.87&nbsp;&nbsp; the same<br>0.3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 9/18&nbsp;&nbsp;&nbsp;&nbsp;93%&nbsp;&nbsp;&nbsp;&nbsp; 0.87&nbsp;&nbsp; the same: q14 is still missed</div><p>It does <strong>not</strong> help q14, and it breaks q03 (the E104 question needs the keyword list to find the exact code). The obvious fix was wrong, and the table told you in seconds.</p><h3>4. A better fix: ignore the common words in the query</h3><pre><code># hybrid.py: very common question words say nothing about which page is wanted. Ignore them in the QUERY only.
+QUERY_STOP_WORDS = {&quot;a&quot;, &quot;an&quot;, &quot;and&quot;, &quot;are&quot;, &quot;can&quot;, &quot;do&quot;, &quot;does&quot;, &quot;how&quot;, &quot;i&quot;, &quot;in&quot;, &quot;is&quot;, &quot;it&quot;, &quot;my&quot;, &quot;of&quot;, &quot;on&quot;, &quot;or&quot;, &quot;the&quot;, &quot;to&quot;, &quot;what&quot;, &quot;where&quot;, &quot;which&quot;, &quot;with&quot;}
+
+    # in KeywordIndex.search:
+    for word in set(tokenize(query)) - QUERY_STOP_WORDS:</code></pre><p>Run the script again (with the default weight):</p><div class="out"><b>You should see</b><br>id&nbsp;&nbsp; hit@3&nbsp;&nbsp;rank&nbsp;&nbsp;refused&nbsp;&nbsp;result why<br>q01&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q02&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q03&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q04&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q05&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp; yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pass&nbsp;&nbsp; <br>q06&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q07&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks '15 seconds'<br>q08&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks 'sensor cable'<br>q09&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks 'CSV'<br>q10&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q11&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q12&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks '0 to 45'<br>q13&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q14&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass&nbsp;&nbsp; <br>q15&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; the answer lacks 'water damage'<br>q16&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp; yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pass&nbsp;&nbsp; <br>q17&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; FAIL&nbsp;&nbsp; answered a question that should be refused<br>q18&nbsp;&nbsp;yes&nbsp;&nbsp;&nbsp;&nbsp;2&nbsp;&nbsp;&nbsp;&nbsp; yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAIL&nbsp;&nbsp; refused a question that can be answered<br><br>passed 11/18 (61%)&nbsp;&nbsp; hit@3 100%&nbsp;&nbsp; MRR 0.97&nbsp;&nbsp; refusal accuracy 89%</div><p>q14 now passes, hit@3 is 100%, MRR is 0.97, and <strong>nothing else changed</strong>: that last check is the important one. (Your Day 74 tests still pass; the stop words are only removed from the query, not from <code>tokenize</code>.)</p><h3>5. The gate and the report</h3><p>With <code>--min-pass 0.8</code> the script stops with an error, so that a script, or a CI job, can refuse a change that makes the table worse:</p><div class="out"><b>You should see</b><br>pass rate 61% is under the minimum 80%      (the script exits with code 1)</div><div class="out"><b>You should see</b><br>reports/golden-latest.json<br>{"summary": {"total": 18, "passed": 11, "pass_rate": 0.6111, "hit_rate": 1.0, "mrr": 0.9667, "refusal_accuracy": 0.8889},<br> "results": [{"id": "q01", "hit": true, "rank": 1, "refusal_ok": true, "citation_ok": true, "contains_ok": true, "passed": true, "why": ""}, ...]}</div></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>&ldquo;golden file is wrong: ...&rdquo;</strong>: the message names the question and the problem. Fix the file first.</li><li><strong>Your numbers differ from mine</strong>: your knowledge base, chunking and questions differ. Compare <em>your</em> before and after.</li><li><strong>Everything fails the phrase check</strong>: with the stand-in writer, only the first sentence of a page is in the answer. Put the phrase from the first sentence, or accept those failures as the writer&rsquo;s.</li><li><strong>You fixed one question and another broke</strong>: that is the lesson. Revert, and try a different fix.</li><li><strong>A remote gate in CI</strong>: not today. First make the table trustworthy.</li></ul></section>
+<section><h2><span class="n">7</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Add the README section, run the checklist, and push. Keep <code>reports/golden-latest.json</code> out of Git if you like, but <strong>keep the baseline table</strong> in your notes.</p><pre><code>## Evaluation
+
+    uv run python check_golden.py                      # is the golden file valid?
+    uv run python run_golden.py                        # score the pipeline: a table, and reports/golden-latest.json
+    uv run python run_golden.py --min-pass 0.8         # a gate: exit code 1 if the pass rate is lower
+
+    data/golden.jsonl: 18 questions (15 to answer, 3 to refuse), each with expected sources.
+    Metrics: hit@3, MRR (retrieval), refusal accuracy, pass rate. The writer is a stand-in unless LLM_MODE=real.
+    Rule: change one thing, run the script, keep the change only if the table is not worse.</code></pre><pre><code>[ ] data/golden.jsonl has 15 to 20 questions; at least 3 to refuse; check_golden.py passes
+[ ] scoring.py and run_golden.py print a table and a summary; the JSON report is written
+[ ] I ran the baseline and saved the table (this is the number to beat)
+[ ] I found one failure by reading the table, said why, and tried a fix
+[ ] I compared before and after with the same questions (not only the one I fixed)
+[ ] the scoring tests pass without a database or a model; mypy is clean
+[ ] README has the commands and the rule; committed and pushed</code></pre><p><code>git add .</code>, <code>git commit -m &quot;Add the golden set and the scoring script&quot;</code>, <code>git push</code>.</p></section>
+<section><h2><span class="n">8</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why did hybrid search make the install question worse?</li><li>Why was &ldquo;trust the keyword list less&rdquo; a bad fix, and how did you find out?</li><li>What must you check after a fix, besides the question you fixed?</li></ol><details><summary>Answers</summary><ol><li>The keyword search did not contain the install page (no word &ldquo;install&rdquo; in it, no stemming), and it ranked another page first because of common words. The fusion trusted it and pushed the right page out of the top 3.</li><li>It broke the E104 question, which needs the keyword list for an exact code. The table showed it at once.</li><li>That nothing else got worse: the whole table, not only the fixed row.</li></ol></details></section>
+<section id="game-day105" class="game"><h2><span class="n">+</span> &middot; Game: Table Reader <span class="t">5 min</span></h2>
+<p><p>You read the golden-set table. Read the row or the experiment, pick what it means, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day105-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day105-play">Start the game</button></div>
+<div id="day105-round" hidden><div class="gtop"><span id="day105-num">Round 1</span><span id="day105-score">Score 0</span></div>
+<pre hidden><code id="day105-code"></code></pre><div class="q" id="day105-q"></div><div class="choices" id="day105-opts"></div>
+<div class="fb" id="day105-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day105-next" hidden>Next round</button></p></div>
+<div id="day105-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day105",[{"c": "run_golden.py   # the baseline", "q": "What are the summary numbers?", "o": ["passed 10/18, hit@3 93%, MRR 0.90, refusal accuracy 89%", "passed 18/18", "passed 5/5"], "a": 0, "out": "passed 10/18 (56%)   hit@3 93%   MRR 0.90   refusal accuracy 89%", "why": "On five easy questions the same pipeline looked perfect."}, {"c": "q14  How do I install the monitor?   no  -  no  FAIL", "q": "What failed?", "o": ["Retrieval: the install page was not in the top 3", "The writer", "The refusal rule"], "a": 0, "out": "q14  no     -     no       FAIL   no expected source in the retrieved pages", "why": "The vector search had it first; the keyword list pushed it out."}, {"c": "q07  How do I restore factory settings?   FAIL  the answer lacks '15 seconds'", "q": "Whose problem is it?", "o": ["The stand-in writer: it wrote only the first sentence", "The search", "The gate"], "a": 0, "out": "q07  yes    1     no       FAIL   the answer lacks '15 seconds'", "why": "The right page was found at rank 1."}, {"c": "run_golden.py --keyword-weight 0.5", "q": "What happens?", "o": ["q14 is still missed, and q03 (E104) now cites error-e101", "q14 is fixed", "Nothing changes"], "a": 0, "out": "0.5               9/18    93%     0.87   q03 (E104) now cites error-e101: it fell to rank 2", "why": "The obvious fix was wrong, and the table said so."}, {"c": "ignore question words (how, do, the ...) in the keyword query", "q": "What are the numbers now?", "o": ["passed 11/18, hit@3 100%, MRR 0.97", "passed 18/18", "passed 9/18"], "a": 0, "out": "passed 11/18 (61%)   hit@3 100%   MRR 0.97   refusal accuracy 89%", "why": "q14 passes, and nothing else changed. Check that too."}, {"c": "q17  How much does the monitor cost?   FAIL  answered a question that should be refused", "q": "What is it?", "o": ["A refusal-rule failure: the best similarity 0.68 passed the gate", "A retrieval miss", "A writer failure"], "a": 0, "out": "q17  -      -     no       FAIL   answered a question that should be refused", "why": "A citation does not make an answer relevant."}, {"c": "run_golden.py --min-pass 0.8", "q": "What happens at a 61% pass rate?", "o": ["It stops with exit code 1: a gate", "It prints more", "It fixes the failures"], "a": 0, "out": "pass rate 61% is under the minimum 80%", "why": "A script or CI job can refuse a change that makes the table worse."}],["Table rookie", "Table regular", "Table reader"],"Read the table by kind of failure and ask whose problem each is; change one thing; compare the whole table, because the obvious fix can break another question.");</script>
+<p><small>Tick &ldquo;Play the Table Reader game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">9</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a golden set of 18 questions, a script that prints one score table and a report, a gate, tests for the scoring, and the loop of baseline, change and compare. You found a real retrieval bug by measuring, tried a wrong fix and a right one, and know which failures belong to the stand-in writer. That is the Module 8 checkpoint.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 105 checklist.</li><li>Share one line in the comments: which question did your table catch that you had not noticed?</li><li><strong>Next:</strong> Sunday is the review: a self-test on evaluation words, and the plan for Module 9, coding agents.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

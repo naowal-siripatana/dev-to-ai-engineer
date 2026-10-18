@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 103 - Mixed practice: score 5 questions by hand, then by script</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 103 &middot; LEVEL 8: EVALUATION &middot; MIXED PRACTICE</div><h1>Mixed practice: score 5 questions by hand, then by script</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to score five questions by hand and by script, from a blank file, and compare the two.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the MRR for ranks 1, 3 and none?</li><li>Why does the golden loader check the expected sources?</li></ol><details><summary>Answers</summary><ol><li>(1 + 1/3 + 0) / 3 = 0.44.</li><li>So that a typo in the file is caught as a file error and does not look like a pipeline failure.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. First you score five questions <strong>by hand</strong>, then you write the script, and then you compare. Use <code>golden.py</code>, <code>hybrid.py</code>, <code>rag.py</code>, <code>simulated.py</code> and <code>access.py</code>.</p><pre><code>score_by_script.py
+  input : data/golden-5.jsonl (Day 102) and the real pipeline, asked as the role staff
+  does  : for each golden question
+            retrieve the top 3 pages (hybrid search), and find the rank of the first expected page
+            ask the pipeline (answer_question) and note whether it refused
+            result is PASS when: a question to refuse was refused,
+                                 or an answerable question was answered AND an expected page was in the top 3
+  prints: one row per question (expected, retrieved, rank, refused, result),
+          then one line: hit@3, MRR (over the answerable questions) and refusal accuracy</code></pre><p><strong>Predict first</strong>, before you run anything: how many of the five will pass? Which one is most likely to fail?</p></section>
+<section><h2><span class="n">3</span> &middot; Do it <span class="t">25 min</span></h2><ol><li><strong>By hand (10 min).</strong> For each question, run your search (<code>hybrid_search</code>, top 3) in a small script or the shell, and fill in the table below in your notebook.</li><li><strong>By script (10 min).</strong> Write <code>score_by_script.py</code> from the contract. Do not open the solution until you have tried.</li><li><strong>Compare (5 min).</strong> Do your hand scores and the script agree on every row? A disagreement is a bug: in your hand reading, or in the script. Find out which.</li><li>Commit: <code>git add .</code> and <code>git commit -m &quot;Score five golden questions by script&quot;</code>.</li></ol><pre><code>id   question                                   expected page         the 3 pages I found       rank   refused?   pass?
+q01  How often should I calibrate the sensor?   manual-calibration    ...                       ...    ...        ...
+q02  Which Wi-Fi band does the monitor support? faq-wifi / manual-... ...                       ...    ...        ...
+q03  What does error E104 mean?                 error-e104            ...                       ...    ...        ...
+q04  How do I silence the alarm?                faq-alarm-sound       ...                       ...    ...        ...
+q05  Where can I buy a coffee?                  (refuse)              ...                       ...    ...        ...
+then:  hit@3 = ... / 4     MRR = ...     refusal accuracy = ... / 5</code></pre><details><summary>Hint: where to start</summary><p>Load the items with <code>load_golden</code>. In a loop: <code>hybrid_search(...)</code> gives chunks; get their <code>doc_id</code>s without duplicates (<code>list(dict.fromkeys(...))</code>); the rank is the position of the first one that is in <code>expected_sources</code>. The pipeline answer is <code>answer_question(...)</code>, and its <code>.refused</code> says whether it refused. Count the hits over the answerable questions only.</p></details><details><summary>Solution</summary><pre><code>import os
+from pathlib import Path
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.golden import load_golden
+from my_ai_project.hybrid import KeywordIndex, hybrid_search
+from my_ai_project.rag import answer_question
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkStore
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+chunks = store.all_chunks()
+items = load_golden(Path(&quot;data/golden-5.jsonl&quot;), {chunk.doc_id for chunk in chunks})
+embedder, keywords, writer = FastEmbedder(), KeywordIndex(chunks), SimulatedWriter()   # the writer is a stand-in, NOT a real model
+kinds = allowed_kinds(&quot;staff&quot;)
+
+print(f&quot;{&#x27;id&#x27;:&lt;5}{&#x27;expected&#x27;:&lt;28}{&#x27;retrieved (top 3)&#x27;:&lt;62}{&#x27;rank&#x27;:&lt;6}{&#x27;refused&#x27;:&lt;9}result&quot;)
+hits, reciprocal, correct = 0, 0.0, 0
+answerable = [item for item in items if not item.should_refuse]
+for item in items:
+    found = hybrid_search(item.question, embedder, store, keywords, top_k=3, allowed_kinds=kinds)
+    retrieved = list(dict.fromkeys(f.doc_id for f in found))
+    rank = next((i for i, doc in enumerate(retrieved, start=1) if doc in item.expected_sources), None)
+    refused = answer_question(item.question, embedder, store, keywords, writer, allowed_kinds=kinds).refused
+    ok = refused if item.should_refuse else (not refused and rank is not None)
+    if not item.should_refuse:
+        hits += rank is not None
+        reciprocal += 1 / rank if rank else 0
+    correct += refused == item.should_refuse
+    expected = &quot;refuse&quot; if item.should_refuse else &quot;, &quot;.join(item.expected_sources)
+    print(f&quot;{item.id:&lt;5}{expected[:26]:&lt;28}{&#x27;, &#x27;.join(retrieved)[:60]:&lt;62}{str(rank or &#x27;-&#x27;):&lt;6}{&#x27;yes&#x27; if refused else &#x27;no&#x27;:&lt;9}{&#x27;pass&#x27; if ok else &#x27;FAIL&#x27;}&quot;)
+print(f&quot;\nhit@3 {hits}/{len(answerable)}   MRR {reciprocal / len(answerable):.2f}   refusal accuracy {correct}/{len(items)}&quot;)</code></pre><div class="out"><b>You should see</b><br>id&nbsp;&nbsp; expected&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;retrieved (top 3)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; rank&nbsp;&nbsp;refused&nbsp;&nbsp;result<br>q01&nbsp;&nbsp;manual-calibration&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;manual-calibration, manual-maintenance, error-e101&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass<br>q02&nbsp;&nbsp;faq-wifi, manual-network-s&nbsp;&nbsp;faq-wifi, manual-network-setup, error-e105&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass<br>q03&nbsp;&nbsp;error-e104&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;error-e104, error-e101, error-e102&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass<br>q04&nbsp;&nbsp;faq-alarm-sound&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; faq-alarm-sound, manual-maintenance, error-e101&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1&nbsp;&nbsp;&nbsp;&nbsp; no&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; pass<br>q05&nbsp;&nbsp;refuse&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;faq-serial-number, faq-data-export, manual-maintenance&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp; yes&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pass<br><br>hit@3 4/4&nbsp;&nbsp; MRR 1.00&nbsp;&nbsp; refusal accuracy 5/5</div></details><details><summary>Read the result</summary><p>Five out of five, a perfect MRR of 1.00. Be careful: that is a good sign only for these five. They are the easy questions you thought of first, and the table cannot say anything about the questions you did not write. On Saturday there are eighteen, and the picture changes.</p><p>Notice what the script <em>cannot</em> see here: whether the answer is complete, or well worded. It only checks the page and the refusal. That limit is what Friday&rsquo;s teach-back is about.</p></details></section>
+<section><h2><span class="n">4</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why score by hand first, if you will use a script?</li><li>Why are hit@3 and MRR computed over the answerable questions only?</li><li>Why is 5 out of 5 not proof that the assistant is good?</li></ol><details><summary>Answers</summary><ol><li>To know what the numbers mean, and to have something to compare the script with. If hand and script disagree, one of them has a bug.</li><li>A question that should be refused has no expected page, so a rank makes no sense for it.</li><li>Five easy questions you wrote yourself say little. The score is only as good as the set: more, and harder, questions are needed.</li></ol></details></section>
+<section id="game-day103" class="game"><h2><span class="n">+</span> &middot; Game: Score It <span class="t">5 min</span></h2>
+<p><p>You score five questions by script. Read the row, pick what it means, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day103-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day103-play">Start the game</button></div>
+<div id="day103-round" hidden><div class="gtop"><span id="day103-num">Round 1</span><span id="day103-score">Score 0</span></div>
+<pre hidden><code id="day103-code"></code></pre><div class="q" id="day103-q"></div><div class="choices" id="day103-opts"></div>
+<div class="fb" id="day103-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day103-next" hidden>Next round</button></p></div>
+<div id="day103-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day103",[{"c": "q03  error-e104  error-e104, error-e101, error-e102  rank 1", "q": "What is the rank, and the result?", "o": ["rank 1, pass", "rank 3, pass", "rank 1, fail"], "a": 0, "out": "q03  error-e104                  error-e104, error-e101, error-e102                            1     no       pass", "why": "The expected page is first."}, {"c": "q05  refuse  faq-serial-number, faq-data-export, ...  refused yes", "q": "Why is it a pass?", "o": ["The question should be refused, and it was", "It found a page", "It has rank 1"], "a": 0, "out": "q05  refuse                      faq-serial-number, faq-data-export, manual-maintenance        -     yes      pass", "why": "A rank makes no sense for a question to refuse."}, {"c": "summary: hit@3 4/4   MRR 1.00   refusal accuracy 5/5", "q": "What does 4/4 count?", "o": ["Only the answerable questions", "All five questions", "Only the passes"], "a": 0, "out": "hit@3 4/4   MRR 1.00   refusal accuracy 5/5", "why": "A refusal has no expected page."}, {"c": "5 out of 5 on five easy questions", "q": "What does it prove?", "o": ["Little: the set is small and easy", "That the assistant is good", "That the script is right"], "a": 0, "out": "(on 18 questions the same pipeline passed 10)", "why": "The score is only as good as the set."}, {"c": "Your hand scores and the script disagree on q02", "q": "What do you do?", "o": ["Find which one has the bug", "Trust the script", "Trust your hand"], "a": 0, "out": "(a judgement, no output)", "why": "One of them is wrong."}, {"c": "q02 expected: faq-wifi, manual-network-setup", "q": "When is it a hit?", "o": ["When any one of them is in the top 3", "Only when both are", "Only when the first is rank 1"], "a": 0, "out": "q02  faq-wifi, manual-network-s  faq-wifi, manual-network-setup, error-e105                    1     no       pass", "why": "Any one expected page counts."}],["Score rookie", "Score regular", "Scorer"],"Score by hand first, then by script, and compare; hit@3 and MRR count only the answerable questions; and a perfect score on five easy questions proves little.");</script>
+<p><small>Tick &ldquo;Play the Score It game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a hand-scored table and a script that scores the same five questions, with hit@3, MRR and refusal accuracy, and the habit of checking the script against your own reading.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 103 checklist.</li><li>Share one line in the comments: did your hand scores and the script agree?</li><li><strong>Next:</strong> Friday is a teach-back: you explain LLM-as-judge, with its pros and cons.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
