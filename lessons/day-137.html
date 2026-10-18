@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 137 - Feedback loops and SLO basics</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 137 &middot; LEVEL 12: LLMOPS</div><h1>Feedback loops and SLO basics</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to store a vote tied to a request, compute an SLI against an SLO, and fix what the number found.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What goes into a safe cache key, and why the role?</li><li>Why should a fallback only catch some errors?</li></ol><details><summary>Answers</summary><ol><li>The normalised question, the role, and anything else that changes the answer (such as top_k). The role keeps an answer made for staff from being served to a customer.</li><li>A provider error is expected and recoverable; a bug in your own code should not be hidden by a second model.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A user clicks &ldquo;bad answer&rdquo;. What do you need to have stored for that click to be useful, and what do you do with it next week?</strong></p><details><summary>Guess first, then open</summary><p>The <strong>request id</strong> of the answer, so that you can find the question, the sources, the tokens and the logs of exactly that answer. And a <em>habit</em>: read the down-votes, turn the bad answers into new golden questions, fix them, and let the score table show whether you improved things. A vote without a request id is only a number.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: a vote is tied to a request</h3>
+<p>Under each answer, a thumbs up and a thumbs down. The page already knows the <strong>request id</strong> (the <code>X-Request-Id</code> of the response), so it sends it with the vote. The service checks that the request exists, stores <code>(request_id, rating, comment)</code> in a table, and <strong>hides private strings</strong> in the comment, because a comment is user input. A vote for an unknown id is a <code>404</code>, a rating other than <code>up</code> or <code>down</code> is a <code>422</code>.</p>
+<h3>Piece 2: SLI, SLO and the error budget</h3>
+<p>An <strong>SLI</strong> (service level indicator) is a measurement of what the user feels. An <strong>SLO</strong> (objective) is the target for it. The <strong>error budget</strong> is what the target leaves: a 99% objective allows 1% bad requests. For your assistant: a request is <em>good</em> if it did not fail on your side (status below 500) and was fast enough (under 2 seconds). A <code>4xx</code> is the caller&rsquo;s mistake, so it does not count against you. The SLI is the share of good requests, and the SLO says how high it must be.</p>
+<h3>Piece 3: let the numbers send you to a fix</h3>
+<p>The metrics of last week showed one very slow request: the first one after a start. Counted against a 2-second SLI, that single request would put 20 requests at 95%, below a 99% objective. The cause is known (the model and the keyword index load on the first request), so the fix is a <strong>warm-up</strong> at start. A number that sends you to a cause and a fix is what a good indicator is for.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> the vote is a small entity with a foreign key to the request, like a comment on an order. The SLI is a ratio of two counters, the kind you would export as a Prometheus or OpenTelemetry metric; the SLO is an alert threshold on it, and the warm-up is a hosted service that runs before the app starts taking traffic (<code>IHostedService</code>).</div>
+<div class="box cap"><strong>Capstone:</strong> on Saturday your dashboard shows the SLI against its SLO, and the votes, next to the five numbers.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>The words, and the feedback loop:</p><pre><code>SLI  service level INDICATOR   a measurement of what the user feels         &#x27;the share of requests that did not fail on our side and took under 2 s&#x27;
+SLO  service level OBJECTIVE   the target for that measurement                       &#x27;at least 99% of requests are good&#x27;
+     error budget              the room the SLO leaves for failure:  100% - 99% = 1%   &#x27;one request in a hundred may be bad before we break the promise&#x27;
+     SLA                       a promise to a customer, with consequences              (not needed here: it is an SLO with a contract)</code></pre><pre><code>THE FEEDBACK LOOP
+ user votes (thumbs)  -&gt;  the vote is stored with the REQUEST ID  -&gt;  you read the down-votes with their question, sources and answer
+   -&gt;  a bad answer becomes a new GOLDEN question  -&gt;  you fix it  -&gt;  the score table shows that it is better, and that nothing else got worse
+Three rules: a vote must be tied to a request (so it can be investigated); a comment is user input (hide emails, limit its length);
+and a vote is a SIGNAL, not a score: a few votes say little, and people vote mostly when they are unhappy.</code></pre><p>The vote store, in <code>src/my_ai_project/feedback.py</code>: it checks that the request exists, hides private strings in the comment, and stores the vote:</p><pre><code>import logging
+from typing import Literal
+
+import psycopg
+
+from my_ai_project.audit import redact
+
+logger = logging.getLogger(&quot;feedback&quot;)
+
+Rating = Literal[&quot;up&quot;, &quot;down&quot;]
+
+SCHEMA = &quot;&quot;&quot;
+CREATE TABLE IF NOT EXISTS feedback (
+    id bigserial PRIMARY KEY,
+    time timestamptz NOT NULL DEFAULT now(),
+    request_id text NOT NULL,
+    rating text NOT NULL CHECK (rating IN (&#x27;up&#x27;, &#x27;down&#x27;)),
+    comment text
+);
+CREATE INDEX IF NOT EXISTS feedback_request_id_idx ON feedback (request_id);
+&quot;&quot;&quot;
+
+
+class FeedbackStore:
+    &quot;&quot;&quot;A thumbs up or down for one answer, tied to the request id. The id is how a vote finds its question, tokens and sources.&quot;&quot;&quot;
+
+    def __init__(self, dsn: str) -&gt; None:
+        self.dsn = dsn
+
+    def record(self, request_id: str, rating: Rating, comment: str | None) -&gt; bool:
+        &quot;&quot;&quot;Returns False when no request has that id (a typo, or a request that was never made). Raises psycopg errors: a lost vote should be seen.&quot;&quot;&quot;
+        clean = redact(comment) if comment else None   # a comment may contain an email or a key
+        with psycopg.connect(self.dsn) as conn:
+            conn.execute(SCHEMA)
+            exists = conn.execute(&quot;SELECT 1 FROM requests WHERE request_id = %s LIMIT 1&quot;, (request_id,)).fetchone()
+            if exists is None:
+                return False
+            conn.execute(&quot;INSERT INTO feedback (request_id, rating, comment) VALUES (%s, %s, %s)&quot;, (request_id, rating, clean))
+        return True</code></pre><p>The numbers, in <code>src/my_ai_project/stats.py</code>: the five numbers of Saturday, and the SLI against the SLO, from the table you filled last week:</p><pre><code>import psycopg
+
+from my_ai_project.metrics import SCHEMA
+
+# An SLI is a measurement of what the user feels; an SLO is the target for it. Here: a request is GOOD when it did not fail on our side
+# (status below 500) and was fast enough. A 4xx is the caller&#x27;s mistake: it does not count against us.
+SLI_LATENCY_MS = 2000
+SLO_TARGET_PERCENT = 99.0
+
+
+def compute_stats(dsn: str) -&gt; dict[str, object]:
+    &quot;&quot;&quot;The five numbers of the dashboard, the SLI against its SLO, and the votes. Everything comes from the requests and feedback tables.&quot;&quot;&quot;
+    with psycopg.connect(dsn) as conn:
+        conn.execute(SCHEMA)   # a fresh database has no requests table yet: the dashboard must show zeros, not crash
+        conn.execute(&quot;CREATE TABLE IF NOT EXISTS feedback (id bigserial PRIMARY KEY, time timestamptz NOT NULL DEFAULT now(), request_id text NOT NULL, rating text NOT NULL, comment text)&quot;)
+        row = conn.execute(
+            &quot;&quot;&quot;
+            SELECT count(*),
+                   count(*) FILTER (WHERE outcome IN (&#x27;answered&#x27;, &#x27;refused&#x27;)),
+                   coalesce(avg(latency_ms), 0),
+                   coalesce(percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms), 0),
+                   coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0),
+                   coalesce(sum(cost_usd), 0),
+                   count(*) FILTER (WHERE outcome = &#x27;error&#x27;),
+                   count(*) FILTER (WHERE outcome = &#x27;refused&#x27;),
+                   count(*) FILTER (WHERE status_code &lt; 500 AND latency_ms &lt;= %s)
+            FROM requests WHERE route = &#x27;/api/ask&#x27;
+            &quot;&quot;&quot;,
+            (SLI_LATENCY_MS,),
+        ).fetchone()
+        votes: dict[str, int] = {str(rating): int(count) for rating, count in conn.execute(&quot;SELECT rating, count(*) FROM feedback GROUP BY rating&quot;).fetchall()}
+    questions, succeeded, average, median, p95, cost, failed, refused, good = row or (0, 0, 0, 0, 0, 0, 0, 0, 0)
+    sli = 100.0 * good / questions if questions else 100.0
+    budget = 100.0 - SLO_TARGET_PERCENT
+    return {
+        &quot;questions&quot;: questions,
+        &quot;success_percent&quot;: round(100.0 * succeeded / questions, 1) if questions else 100.0,
+        &quot;avg_ms&quot;: round(float(average)),
+        &quot;median_ms&quot;: round(float(median)),
+        &quot;p95_ms&quot;: round(float(p95)),
+        &quot;total_cost_usd&quot;: round(float(cost), 6),
+        &quot;failed&quot;: failed,
+        &quot;refusal_percent&quot;: round(100.0 * refused / questions, 1) if questions else 0.0,
+        &quot;sli_percent&quot;: round(sli, 1),
+        &quot;slo_percent&quot;: SLO_TARGET_PERCENT,
+        &quot;slo_met&quot;: sli &gt;= SLO_TARGET_PERCENT,
+        &quot;error_budget_used_percent&quot;: round(min(100.0, 100.0 * (100.0 - sli) / budget), 1) if budget else 0.0,
+        &quot;feedback_up&quot;: int(votes.get(&quot;up&quot;, 0)),
+        &quot;feedback_down&quot;: int(votes.get(&quot;down&quot;, 0)),
+    }</code></pre><p>The wiring (an <code>/api/feedback</code> and a staff-only <code>/api/stats</code> endpoint, the cache and the warm-up of this week; read the feedback and stats parts now):</p><pre><code>diff --git a/src/my_ai_project/api.py b/src/my_ai_project/api.py
+index 7e6d111..fac7fc4 100644
+--- a/src/my_ai_project/api.py
++++ b/src/my_ai_project/api.py
+@@ -1,5 +1,6 @@
+ import json
+ import logging
++from contextlib import asynccontextmanager
+ import os
+ import time
+ from collections.abc import Iterator
+@@ -15,17 +16,40 @@ from my_ai_project.llm import LlmError
+ from my_ai_project.structured import StructuredOutputError, ask_structured, extract_json, schema_prompt
+ from my_ai_project.extractor import Extraction, ExtractionError, extract
+ from my_ai_project.access import allowed_kinds
+-from my_ai_project.deps import AuditLogDep, EmbedderDep, KeywordsDep, LlmDep, RoleDep, StoreDep, SummaryDep, ToolModelDep, WriterDep
++from my_ai_project.deps import get_embedder, get_keywords, AuditLogDep, EmbedderDep, KeywordsDep, LlmDep, RoleDep, StoreDep, SummaryDep, ToolModelDep, WriterDep
++from my_ai_project.feedback import FeedbackStore, Rating
+ from my_ai_project.metrics import RequestMetrics, default_store
++from my_ai_project.stats import compute_stats
++from my_ai_project.reliability import AnswerCache, Unavailable, cache_key
+ from my_ai_project.observability import clean_request_id, request_id_var, setup_logging
+ from my_ai_project.pipeline import retrieve
+-from my_ai_project.rag import answer_question
++from my_ai_project.rag import RagAnswer, answer_question
+ from my_ai_project.tool_loop import assist
+ 
+ setup_logging()
+ logger = logging.getLogger(&quot;api&quot;)
+ 
+-app = FastAPI(title=&quot;my-ai-project&quot;)
++def warm_up() -&gt; None:
++    &quot;&quot;&quot;Load the model and build the keyword index when the service starts, so that the first user does not pay for it (a 3.6 s cold start was measured).&quot;&quot;&quot;
++    if os.environ.get(&quot;WARM_UP&quot;, &quot;on&quot;) == &quot;off&quot;:
++        return
++    started = time.perf_counter()
++    try:
++        get_embedder().embed([&quot;warm up&quot;])
++        get_keywords()
++    except (psycopg.Error, HTTPException, ImportError, OSError) as err:
++        logger.warning(&quot;warm-up skipped: %s&quot;, err)
++        return
++    logger.info(&quot;warm-up done in %.1f s&quot;, time.perf_counter() - started)
++
++
++@asynccontextmanager
++async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
++    warm_up()
++    yield
++
++
++app = FastAPI(title=&quot;my-ai-project&quot;, lifespan=lifespan)
+ 
+ 
+ @app.middleware(&quot;http&quot;)
+@@ -216,17 +240,33 @@ class AskResponse(BaseModel):
+     sources: list[SearchHit]
+ 
+ 
++def answer_cache(http: Request) -&gt; AnswerCache:
++    if getattr(http.app.state, &quot;cache&quot;, None) is None:
++        http.app.state.cache = AnswerCache(ttl_seconds=float(os.environ.get(&quot;CACHE_TTL_SECONDS&quot;, &quot;300&quot;)))
++    return http.app.state.cache  # type: ignore[no-any-return]
++
++
+ @app.post(&quot;/api/ask&quot;)
+ def ask(
+     http: Request,
+     request: AskRequest, embedder: EmbedderDep, store: StoreDep, keywords: KeywordsDep, writer: WriterDep, role: RoleDep, audit: AuditLogDep
+ ) -&gt; AskResponse:
+-    try:
+-        result = answer_question(request.question, embedder, store, keywords, writer, top_k=request.top_k, allowed_kinds=allowed_kinds(role))
+-    except psycopg.OperationalError as err:
+-        raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
+-    audit.record(&quot;question&quot;, role, question=request.question, refused=result.refused, reason=result.reason, sources=[s.doc_id for s in result.sources])
+-    http.state.usage = {&quot;outcome&quot;: &quot;refused&quot; if result.refused else &quot;answered&quot;, &quot;input_tokens&quot;: result.input_tokens, &quot;output_tokens&quot;: result.output_tokens}
++    cache = answer_cache(http)
++    key = cache_key(role, request.question, request.top_k)
++    cached = cache.get(key)
++    if isinstance(cached, RagAnswer):
++        result, model, tokens = cached, &quot;cache&quot;, (0, 0)   # no model call: no tokens, no cost
++    else:
++        try:
++            result = answer_question(request.question, embedder, store, keywords, writer, top_k=request.top_k, allowed_kinds=allowed_kinds(role))
++        except psycopg.OperationalError as err:
++            raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
++        except Unavailable as err:
++            raise HTTPException(status_code=503, detail=&quot;the assistant is temporarily unavailable&quot;) from err
++        model, tokens = getattr(writer, &quot;used&quot;, os.environ.get(&quot;LLM_MODEL&quot;, &quot;stand-in&quot;)), (result.input_tokens, result.output_tokens)
++        cache.put(key, result)
++    audit.record(&quot;question&quot;, role, question=request.question, refused=result.refused, reason=result.reason, cached=model == &quot;cache&quot;, sources=[s.doc_id for s in result.sources])
++    http.state.usage = {&quot;outcome&quot;: &quot;refused&quot; if result.refused else &quot;answered&quot;, &quot;input_tokens&quot;: tokens[0], &quot;output_tokens&quot;: tokens[1], &quot;model&quot;: model}
+     sources = [
+         SearchHit(citation=f.citation, doc_id=f.doc_id, chunk_index=f.chunk_index, title=f.title, kind=f.kind, text=f.text, similarity=f.similarity)
+         for f in result.sources
+@@ -260,3 +300,35 @@ def assist_with_tools(request: AssistRequest, model: ToolModelDep, role: RoleDep
+         raise HTTPException(status_code=502, detail=&quot;the model call failed&quot;) from err
+     calls = [ToolCallInfo(name=c.name, tool_input=c.tool_input, is_error=c.is_error) for c in result.tool_calls]
+     return AssistResponse(answer=result.answer, tool_calls=calls, rounds=result.rounds, gave_up=result.gave_up)
++
++
++def metrics_dsn() -&gt; str:
++    return os.environ.get(&quot;METRICS_DATABASE_URL&quot;) or os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)
++
++
++class FeedbackRequest(BaseModel):
++    request_id: str = Field(pattern=r&quot;^[A-Za-z0-9._-]{1,64}$&quot;, description=&quot;the X-Request-Id of the answer that is being rated&quot;)
++    rating: Rating
++    comment: str | None = Field(default=None, max_length=500)
++
++
++@app.post(&quot;/api/feedback&quot;, status_code=201)
++def feedback(request: FeedbackRequest) -&gt; dict[str, str]:
++    try:
++        stored = FeedbackStore(metrics_dsn()).record(request.request_id, request.rating, request.comment)
++    except psycopg.OperationalError as err:
++        raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
++    if not stored:
++        raise HTTPException(status_code=404, detail=&quot;no request has that id&quot;)
++    return {&quot;status&quot;: &quot;stored&quot;}
++
++
++@app.get(&quot;/api/stats&quot;)
++def stats(role: RoleDep) -&gt; dict[str, object]:
++    &quot;&quot;&quot;The numbers of the dashboard. Staff only: they describe how the system is used.&quot;&quot;&quot;
++    if role != &quot;staff&quot;:
++        raise HTTPException(status_code=403, detail=&quot;only staff may read the statistics&quot;)
++    try:
++        return compute_stats(metrics_dsn())
++    except psycopg.OperationalError as err:
++        raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
+diff --git a/src/my_ai_project/deps.py b/src/my_ai_project/deps.py
+index 1d99a00..84b18a3 100644
+--- a/src/my_ai_project/deps.py
++++ b/src/my_ai_project/deps.py
+@@ -14,6 +14,7 @@ from my_ai_project.access import ALLOWED_KINDS
+ from my_ai_project.audit import AuditLog
+ from my_ai_project.grounding import Writer
+ from my_ai_project.hybrid import KeywordIndex
++from my_ai_project.reliability import FallbackWriter
+ from my_ai_project.pipeline import Searcher
+ from my_ai_project.simulated import SimulatedWriter
+ from my_ai_project.tool_loop import AnthropicToolModel, PretendToolModel, ToolModel
+@@ -68,7 +69,10 @@ def get_writer() -&gt; Writer:
+         api_key = os.environ.get(&quot;ANTHROPIC_API_KEY&quot;)
+         if not api_key:
+             raise RuntimeError(&quot;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&quot;)
+-        return RetryingClient(AnthropicClient(api_key=api_key, timeout=30.0), max_attempts=3)
++        primary = RetryingClient(AnthropicClient(api_key=api_key, model=os.environ.get(&quot;LLM_MODEL&quot;, &quot;claude-haiku-4-5-20251001&quot;), timeout=30.0), max_attempts=2)
++        backup_model = os.environ.get(&quot;LLM_FALLBACK_MODEL&quot;)
++        backup = RetryingClient(AnthropicClient(api_key=api_key, model=backup_model, timeout=30.0), max_attempts=2) if backup_model else None
++        return FallbackWriter(primary, backup, timeout=45.0, names=(os.environ.get(&quot;LLM_MODEL&quot;, &quot;primary&quot;), backup_model or &quot;fallback&quot;))
+     return SimulatedWriter()   # NOT a real model: it lets you run and test the pipeline with no key
+ 
+ </code></pre><p>The result: 24 requests through the gateway, then eight votes (the two down-votes are on answers that were really wrong or incomplete), and the statistics:</p><div class="out"><b>You should see</b><br>POST /api/feedback&nbsp;&nbsp;g-q01 up&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 201<br>POST /api/feedback&nbsp;&nbsp;g-q02 up&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 201<br>POST /api/feedback&nbsp;&nbsp;g-q03 up&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 201<br>POST /api/feedback&nbsp;&nbsp;g-q04 up&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 201<br>POST /api/feedback&nbsp;&nbsp;g-q06 up&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 201<br>POST /api/feedback&nbsp;&nbsp;g-q11 up&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 201<br>POST /api/feedback&nbsp;&nbsp;g-q17 down&nbsp;&nbsp;&nbsp;&nbsp; 201&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;- 'How much does the monitor cost?' (answered with the warranty page)<br>POST /api/feedback&nbsp;&nbsp;g-q07 down&nbsp;&nbsp;&nbsp;&nbsp; 201&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;- 'How do I restore factory settings?' (the answer lacked '15 seconds')<br>POST /api/feedback&nbsp;&nbsp;g-q99 up&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 404&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;- no request has that id</div><div class="out"><b>You should see</b><br>curl localhost:5100/api/stats -H 'x-demo-role: staff'<br>{"questions":24,"success_percent":95.8,"avg_ms":10,"median_ms":8,"p95_ms":12,"total_cost_usd":0.004948,"failed":1,"refusal_percent":16.7,<br> "sli_percent":100.0,"slo_percent":99.0,"slo_met":true,"error_budget_used_percent":0.0,"feedback_up":6,"feedback_down":2}<br><br>curl localhost:5100/api/stats&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(no role)&nbsp;&nbsp; ->&nbsp;&nbsp;403</div><p>The SLI is <strong>100%</strong> and the error budget used is 0%, <em>now</em>. That is because of the warm-up. Here is the measurement that justified it (the first request after a start, asked in two separate runs):</p><div class="out"><b>You should see</b><br>first request after a start, asked twice with the warm-up switched OFF:&nbsp;&nbsp;&nbsp;&nbsp;3447 ms&nbsp;&nbsp;&nbsp;&nbsp; and&nbsp;&nbsp;&nbsp;&nbsp; 596 ms<br>first request after a start, asked twice with the warm-up switched ON:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 42 ms&nbsp;&nbsp;&nbsp;&nbsp; and&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;34 ms<br>(the warm-up itself, at start: 0.6 s and 3.4 s, paid before any user arrives)</div><p>Without the warm-up, the first request took 3447 ms in one run and 596 ms in another (the difference is whether the model files were already in the operating system&rsquo;s cache). With it, 42 and 34 ms: the user no longer pays. The SLI would have been 19 of 20 = 95% with the slow one, below the 99% objective; with the warm-up, it is not.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c feedback</code>). The database must be running.</p>
+<h3><span class="step">Step 1</span> Add the vote</h3>
+<p>Add <code>feedback.py</code>, the <code>/api/feedback</code> endpoint, and the tests for it (they use a private schema, so they never touch your real tables). Send a vote for a request id that exists, and one for an id that does not.</p>
+<h3><span class="step">Step 2</span> Read the down-votes</h3>
+<p>Send about eight votes, with at least two down. Then write a query that shows each down-vote with its <strong>question</strong> (from the audit log, by request id) and its outcome. <strong>Predict first:</strong> which of your answers will get a down-vote?</p>
+<h3><span class="step">Step 3</span> Compute your SLI by hand</h3>
+<p>With your <code>requests</code> table: how many requests are good (status below 500 and under 2000 ms)? What is the SLI, and is your SLO of 99% met? If not, which request is the cause?</p>
+<h3><span class="step">Step 4</span> Fix what the number found</h3>
+<p>Add the warm-up at start (load the model, build the keyword index, skip it with a warning if the database is down), and measure the first request with it switched off and on, twice each, as above.</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Store votes, compute the SLI, warm up at start&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>A vote is a 404</strong>: the request id must be one that is in the <code>requests</code> table. Read it from the <code>X-Request-Id</code> header of the answer.</li><li><strong>A 422 on a good vote</strong>: the rating must be exactly <code>up</code> or <code>down</code>, and the id must match the safe shape.</li><li><strong>The SLI is 100% and you expected less</strong>: check what counts as bad: only status 500 and above, or a slow request. A 422 is the caller&rsquo;s mistake.</li><li><strong>The warm-up does nothing</strong>: it only runs when the application starts (the lifespan), not in a test client that is not used as a context manager.</li></ul><details><summary>Solution: Step 2 (the query)</summary><pre><code>SELECT f.request_id, f.rating, r.outcome, r.latency_ms
+FROM feedback f JOIN requests r USING (request_id)
+WHERE f.rating = &#x27;down&#x27;
+ORDER BY f.time DESC;
+-- then: grep &lt;request_id&gt; audit.jsonl   (it holds the question and the sources)</code></pre><p>In the run above, the two down-votes were the price question (answered with the warranty page, a real wrong answer) and the factory-reset question (the stand-in writer wrote only the first sentence). Both are already in the golden set: q17 and q07. A vote that points to a question you already track is a good sign for the golden set; one that points to a question you do <em>not</em> have is a new golden question.</p></details><details><summary>Solution: Step 3</summary><p>Good = status below 500 and 2000 ms or less. In the 20-request run of last week, 19 were good and one (the cold start, 3584 ms) was not, so the SLI was 19 of 20 = 95%, and the 99% objective was not met. The error budget (1%) was used up several times over by that one request. After the warm-up, the SLI of the 24 requests is 100%.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why must a vote carry a request id?</li><li>What are an SLI, an SLO and an error budget?</li><li>Why does a 4xx not count against the SLI?</li></ol><details><summary>Answers</summary><ol><li>So that the vote can be investigated: the id finds the question, the sources, the tokens and the logs of that answer.</li><li>An SLI is a measurement of what the user feels; an SLO is the target for it; the error budget is what the target leaves (100% minus the objective).</li><li>A 4xx is the caller&rsquo;s mistake, not a failure of your service; counting it would punish you for what you cannot fix.</li></ol></details></section>
+<section id="game-day137" class="game"><h2><span class="n">+</span> &middot; Game: SLI and SLO <span class="t">5 min</span></h2>
+<p><p>You read an indicator and an objective. Pick the answer, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day137-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day137-play">Start the game</button></div>
+<div id="day137-round" hidden><div class="gtop"><span id="day137-num">Round 1</span><span id="day137-score">Score 0</span></div>
+<pre hidden><code id="day137-code"></code></pre><div class="q" id="day137-q"></div><div class="choices" id="day137-opts"></div>
+<div class="fb" id="day137-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day137-next" hidden>Next round</button></p></div>
+<div id="day137-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day137",[{"c": "SLI: the share of requests with status below 500 and 2000 ms or less", "q": "In the 20-request run, one request took 3584 ms. What was the SLI?", "o": ["19 of 20 = 95%", "100%", "50%"], "a": 0, "out": "19 good of 20  ->  SLI 95.0%   SLO (99%) NOT met", "why": "One slow request is enough to miss a 99% objective in a small sample."}, {"c": "After the warm-up, 24 requests", "q": "What are the SLI and the error budget used?", "o": ["100% and 0%", "95% and 100%", "99% and 50%"], "a": 0, "out": "\"sli_percent\":100.0,\"slo_percent\":99.0,\"slo_met\":true,\"error_budget_used_percent\":0.0", "why": "The fix was measured."}, {"c": "The first request after a start", "q": "How long did it take without and with the warm-up?", "o": ["3447 ms and 596 ms without; 42 and 34 ms with", "8 ms in all cases", "Always 3 s"], "a": 0, "out": "warm-up OFF: 3447 ms and 596 ms     warm-up ON: 42 ms and 34 ms", "why": "The user no longer pays for loading the model."}, {"c": "A 422 for an unknown role", "q": "Does it count against the SLI?", "o": ["No: it is the caller's mistake", "Yes, as a failure", "Only if it is slow"], "a": 0, "out": "bad-role  422  error   (status below 500: not a failure of ours)", "why": "Count what you can fix."}, {"c": "POST /api/feedback with request_id g-q99", "q": "What status?", "o": ["404: no request has that id", "201", "422"], "a": 0, "out": "POST /api/feedback  g-q99 up       404      <- no request has that id", "why": "A vote must be tied to a real request."}, {"c": "The error budget of a 99% objective", "q": "What is it?", "o": ["1%: what the target leaves", "99%", "0%"], "a": 0, "out": "100% - 99% = 1%", "why": "It tells you when to stop adding features and fix reliability."}],["SLO rookie", "SLO regular", "Objective setter"],"An SLI measures what the user feels, an SLO is the target, the error budget is what is left; a 4xx is the caller's mistake; and a number that finds a cause (a cold start) is worth fixing.");</script>
+<p><small>Tick &ldquo;Play the SLI and SLO game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a thumbs-up and thumbs-down store tied to the request id, an SLI against an SLO with an error budget, a number that sent you to a cause (the cold start), and a warm-up that fixed it, measured twice before and after.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 137 checklist.</li><li>Share one line in the comments: what is the SLI of your own system today?</li><li><strong>Next:</strong> Thursday is mixed practice: you write a provider fallback and a cache, with tests, from a blank file.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

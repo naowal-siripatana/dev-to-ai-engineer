@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 140 - Project Lab 20: the dashboard</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 140 &middot; LEVEL 12: LLMOPS &middot; PROJECT LAB</div><h1>Project Lab 20: the dashboard</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to show the five numbers of your system on a dashboard, with votes, an SLI and an honest screenshot.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the error budget of a 99% objective?</li><li>Why is the role part of a cache key?</li></ol><details><summary>Answers</summary><ol><li>1%: the share of requests that may be bad before the promise is broken.</li><li>So that an answer made for staff is never served to a customer.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p>This is the <strong>Module 12 checkpoint</strong>: the dashboard that your plan called for. By the end:</p><ul><li><code>GET /api/stats</code> in the Python service (staff only) with the <strong>five numbers</strong>: question count, success rate, average time, total cost and failed queries, plus the SLI against its SLO and the votes.</li><li>The .NET gateway forwards <code>/api/stats</code> and <code>/api/feedback</code>.</li><li>A React <strong>dashboard</strong> page, and a <strong>Good / Bad</strong> vote under every answer in the chat.</li><li>A <strong>real screenshot</strong> in the README, with an honest note on what it is made of.</li></ul><div class="box cap"><strong>Capstone:</strong> this is the picture that shows a reviewer that you run your system with numbers, not with hope. Keep it truthful: every figure comes with its source and what it hides.</div><div class="box"><strong>What is real, and what is not.</strong> The dashboard, the endpoint, the votes, the table and the screenshot are real. No real model was used: the writer is a stand-in, the tokens are <strong>estimates</strong> (tiktoken), the prices are <strong>examples</strong>, and the 24 requests are a rehearsal, not production. Your screenshot will show your own numbers.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Cut the work in small pieces, and commit after each one:</p><ol><li><strong>The statistics</strong> in Python (<code>stats.py</code> and the endpoint), staff only.</li><li><strong>The vote</strong> endpoint and store (Wednesday).</li><li><strong>The gateway</strong>: forward both, map the errors, test.</li><li><strong>The page</strong>: the API functions, the votes, the dashboard.</li><li><strong>Run it</strong>: fill the table with about 20 requests, vote, open the page.</li><li><strong>The screenshot</strong> and the README.</li></ol></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2><h3>Step 1: the statistics (Python)</h3><p><code>stats.py</code> from Wednesday, and the endpoint <code>GET /api/stats</code> that only staff may call (a <code>403</code> otherwise). A fresh database has no table yet, so the statistics create it and show zeros: this was a real bug that a test found:</p><pre><code>import psycopg
+
+from my_ai_project.metrics import SCHEMA
+
+# An SLI is a measurement of what the user feels; an SLO is the target for it. Here: a request is GOOD when it did not fail on our side
+# (status below 500) and was fast enough. A 4xx is the caller&#x27;s mistake: it does not count against us.
+SLI_LATENCY_MS = 2000
+SLO_TARGET_PERCENT = 99.0
+
+
+def compute_stats(dsn: str) -&gt; dict[str, object]:
+    &quot;&quot;&quot;The five numbers of the dashboard, the SLI against its SLO, and the votes. Everything comes from the requests and feedback tables.&quot;&quot;&quot;
+    with psycopg.connect(dsn) as conn:
+        conn.execute(SCHEMA)   # a fresh database has no requests table yet: the dashboard must show zeros, not crash
+        conn.execute(&quot;CREATE TABLE IF NOT EXISTS feedback (id bigserial PRIMARY KEY, time timestamptz NOT NULL DEFAULT now(), request_id text NOT NULL, rating text NOT NULL, comment text)&quot;)
+        row = conn.execute(
+            &quot;&quot;&quot;
+            SELECT count(*),
+                   count(*) FILTER (WHERE outcome IN (&#x27;answered&#x27;, &#x27;refused&#x27;)),
+                   coalesce(avg(latency_ms), 0),
+                   coalesce(percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms), 0),
+                   coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0),
+                   coalesce(sum(cost_usd), 0),
+                   count(*) FILTER (WHERE outcome = &#x27;error&#x27;),
+                   count(*) FILTER (WHERE outcome = &#x27;refused&#x27;),
+                   count(*) FILTER (WHERE status_code &lt; 500 AND latency_ms &lt;= %s)
+            FROM requests WHERE route = &#x27;/api/ask&#x27;
+            &quot;&quot;&quot;,
+            (SLI_LATENCY_MS,),
+        ).fetchone()
+        votes: dict[str, int] = {str(rating): int(count) for rating, count in conn.execute(&quot;SELECT rating, count(*) FROM feedback GROUP BY rating&quot;).fetchall()}
+    questions, succeeded, average, median, p95, cost, failed, refused, good = row or (0, 0, 0, 0, 0, 0, 0, 0, 0)
+    sli = 100.0 * good / questions if questions else 100.0
+    budget = 100.0 - SLO_TARGET_PERCENT
+    return {
+        &quot;questions&quot;: questions,
+        &quot;success_percent&quot;: round(100.0 * succeeded / questions, 1) if questions else 100.0,
+        &quot;avg_ms&quot;: round(float(average)),
+        &quot;median_ms&quot;: round(float(median)),
+        &quot;p95_ms&quot;: round(float(p95)),
+        &quot;total_cost_usd&quot;: round(float(cost), 6),
+        &quot;failed&quot;: failed,
+        &quot;refusal_percent&quot;: round(100.0 * refused / questions, 1) if questions else 0.0,
+        &quot;sli_percent&quot;: round(sli, 1),
+        &quot;slo_percent&quot;: SLO_TARGET_PERCENT,
+        &quot;slo_met&quot;: sli &gt;= SLO_TARGET_PERCENT,
+        &quot;error_budget_used_percent&quot;: round(min(100.0, 100.0 * (100.0 - sli) / budget), 1) if budget else 0.0,
+        &quot;feedback_up&quot;: int(votes.get(&quot;up&quot;, 0)),
+        &quot;feedback_down&quot;: int(votes.get(&quot;down&quot;, 0)),
+    }</code></pre><h3>Step 2: the gateway</h3><p>Two new endpoints. <code>GET /api/stats</code> passes the JSON through; <code>POST /api/feedback</code> answers <code>201</code>. The gateway checks the vote before Python sees it, and maps a Python <code>403</code> and <code>404</code> to the same statuses:</p><pre><code>diff --git a/AskGateway/Models.cs b/AskGateway/Models.cs
+index 7f51fd6..be2c6f8 100644
+--- a/AskGateway/Models.cs
++++ b/AskGateway/Models.cs
+@@ -18,3 +18,10 @@ public record AssistRequest([property: Required, StringLength(500, MinimumLength
+ public record ToolCallInfo(string Name, Dictionary&lt;string, JsonElement&gt; ToolInput, bool IsError);
+ 
+ public record AssistResponse(string Answer, List&lt;ToolCallInfo&gt; ToolCalls, int Rounds, bool GaveUp);
++
++public record FeedbackRequest(
++    [property: Required, RegularExpression(@&quot;\A[A-Za-z0-9._-]{1,64}\z&quot;)] string RequestId,
++    [property: Required, RegularExpression(@&quot;\A(up|down)\z&quot;)] string Rating,
++    [property: StringLength(500)] string? Comment = null);
++
++public record StatusReply(string Status);
+diff --git a/AskGateway/Program.cs b/AskGateway/Program.cs
+index 2c28ed9..1a357af 100644
+--- a/AskGateway/Program.cs
++++ b/AskGateway/Program.cs
+@@ -44,13 +44,19 @@ app.MapPost(&quot;/api/ask&quot;, (AskRequest request, HttpContext http, PythonServiceClie
+ app.MapPost(&quot;/api/assist&quot;, (AssistRequest request, HttpContext http, PythonServiceClient python, CancellationToken cancellationToken) =&gt;
+     Forward(() =&gt; python.AssistAsync(request, http.Request.Headers[PythonServiceClient.RoleHeader].FirstOrDefault(), cancellationToken)));
+ 
++app.MapPost(&quot;/api/feedback&quot;, (FeedbackRequest request, HttpContext http, PythonServiceClient python, CancellationToken cancellationToken) =&gt;
++    Forward(() =&gt; python.FeedbackAsync(request, http.Request.Headers[PythonServiceClient.RoleHeader].FirstOrDefault(), cancellationToken), StatusCodes.Status201Created));
++
++app.MapGet(&quot;/api/stats&quot;, (HttpContext http, PythonServiceClient python, CancellationToken cancellationToken) =&gt;
++    Forward(() =&gt; python.StatsAsync(http.Request.Headers[PythonServiceClient.RoleHeader].FirstOrDefault(), cancellationToken)));
++
+ app.Run();
+ 
+-static async Task&lt;IResult&gt; Forward&lt;T&gt;(Func&lt;Task&lt;T&gt;&gt; call)
++static async Task&lt;IResult&gt; Forward&lt;T&gt;(Func&lt;Task&lt;T&gt;&gt; call, int successStatus = StatusCodes.Status200OK)
+ {
+     try
+     {
+-        return Results.Ok(await call());
++        return Results.Json(await call(), ApiJson.Options, statusCode: successStatus);
+     }
+     catch (PythonServiceException error)
+     {
+diff --git a/AskGateway/PythonServiceClient.cs b/AskGateway/PythonServiceClient.cs
+index 9005305..5e793a5 100644
+--- a/AskGateway/PythonServiceClient.cs
++++ b/AskGateway/PythonServiceClient.cs
+@@ -1,4 +1,5 @@
+ using System.Net;
++using System.Text.Json;
+ 
+ namespace AskGateway;
+ 
+@@ -17,9 +18,19 @@ public class PythonServiceClient(HttpClient http, IHttpContextAccessor accessor,
+     public Task&lt;AssistResponse&gt; AssistAsync(AssistRequest request, string? role, CancellationToken cancellationToken) =&gt;
+         PostAsync&lt;AssistRequest, AssistResponse&gt;(&quot;/api/assist&quot;, request, role, cancellationToken);
+ 
+-    async Task&lt;TResponse&gt; PostAsync&lt;TRequest, TResponse&gt;(string path, TRequest request, string? role, CancellationToken cancellationToken)
++    public Task&lt;StatusReply&gt; FeedbackAsync(FeedbackRequest request, string? role, CancellationToken cancellationToken) =&gt;
++        PostAsync&lt;FeedbackRequest, StatusReply&gt;(&quot;/api/feedback&quot;, request, role, cancellationToken);
++
++    public Task&lt;JsonElement&gt; StatsAsync(string? role, CancellationToken cancellationToken) =&gt;
++        SendAsync&lt;JsonElement&gt;(new HttpRequestMessage(HttpMethod.Get, &quot;/api/stats&quot;), role, cancellationToken);
++
++    Task&lt;TResponse&gt; PostAsync&lt;TRequest, TResponse&gt;(string path, TRequest request, string? role, CancellationToken cancellationToken) =&gt;
++        SendAsync&lt;TResponse&gt;(new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(request, options: ApiJson.Options) }, role, cancellationToken);
++
++    async Task&lt;TResponse&gt; SendAsync&lt;TResponse&gt;(HttpRequestMessage message, string? role, CancellationToken cancellationToken)
+     {
+-        using var message = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(request, options: ApiJson.Options) };
++        using var _ = message;
++        var path = message.RequestUri?.OriginalString ?? &quot;&quot;;
+         if (!string.IsNullOrEmpty(role))
+         {
+             message.Headers.Add(RoleHeader, role);
+@@ -53,6 +64,14 @@ public class PythonServiceClient(HttpClient http, IHttpContextAccessor accessor,
+             {
+                 throw new PythonServiceException(StatusCodes.Status503ServiceUnavailable, &quot;the AI service cannot reach its database&quot;);
+             }
++            if (response.StatusCode == HttpStatusCode.Forbidden)
++            {
++                throw new PythonServiceException(StatusCodes.Status403Forbidden, &quot;this role may not do that&quot;);
++            }
++            if (response.StatusCode == HttpStatusCode.NotFound)
++            {
++                throw new PythonServiceException(StatusCodes.Status404NotFound, &quot;the AI service does not know that request id&quot;);
++            }
+             if (response.StatusCode == HttpStatusCode.UnprocessableEntity)
+             {
+                 throw new PythonServiceException(StatusCodes.Status400BadRequest, &quot;the AI service rejected the request (check the role)&quot;);</code></pre><p>Six new tests (a vote is forwarded, three bad votes are 400 and never reach Python, an unknown id is a 404, the statistics pass through and a 403 stays a 403):</p><pre><code>diff --git a/AskGateway.Tests/GatewayTests.cs b/AskGateway.Tests/GatewayTests.cs
+index 61dde62..10cf183 100644
+--- a/AskGateway.Tests/GatewayTests.cs
++++ b/AskGateway.Tests/GatewayTests.cs
+@@ -162,4 +162,52 @@ public class GatewayTests
+         Assert.NotEqual(unsafeId, returned);
+         Assert.Equal(returned, python.LastRequest!.Headers.GetValues(&quot;X-Request-Id&quot;).Single());
+     }
++
++    [Fact]
++    public async Task A_vote_is_forwarded_to_python_and_answers_201()
++    {
++        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.Created, &quot;&quot;&quot;{&quot;status&quot;:&quot;stored&quot;}&quot;&quot;&quot;));
++        var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/feedback&quot;, new { request_id = &quot;demo-123&quot;, rating = &quot;down&quot;, comment = &quot;wrong page&quot; });
++
++        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
++        Assert.Equal(&quot;/api/feedback&quot;, python.LastRequest!.RequestUri!.AbsolutePath);
++        Assert.Contains(&quot;\&quot;request_id\&quot;:\&quot;demo-123\&quot;&quot;, python.LastBody);
++        Assert.Contains(&quot;\&quot;stored\&quot;&quot;, await response.Content.ReadAsStringAsync());
++    }
++
++    [Theory]
++    [InlineData(&quot;demo-123&quot;, &quot;great&quot;)]
++    [InlineData(&quot;bad id;&quot;, &quot;up&quot;)]
++    [InlineData(&quot;&quot;, &quot;up&quot;)]
++    public async Task A_bad_vote_is_a_400_and_never_reaches_python(string requestId, string rating)
++    {
++        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.Created, &quot;&quot;&quot;{&quot;status&quot;:&quot;stored&quot;}&quot;&quot;&quot;));
++        var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/feedback&quot;, new { request_id = requestId, rating });
++
++        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
++        Assert.Null(python.LastRequest);
++    }
++
++    [Fact]
++    public async Task An_unknown_request_id_in_a_vote_is_a_404()
++    {
++        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.NotFound, &quot;&quot;&quot;{&quot;detail&quot;:&quot;no request has that id&quot;}&quot;&quot;&quot;));
++        var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/feedback&quot;, new { request_id = &quot;nope&quot;, rating = &quot;up&quot; });
++        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
++    }
++
++    [Fact]
++    public async Task The_statistics_are_passed_through_and_a_403_stays_a_403()
++    {
++        var python = new StubHandler(request =&gt; request.Headers.Contains(&quot;x-demo-role&quot;)
++            ? Json(HttpStatusCode.OK, &quot;&quot;&quot;{&quot;questions&quot;:20,&quot;success_percent&quot;:95.0}&quot;&quot;&quot;)
++            : Json(HttpStatusCode.Forbidden, &quot;&quot;&quot;{&quot;detail&quot;:&quot;only staff&quot;}&quot;&quot;&quot;));
++        var http = ClientWith(python);
++
++        Assert.Equal(HttpStatusCode.Forbidden, (await http.GetAsync(&quot;/api/stats&quot;)).StatusCode);
++        http.DefaultRequestHeaders.Add(&quot;x-demo-role&quot;, &quot;staff&quot;);
++        var ok = await http.GetAsync(&quot;/api/stats&quot;);
++        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
++        Assert.Contains(&quot;\&quot;questions\&quot;:20&quot;, await ok.Content.ReadAsStringAsync());
++    }
+ }</code></pre><h3>Step 3: the page</h3><p>The API functions (the vote and the statistics), a Good and a Bad button under each answer, a <code>#/dashboard</code> route, and some CSS:</p><pre><code>diff --git a/src/App.tsx b/src/App.tsx
+index 115ff3a..8608877 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,5 +1,5 @@
+ import { useState, type FormEvent } from &#x27;react&#x27;
+-import { ApiError, assist, type Role, type ToolCall } from &#x27;./api&#x27;
++import { ApiError, assist, sendFeedback, type Rating, type Role, type ToolCall } from &#x27;./api&#x27;
+ import &#x27;./index.css&#x27;
+ 
+ interface Message {
+@@ -8,6 +8,8 @@ interface Message {
+   text: string
+   toolCalls?: ToolCall[]
+   failed?: boolean
++  requestId?: string | null
++  vote?: Rating
+ }
+ 
+ export default function App() {
+@@ -20,6 +22,15 @@ export default function App() {
+     setMessages((current) =&gt; [...current, { ...message, id: current.length }])
+   }
+ 
++  async function vote(id: number, requestId: string, rating: Rating) {
++    setMessages((current) =&gt; current.map((message) =&gt; (message.id === id ? { ...message, vote: rating } : message)))
++    try {
++      await sendFeedback(requestId, rating)
++    } catch {
++      setMessages((current) =&gt; current.map((message) =&gt; (message.id === id ? { ...message, vote: undefined } : message)))
++    }
++  }
++
+   async function send(event: FormEvent) {
+     event.preventDefault()
+     const text = question.trim()
+@@ -29,7 +40,7 @@ export default function App() {
+     setWaiting(true)
+     try {
+       const result = await assist(text, role)
+-      add({ from: &#x27;assistant&#x27;, text: result.answer, toolCalls: result.tool_calls })
++      add({ from: &#x27;assistant&#x27;, text: result.answer, toolCalls: result.tool_calls, requestId: result.requestId })
+     } catch (error) {
+       const message = error instanceof ApiError ? error.message : &#x27;Something went wrong.&#x27;
+       add({ from: &#x27;assistant&#x27;, text: message, failed: true })
+@@ -42,6 +53,7 @@ export default function App() {
+     &lt;main&gt;
+       &lt;header&gt;
+         &lt;h1&gt;PumpGuard assistant&lt;/h1&gt;
++        &lt;a href=&quot;#/dashboard&quot;&gt;Dashboard&lt;/a&gt;
+         &lt;label&gt;
+           I am a{&#x27; &#x27;}
+           &lt;select value={role} onChange={(event) =&gt; setRole(event.target.value as Role)}&gt;
+@@ -71,6 +83,22 @@ export default function App() {
+                 &lt;/ul&gt;
+               &lt;/details&gt;
+             )}
++            {message.from === &#x27;assistant&#x27; &amp;&amp; message.requestId &amp;&amp; !message.failed &amp;&amp; (
++              &lt;div className=&quot;vote&quot; aria-label=&quot;Rate this answer&quot;&gt;
++                {message.vote ? (
++                  &lt;span&gt;Thanks for your vote.&lt;/span&gt;
++                ) : (
++                  &lt;&gt;
++                    &lt;button type=&quot;button&quot; aria-label=&quot;Good answer&quot; onClick={() =&gt; vote(message.id, message.requestId as string, &#x27;up&#x27;)}&gt;
++                      Good
++                    &lt;/button&gt;
++                    &lt;button type=&quot;button&quot; aria-label=&quot;Bad answer&quot; onClick={() =&gt; vote(message.id, message.requestId as string, &#x27;down&#x27;)}&gt;
++                      Bad
++                    &lt;/button&gt;
++                  &lt;/&gt;
++                )}
++              &lt;/div&gt;
++            )}
+           &lt;/article&gt;
+         ))}
+         {waiting &amp;&amp; &lt;p className=&quot;hint&quot;&gt;Thinking...&lt;/p&gt;}
+diff --git a/src/api.ts b/src/api.ts
+index da6fa42..296ece9 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -11,6 +11,7 @@ export interface AssistResponse {
+   tool_calls: ToolCall[]
+   rounds: number
+   gave_up: boolean
++  requestId: string | null   // the X-Request-Id of this answer: a vote and a bug report can quote it
+ }
+ 
+ export class ApiError extends Error {
+@@ -38,5 +39,46 @@ export async function assist(question: string, role: Role): Promise&lt;AssistRespon
+     const problem = (await response.json().catch(() =&gt; null)) as { detail?: string; title?: string } | null
+     throw new ApiError(response.status, problem?.detail ?? problem?.title ?? `The request failed (${response.status}).`)
+   }
+-  return (await response.json()) as AssistResponse
++  const body = (await response.json()) as Omit&lt;AssistResponse, &#x27;requestId&#x27;&gt;
++  return { ...body, requestId: response.headers.get(&#x27;x-request-id&#x27;) }
++}
++
++export type Rating = &#x27;up&#x27; | &#x27;down&#x27;
++
++export async function sendFeedback(requestId: string, rating: Rating): Promise&lt;void&gt; {
++  const response = await fetch(&#x27;/api/feedback&#x27;, {
++    method: &#x27;POST&#x27;,
++    headers: { &#x27;content-type&#x27;: &#x27;application/json&#x27; },
++    body: JSON.stringify({ request_id: requestId, rating }),
++  })
++  if (!response.ok) throw new ApiError(response.status, &#x27;Your vote could not be saved.&#x27;)
++}
++
++export interface Stats {
++  questions: number
++  success_percent: number
++  avg_ms: number
++  median_ms: number
++  p95_ms: number
++  total_cost_usd: number
++  failed: number
++  refusal_percent: number
++  sli_percent: number
++  slo_percent: number
++  slo_met: boolean
++  error_budget_used_percent: number
++  feedback_up: number
++  feedback_down: number
++}
++
++// DEMO ONLY: the dashboard asks as staff through the demo header. A real app sends a login token (Module 8).
++export async function getStats(): Promise&lt;Stats&gt; {
++  let response: Response
++  try {
++    response = await fetch(&#x27;/api/stats&#x27;, { headers: { &#x27;x-demo-role&#x27;: &#x27;staff&#x27; } })
++  } catch {
++    throw new ApiError(0, &#x27;Cannot reach the server. Is the gateway running?&#x27;)
++  }
++  if (!response.ok) throw new ApiError(response.status, `The statistics could not be loaded (${response.status}).`)
++  return (await response.json()) as Stats
+ }
+diff --git a/src/index.css b/src/index.css
+index bb843b2..3942760 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -17,3 +17,14 @@ form { display: flex; gap: 0.5rem; }
+ input { flex: 1; padding: 0.6rem; font-size: 1rem; border: 1px solid #adb5bd; border-radius: 0.5rem; }
+ button { padding: 0.6rem 1rem; font-size: 1rem; border: 0; border-radius: 0.5rem; background: #3b5bdb; color: #fff; cursor: pointer; }
+ button:disabled { opacity: 0.5; cursor: not-allowed; }
++
++.vote { margin-top: 0.4rem; font-size: 0.85rem; display: flex; gap: 0.4rem; align-items: center; }
++.vote button { padding: 0.15rem 0.6rem; font-size: 0.85rem; background: transparent; color: inherit; border: 1px solid #adb5bd; }
++.cards { flex: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.75rem; margin: 1rem 0; }
++.card { background: #e6e6ec; border-radius: 0.75rem; padding: 0.8rem 1rem; }
++.card .label { font-size: 0.8rem; color: #495057; }
++.card .value { font-size: 1.6rem; font-weight: 600; margin: 0.2rem 0; }
++.card .note { font-size: 0.75rem; color: #495057; }
++.failed-text { color: #e03131; }
++a { color: #3b5bdb; }
++@media (prefers-color-scheme: dark) { .card { background: #26262d; } .card .label, .card .note { color: #adb5bd; } a { color: #8ea2f5; } }
+diff --git a/src/main.tsx b/src/main.tsx
+index bef5202..9fa06e0 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -1,10 +1,21 @@
+-import { StrictMode } from &#x27;react&#x27;
++import { StrictMode, useEffect, useState } from &#x27;react&#x27;
+ import { createRoot } from &#x27;react-dom/client&#x27;
+ import &#x27;./index.css&#x27;
+ import App from &#x27;./App.tsx&#x27;
++import Dashboard from &#x27;./Dashboard.tsx&#x27;
++
++function Router() {
++  const [hash, setHash] = useState(window.location.hash)
++  useEffect(() =&gt; {
++    const onChange = () =&gt; setHash(window.location.hash)
++    window.addEventListener(&#x27;hashchange&#x27;, onChange)
++    return () =&gt; window.removeEventListener(&#x27;hashchange&#x27;, onChange)
++  }, [])
++  return hash === &#x27;#/dashboard&#x27; ? &lt;Dashboard /&gt; : &lt;App /&gt;
++}
+ 
+ createRoot(document.getElementById(&#x27;root&#x27;)!).render(
+   &lt;StrictMode&gt;
+-    &lt;App /&gt;
++    &lt;Router /&gt;
+   &lt;/StrictMode&gt;,
+ )</code></pre><p>The dashboard component:</p><pre><code>import { useEffect, useState } from &#x27;react&#x27;
+import { ApiError, getStats, type Stats } from &#x27;./api&#x27;
+import &#x27;./index.css&#x27;
+
+function Card({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    &lt;div className=&quot;card&quot;&gt;
+      &lt;div className=&quot;label&quot;&gt;{label}&lt;/div&gt;
+      &lt;div className=&quot;value&quot;&gt;{value}&lt;/div&gt;
+      {note &amp;&amp; &lt;div className=&quot;note&quot;&gt;{note}&lt;/div&gt;}
+    &lt;/div&gt;
+  )
+}
+
+export default function Dashboard() {
+  const [stats, setStats] = useState&lt;Stats | null&gt;(null)
+  const [error, setError] = useState&lt;string | null&gt;(null)
+
+  useEffect(() =&gt; {
+    getStats()
+      .then(setStats)
+      .catch((err) =&gt; setError(err instanceof ApiError ? err.message : &#x27;Something went wrong.&#x27;))
+  }, [])
+
+  return (
+    &lt;main&gt;
+      &lt;header&gt;
+        &lt;h1&gt;Assistant dashboard&lt;/h1&gt;
+        &lt;a href=&quot;#/&quot;&gt;Back to the chat&lt;/a&gt;
+      &lt;/header&gt;
+      {error &amp;&amp; &lt;p className=&quot;failed-text&quot;&gt;{error}&lt;/p&gt;}
+      {!stats &amp;&amp; !error &amp;&amp; &lt;p className=&quot;hint&quot;&gt;Loading...&lt;/p&gt;}
+      {stats &amp;&amp; (
+        &lt;&gt;
+          &lt;section className=&quot;cards&quot; aria-label=&quot;The five numbers&quot;&gt;
+            &lt;Card label=&quot;Questions&quot; value={String(stats.questions)} note=&quot;that reached the AI service&quot; /&gt;
+            &lt;Card label=&quot;Success rate&quot; value={`${stats.success_percent}%`} note=&quot;answered or refused (not failed)&quot; /&gt;
+            &lt;Card label=&quot;Average time&quot; value={`${stats.avg_ms} ms`} note={`median ${stats.median_ms} ms, 95th percentile ${stats.p95_ms} ms`} /&gt;
+            &lt;Card label=&quot;Total cost&quot; value={`$${stats.total_cost_usd.toFixed(4)}`} note=&quot;estimated tokens, example prices&quot; /&gt;
+            &lt;Card label=&quot;Failed queries&quot; value={String(stats.failed)} note=&quot;status 4xx or 5xx&quot; /&gt;
+          &lt;/section&gt;
+          &lt;section className=&quot;cards&quot; aria-label=&quot;Quality and reliability&quot;&gt;
+            &lt;Card label=&quot;Refusals&quot; value={`${stats.refusal_percent}%`} note=&quot;of all questions&quot; /&gt;
+            &lt;Card
+              label={`SLO ${stats.slo_percent}%`}
+              value={`${stats.sli_percent}%`}
+              note={`${stats.slo_met ? &#x27;met&#x27; : &#x27;NOT met&#x27;}: good = not a 5xx and under 2 s; error budget used ${stats.error_budget_used_percent}%`}
+            /&gt;
+            &lt;Card label=&quot;Votes&quot; value={`${stats.feedback_up} up, ${stats.feedback_down} down`} note=&quot;from the thumbs under the answers&quot; /&gt;
+          &lt;/section&gt;
+        &lt;/&gt;
+      )}
+    &lt;/main&gt;
+  )
+}</code></pre><h3>Step 4: check</h3><div class="out"><b>You should see</b><br>gateway&nbsp;&nbsp; dotnet test:&nbsp;&nbsp; Passed!&nbsp;&nbsp;- Failed: 0, Passed: 21, Skipped: 0, Total: 21&nbsp;&nbsp; (15 + 6 new: a vote, three bad votes, a 404, the statistics and a 403)<br>python&nbsp;&nbsp;&nbsp;&nbsp;pytest:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;209 passed&nbsp;&nbsp; (the whole project)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; mypy: no issues found in 76 source files<br>page&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;npx tsc -b:&nbsp;&nbsp;&nbsp;&nbsp;no errors&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;npx vite build: built</div></section>
+<section><h2><span class="n">5</span> &middot; Run it, and take the screenshot <span class="t">20 min</span></h2><p>Start the database, the Python service, the gateway and the page (four terminals). Fill the table with about 20 requests through the gateway (your golden questions as staff, a few repeated, one from a customer, one that fails), and vote on a few answers. Then the statistics as the page will see them:</p><div class="out"><b>You should see</b><br>{"questions":24,"success_percent":95.8,"avg_ms":10,"median_ms":8,"p95_ms":12,"total_cost_usd":0.004948,"failed":1,"refusal_percent":16.7,<br> "sli_percent":100.0,"slo_percent":99.0,"slo_met":true,"error_budget_used_percent":0.0,"feedback_up":6,"feedback_down":2}</div><p>Open <code>http://localhost:5173</code>, ask a question, and click <strong>Bad</strong>. The page says &ldquo;Thanks for your vote&rdquo;, and the table gets a row <code>(your request id, down)</code>: that id is the one in the response header of <em>that</em> answer. An automated tool did exactly this in a real browser: the vote of a click was stored with the right id.</p><p>Then open <code>http://localhost:5173/#/dashboard</code>. You can take the screenshot with Chrome from the command line, so that it is a file you can commit:</p><pre><code>&quot;/Applications/Google Chrome.app/Contents/MacOS/Google Chrome&quot; --headless=new --window-size=1000,520 --virtual-time-budget=8000 \
+    --screenshot=docs/dashboard.png &quot;http://localhost:5173/#/dashboard&quot;
+</code></pre><p>This is the real screenshot of the run above:</p><p><img src="../assets/dashboard-day140.png" alt="The dashboard: 24 questions, 95.8 percent success, 10 ms average with a median of 8 ms, 0.0049 dollars, 1 failed query, 16.7 percent refusals, an SLO of 99 percent met at 100 percent, and 6 up and 2 down votes" style="max-width:100%;height:auto;border:1px solid #adb5bd;border-radius:0.5rem"></p><p>Read it as a stranger would. <strong>24 questions</strong>: only those that reached the Python service. <strong>95.8% success</strong>: answered or refused, and the one failure is a request with an unknown role. <strong>10 ms average, median 8</strong>: with a stand-in writer, so there is no model time in it. <strong>$0.0049</strong>: estimated tokens at example prices. The SLO card says 100% against a target of 99%, and 6 up against 2 down.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The dashboard shows an error</strong>: the page asks as staff through the demo header; check that the gateway and the Python service run, and test <code>curl localhost:5100/api/stats -H &quot;x-demo-role: staff&quot;</code> first.</li><li><strong>A vote is a 404</strong>: the id must be in the <code>requests</code> table: the page reads it from the <code>x-request-id</code> header, so the gateway must <em>return</em> that header (it does, from Day 131).</li><li><strong>All the numbers are 0</strong>: no rows yet. Send requests through the gateway first.</li><li><strong>The screenshot is blank</strong>: give the page time to load the numbers (<code>--virtual-time-budget</code>), and check that the page works in a browser first.</li><li><strong>The cards have a strange gap</strong>: a CSS rule of the chat page (<code>section</code>) also applies to the cards; the diff has the fix (<code>.cards { flex: none; padding: 0 }</code>).</li></ul></section>
+<section><h2><span class="n">7</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Add the README section with the screenshot in <code>docs/dashboard.png</code>, run the checklist, and push all three projects.</p><pre><code>## Dashboard
+
+![Dashboard of the five numbers](docs/dashboard.png)
+
+    http://localhost:5173/#/dashboard      (staff only: the demo role header; a login replaces it later)
+    GET /api/stats  -&gt;  questions, success rate, average and median time, total cost, failed queries, the SLI against its SLO, the votes
+
+    Questions       requests that reached the AI service (a request that the gateway rejects with a 400 has no row)
+    Success rate    answered or refused, not failed. A refusal is a correct result.
+    Average time    shown with the median and the 95th percentile: the average hides slow requests
+    Total cost      ESTIMATED tokens, EXAMPLE prices (metrics.py): replace both with real ones
+    Failed queries  status 4xx or 5xx
+    SLI / SLO       good = not a 5xx and under 2 s; the objective is 99%
+    Screenshot      from a rehearsal of 24 requests with a stand-in writer, not from production.</code></pre><pre><code>[ ] GET /api/stats returns the five numbers, the SLI against the SLO and the votes; a customer gets a 403
+[ ] the gateway forwards /api/feedback (201, 400, 404) and /api/stats (200, 403); its tests pass
+[ ] the page has a Good/Bad vote under each answer (it sends the request id) and a dashboard at #/dashboard
+[ ] I opened both in a browser, clicked a vote and saw it in the table
+[ ] docs/dashboard.png is a real screenshot, and the README says what it is made of (a rehearsal, a stand-in, example prices)
+[ ] every number on the page is defined, and the README says what it hides
+[ ] tests pass (Python, .NET), types pass (mypy, tsc), nothing got worse; committed and pushed</code></pre><p><code>git add .</code>, <code>git commit -m &quot;Add the dashboard, votes and statistics&quot;</code>, <code>git push</code>.</p></section>
+<section><h2><span class="n">8</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is the statistics endpoint only for staff?</li><li>Why must the README say what the screenshot is made of?</li><li>Which of the five numbers hides the most, and what does it hide?</li></ol><details><summary>Answers</summary><ol><li>The numbers describe how the system is used and how well it works; they are not for customers. (Until there is a real login, the role is a forgeable demo header: say so.)</li><li>A number without its source can mislead: here a rehearsal, a stand-in writer, estimated tokens and example prices. A reviewer should be able to tell.</li><li>The average time hides slow requests (a cold start). The total cost hides that its tokens are estimates and its prices examples. The success rate counts a refusal as a success.</li></ol></details></section>
+<section id="game-day140" class="game"><h2><span class="n">+</span> &middot; Game: Dashboard Check <span class="t">5 min</span></h2>
+<p><p>You read the dashboard. Read the card, pick what it means and what it hides, then see the real numbers.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day140-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day140-play">Start the game</button></div>
+<div id="day140-round" hidden><div class="gtop"><span id="day140-num">Round 1</span><span id="day140-score">Score 0</span></div>
+<pre hidden><code id="day140-code"></code></pre><div class="q" id="day140-q"></div><div class="choices" id="day140-opts"></div>
+<div class="fb" id="day140-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day140-next" hidden>Next round</button></p></div>
+<div id="day140-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day140",[{"c": "Questions 24", "q": "What is counted?", "o": ["Requests that reached the AI service", "Every click of every user", "Only the answers"], "a": 0, "out": "\"questions\":24", "why": "A request that the gateway rejects (400) has no row."}, {"c": "Success rate 95.8%", "q": "What is a success?", "o": ["Answered or refused: 23 of 24", "Only answered", "Only status 200"], "a": 0, "out": "\"success_percent\":95.8", "why": "A refusal is a correct result."}, {"c": "Average time 10 ms, median 8, 95th percentile 12", "q": "What is the time made of?", "o": ["Retrieval and a stand-in writer: no model time", "A real model call", "Network only"], "a": 0, "out": "\"avg_ms\":10,\"median_ms\":8,\"p95_ms\":12", "why": "Say it next to the number."}, {"c": "Total cost $0.0049", "q": "What must be written next to it?", "o": ["Estimated tokens, example prices", "Nothing", "That it is exact"], "a": 0, "out": "\"total_cost_usd\":0.004948", "why": "A cost without its source can mislead."}, {"c": "GET /api/stats as a customer", "q": "What status?", "o": ["403: staff only", "200", "404"], "a": 0, "out": "curl localhost:5100/api/stats      (no role)   ->  403", "why": "And the gap: the role header can be forged."}, {"c": "A click on 'Bad' in the chat page", "q": "What is stored?", "o": ["A row (the request id of that answer, down)", "Nothing", "The whole conversation"], "a": 0, "out": "[('fc3066d90fa342bb996916720bd1a3ca', 'down')]", "why": "The id ties the vote to the question, sources and logs."}],["Dashboard rookie", "Dashboard regular", "Dashboard reader"],"Define each card, say what it hides (average time, estimated cost, refusals as success), keep the screenshot honest, and tie every vote to a request id.");</script>
+<p><small>Tick &ldquo;Play the Dashboard Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">9</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a dashboard of the five numbers with an SLI, votes under every answer, endpoints in Python and in the gateway with tests, and a real screenshot with an honest caption. That is the Module 12 checkpoint.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 140 checklist.</li><li>Share one line in the comments, with your screenshot: which number moved when you changed something?</li><li><strong>Next:</strong> Sunday is the Module 12 retrospective, and from now on the plan asks for three to five job applications a week.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 138 - Mixed practice: a provider fallback plus a cache</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 138 &middot; LEVEL 12: LLMOPS &middot; MIXED PRACTICE</div><h1>Mixed practice: a provider fallback plus a cache</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write a fallback and a cache with a safe key and tests, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are an SLI and an SLO?</li><li>Why does a vote need a request id?</li></ol><details><summary>Answers</summary><ol><li>An SLI is a measurement of what the user feels; an SLO is the target for it.</li><li>So that the vote can be investigated: the id finds the question, sources, tokens and logs.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You write the reliability module yourself, from a blank file, with its tests. You get a contract.</p><pre><code>reliability.py
+  Unavailable(Exception)                         raised when every way of getting an answer failed
+  with_timeout(call, seconds) -&gt; str             waits at most `seconds`; raises TimeoutError; the slow call is simply ignored
+  FallbackWriter(primary, secondary|None, timeout, names)
+      complete(prompt, system) tries the primary under the timeout;
+      on LlmError or TimeoutError it tries the secondary (if there is one), under the timeout;
+      on a failure of both, or of the only one, it raises Unavailable (with a clear message);
+      any OTHER exception (a bug) is not caught;
+      `used` is names[0] or names[1]: which model answered
+  cache_key(role, question, top_k) -&gt; str        normalised question + ROLE + top_k
+  AnswerCache(ttl_seconds, max_entries, clock)   get(key) / put(key, value) / clear(); entries expire; it cannot grow without limit;
+                                                 `clock` can be replaced, so that a test can move time
+
+API (wired in app code):
+  /api/ask looks in the cache before the pipeline; a hit costs no tokens and the metrics say model = &#x27;cache&#x27;
+  an Unavailable becomes 503 {&quot;detail&quot;: &quot;the assistant is temporarily unavailable&quot;}
+  the metrics say which model answered (the &#x27;used&#x27; of the writer)</code></pre><p><strong>Predict first</strong>, before you write anything: which tests will you write? Think of <em>the case where two requests look the same but must not share an answer</em>, and the case where the cache must stop serving an old answer.</p></section>
+<section><h2><span class="n">3</span> &middot; Do it <span class="t">25 min</span></h2><ol><li>Write <code>reliability.py</code> in <code>my-ai-project</code>. Do not open the solution until you have tried for 15 minutes.</li><li>Write the tests <strong>first</strong> for the cache: the role is part of the key, an entry expires (move the clock), the cache has a limit.</li><li>Write the tests for the fallback: primary works, primary down, primary too slow, both down, no fallback, a bug is not hidden.</li><li>Wire it in (see the diff): the cache before the pipeline, the <code>503</code>, the model name in the metrics.</li><li>Run <code>uv run pytest</code> and <code>uv run mypy src tests</code>. Commit: <code>git add .</code> and <code>git commit -m &quot;Add a fallback model and an answer cache&quot;</code>.</li></ol><details><summary>Hint: where to start</summary><p>A <code>dataclass</code> <code>Entry(value, expires_at)</code> and a dictionary. <code>get</code> returns <code>None</code> and removes the key when the entry is missing or <code>expires_at &lt;= clock()</code>. <code>put</code> removes the oldest key (<code>next(iter(dict))</code>) when the cache is full. For the key, a normalised question: <code>re.sub(r&quot;\s+&quot;, &quot; &quot;, q.strip().lower())</code>.</p></details><details><summary>Solution</summary><pre><code>import concurrent.futures
+import logging
+import re
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from my_ai_project.grounding import Writer
+from my_ai_project.llm import LlmError
+
+logger = logging.getLogger(&quot;reliability&quot;)
+
+
+class Unavailable(Exception):
+    &quot;&quot;&quot;Every way of getting an answer failed. The caller shows a clear message; it does not crash.&quot;&quot;&quot;
+
+
+def with_timeout(call: Callable[[], str], seconds: float) -&gt; str:
+    &quot;&quot;&quot;Give up waiting after some seconds. The slow call keeps running in its thread (Python cannot kill a thread): the answer is simply ignored.&quot;&quot;&quot;
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(call)
+    try:
+        return future.result(timeout=seconds)
+    except concurrent.futures.TimeoutError as err:
+        raise TimeoutError(f&quot;no answer after {seconds} seconds&quot;) from err
+    finally:
+        pool.shutdown(wait=False)
+
+
+class FallbackWriter:
+    &quot;&quot;&quot;Try the first model; if it fails or is too slow, try the second. `used` says which one answered, for the metrics.&quot;&quot;&quot;
+
+    def __init__(self, primary: Writer, secondary: Writer | None, timeout: float = 20.0, names: tuple[str, str] = (&quot;primary&quot;, &quot;fallback&quot;)) -&gt; None:
+        self.primary, self.secondary, self.timeout, self.names = primary, secondary, timeout, names
+        self.used = names[0]
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        try:
+            return with_timeout(lambda: self.primary.complete(prompt, system), self.timeout)
+        except (LlmError, TimeoutError) as err:
+            logger.warning(&quot;the first model failed (%s: %s)&quot;, type(err).__name__, err)
+            if self.secondary is None:
+                raise Unavailable(&quot;the model did not answer and there is no fallback&quot;) from err
+        secondary = self.secondary
+        try:
+            self.used = self.names[1]
+            return with_timeout(lambda: secondary.complete(prompt, system), self.timeout)
+        except (LlmError, TimeoutError) as err:
+            logger.error(&quot;the fallback model failed too (%s: %s)&quot;, type(err).__name__, err)
+            raise Unavailable(&quot;neither model answered&quot;) from err
+
+
+def normalize(question: str) -&gt; str:
+    return re.sub(r&quot;\s+&quot;, &quot; &quot;, question.strip().lower())
+
+
+def cache_key(role: str, question: str, top_k: int) -&gt; str:
+    &quot;&quot;&quot;The role is part of the key: an answer made for staff must never be served to a customer.&quot;&quot;&quot;
+    return f&quot;{role}|{top_k}|{normalize(question)}&quot;
+
+
+@dataclass
+class Entry:
+    value: object
+    expires_at: float
+
+
+class AnswerCache:
+    &quot;&quot;&quot;A small in-memory cache with a time to live. It trades freshness for speed and cost, so its limit is written down: an answer can be this old.&quot;&quot;&quot;
+
+    def __init__(self, ttl_seconds: float = 300.0, max_entries: int = 500, clock: Callable[[], float] = time.monotonic) -&gt; None:
+        self.ttl, self.max_entries, self.clock = ttl_seconds, max_entries, clock
+        self.entries: dict[str, Entry] = {}
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key: str) -&gt; object | None:
+        entry = self.entries.get(key)
+        if entry is None or entry.expires_at &lt;= self.clock():
+            self.entries.pop(key, None)
+            self.misses += 1
+            return None
+        self.hits += 1
+        return entry.value
+
+    def put(self, key: str, value: object) -&gt; None:
+        if len(self.entries) &gt;= self.max_entries:
+            self.entries.pop(next(iter(self.entries)))   # the oldest one goes
+        self.entries[key] = Entry(value, self.clock() + self.ttl)
+
+    def clear(self) -&gt; None:
+        self.entries.clear()</code></pre><div class="out"><b>You should see</b><br>reliability tests: 14 passed   (the whole project: 209 passed; mypy: no issues in 76 source files)</div></details><details><summary>Solution: the tests</summary><pre><code>import time
+
+import pytest
+
+from my_ai_project.llm import LlmError, RetryableLlmError
+from my_ai_project.reliability import AnswerCache, FallbackWriter, Unavailable, cache_key, with_timeout
+
+
+class Says:
+    def __init__(self, text: str) -&gt; None:
+        self.text, self.calls = text, 0
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        self.calls += 1
+        return self.text
+
+
+class Fails:
+    def __init__(self, error: Exception) -&gt; None:
+        self.error, self.calls = error, 0
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        self.calls += 1
+        raise self.error
+
+
+class Slow:
+    def __init__(self, seconds: float) -&gt; None:
+        self.seconds = seconds
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        time.sleep(self.seconds)
+        return &quot;too late&quot;
+
+
+def test_the_first_model_answers_when_it_can() -&gt; None:
+    primary, backup = Says(&quot;from the first&quot;), Says(&quot;from the second&quot;)
+    writer = FallbackWriter(primary, backup)
+    assert writer.complete(&quot;q&quot;) == &quot;from the first&quot; and writer.used == &quot;primary&quot; and backup.calls == 0
+
+
+@pytest.mark.parametrize(&quot;error&quot;, [LlmError(&quot;down&quot;), RetryableLlmError(&quot;busy&quot;)])
+def test_a_failing_first_model_falls_back_to_the_second(error: Exception) -&gt; None:
+    writer = FallbackWriter(Fails(error), Says(&quot;from the second&quot;))
+    assert writer.complete(&quot;q&quot;) == &quot;from the second&quot; and writer.used == &quot;fallback&quot;
+
+
+def test_a_slow_first_model_is_given_up_on() -&gt; None:
+    writer = FallbackWriter(Slow(1.0), Says(&quot;from the second&quot;), timeout=0.1)
+    started = time.perf_counter()
+    assert writer.complete(&quot;q&quot;) == &quot;from the second&quot;
+    assert time.perf_counter() - started &lt; 0.8   # it did not wait for the slow one
+
+
+def test_when_everything_fails_the_error_is_clear() -&gt; None:
+    with pytest.raises(Unavailable, match=&quot;neither model answered&quot;):
+        FallbackWriter(Fails(LlmError(&quot;a&quot;)), Fails(LlmError(&quot;b&quot;))).complete(&quot;q&quot;)
+    with pytest.raises(Unavailable, match=&quot;no fallback&quot;):
+        FallbackWriter(Fails(LlmError(&quot;a&quot;)), None).complete(&quot;q&quot;)
+
+
+def test_a_bug_is_not_hidden_by_the_fallback() -&gt; None:
+    with pytest.raises(ValueError):
+        FallbackWriter(Fails(ValueError(&quot;a bug&quot;)), Says(&quot;x&quot;)).complete(&quot;q&quot;)
+
+
+def test_with_timeout_returns_a_quick_answer() -&gt; None:
+    assert with_timeout(lambda: &quot;ok&quot;, 1.0) == &quot;ok&quot;
+
+
+def test_the_role_is_part_of_the_cache_key() -&gt; None:
+    assert cache_key(&quot;staff&quot;, &quot;What does E104 mean?&quot;, 3) != cache_key(&quot;customer&quot;, &quot;What does E104 mean?&quot;, 3)
+    assert cache_key(&quot;staff&quot;, &quot;  What  does E104 MEAN? &quot;, 3) == cache_key(&quot;staff&quot;, &quot;what does e104 mean?&quot;, 3)
+    assert cache_key(&quot;staff&quot;, &quot;x&quot;, 3) != cache_key(&quot;staff&quot;, &quot;x&quot;, 5)
+
+
+def test_an_entry_expires_after_its_time_to_live() -&gt; None:
+    now = [0.0]
+    cache = AnswerCache(ttl_seconds=10, clock=lambda: now[0])
+    cache.put(&quot;k&quot;, &quot;v&quot;)
+    assert cache.get(&quot;k&quot;) == &quot;v&quot;
+    now[0] = 11.0
+    assert cache.get(&quot;k&quot;) is None and (cache.hits, cache.misses) == (1, 1)
+
+
+def test_the_cache_does_not_grow_without_limit() -&gt; None:
+    cache = AnswerCache(max_entries=2)
+    for key in (&quot;a&quot;, &quot;b&quot;, &quot;c&quot;):
+        cache.put(key, key)
+    assert cache.get(&quot;a&quot;) is None and cache.get(&quot;c&quot;) == &quot;c&quot;
+
+
+# ---- through the API ----
+from collections.abc import Iterator  # noqa: E402
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from conftest import FakeMetrics  # noqa: E402
+from my_ai_project.api import app  # noqa: E402
+from my_ai_project.deps import get_embedder, get_keywords, get_store, get_writer  # noqa: E402
+from my_ai_project.embedder import FakeEmbedder  # noqa: E402
+from my_ai_project.hybrid import KeywordIndex  # noqa: E402
+from my_ai_project.metrics import RequestMetrics  # noqa: E402
+from my_ai_project.simulated import SimulatedWriter  # noqa: E402
+from test_ask_api import CHUNKS, InMemoryStore  # noqa: E402
+
+BATTERY = {&quot;question&quot;: &quot;Is it true that the battery lasts about eight hours?&quot;}
+STAFF_QUESTION = {&quot;question&quot;: &quot;E101 Sensor timeout. The sensor did not answer. Check the sensor cable and restart the monitor.&quot;}
+
+
+@pytest.fixture
+def client() -&gt; Iterator[TestClient]:
+    app.dependency_overrides[get_embedder] = FakeEmbedder
+    app.dependency_overrides[get_store] = InMemoryStore
+    app.dependency_overrides[get_keywords] = lambda: KeywordIndex(CHUNKS)
+    app.dependency_overrides[get_writer] = SimulatedWriter
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def test_the_second_identical_question_is_a_cache_hit_with_no_tokens(client: TestClient, metrics_in_memory: &quot;FakeMetrics&quot;) -&gt; None:
+    first = client.post(&quot;/api/ask&quot;, json=BATTERY).json()
+    second = client.post(&quot;/api/ask&quot;, json=BATTERY).json()
+    assert first == second
+    rows = [r for r in metrics_in_memory.rows if isinstance(r, RequestMetrics)]
+    assert [r.model for r in rows] == [&quot;stand-in&quot;, &quot;cache&quot;] and rows[1].input_tokens == 0
+
+
+def test_an_answer_cached_for_staff_is_never_served_to_a_customer(client: TestClient) -&gt; None:
+    staff = client.post(&quot;/api/ask&quot;, json=STAFF_QUESTION, headers={&quot;x-demo-role&quot;: &quot;staff&quot;}).json()
+    customer = client.post(&quot;/api/ask&quot;, json=STAFF_QUESTION).json()
+    assert [s[&quot;doc_id&quot;] for s in staff[&quot;sources&quot;]] == [&quot;error-e101&quot;]
+    assert &quot;error-e101&quot; not in [s[&quot;doc_id&quot;] for s in customer[&quot;sources&quot;]]
+
+
+def test_a_model_that_fails_and_has_no_fallback_is_a_clear_503(client: TestClient) -&gt; None:
+    app.dependency_overrides[get_writer] = lambda: FallbackWriter(Fails(LlmError(&quot;down&quot;)), None)
+    response = client.post(&quot;/api/ask&quot;, json=BATTERY)
+    assert response.status_code == 503 and response.json() == {&quot;detail&quot;: &quot;the assistant is temporarily unavailable&quot;}
+
+
+def test_the_metrics_say_which_model_answered(client: TestClient, metrics_in_memory: &quot;FakeMetrics&quot;) -&gt; None:
+    app.dependency_overrides[get_writer] = lambda: FallbackWriter(Fails(LlmError(&quot;down&quot;)), SimulatedWriter(), names=(&quot;main-model&quot;, &quot;backup-model&quot;))
+    assert client.post(&quot;/api/ask&quot;, json=BATTERY).status_code == 200
+    row = metrics_in_memory.rows[0]
+    assert isinstance(row, RequestMetrics) and row.model == &quot;backup-model&quot;</code></pre></details><details><summary>The wiring, as a diff</summary><pre><code>diff --git a/src/my_ai_project/api.py b/src/my_ai_project/api.py
+index 7e6d111..fac7fc4 100644
+--- a/src/my_ai_project/api.py
++++ b/src/my_ai_project/api.py
+@@ -1,5 +1,6 @@
+ import json
+ import logging
++from contextlib import asynccontextmanager
+ import os
+ import time
+ from collections.abc import Iterator
+@@ -15,17 +16,40 @@ from my_ai_project.llm import LlmError
+ from my_ai_project.structured import StructuredOutputError, ask_structured, extract_json, schema_prompt
+ from my_ai_project.extractor import Extraction, ExtractionError, extract
+ from my_ai_project.access import allowed_kinds
+-from my_ai_project.deps import AuditLogDep, EmbedderDep, KeywordsDep, LlmDep, RoleDep, StoreDep, SummaryDep, ToolModelDep, WriterDep
++from my_ai_project.deps import get_embedder, get_keywords, AuditLogDep, EmbedderDep, KeywordsDep, LlmDep, RoleDep, StoreDep, SummaryDep, ToolModelDep, WriterDep
++from my_ai_project.feedback import FeedbackStore, Rating
+ from my_ai_project.metrics import RequestMetrics, default_store
++from my_ai_project.stats import compute_stats
++from my_ai_project.reliability import AnswerCache, Unavailable, cache_key
+ from my_ai_project.observability import clean_request_id, request_id_var, setup_logging
+ from my_ai_project.pipeline import retrieve
+-from my_ai_project.rag import answer_question
++from my_ai_project.rag import RagAnswer, answer_question
+ from my_ai_project.tool_loop import assist
+ 
+ setup_logging()
+ logger = logging.getLogger(&quot;api&quot;)
+ 
+-app = FastAPI(title=&quot;my-ai-project&quot;)
++def warm_up() -&gt; None:
++    &quot;&quot;&quot;Load the model and build the keyword index when the service starts, so that the first user does not pay for it (a 3.6 s cold start was measured).&quot;&quot;&quot;
++    if os.environ.get(&quot;WARM_UP&quot;, &quot;on&quot;) == &quot;off&quot;:
++        return
++    started = time.perf_counter()
++    try:
++        get_embedder().embed([&quot;warm up&quot;])
++        get_keywords()
++    except (psycopg.Error, HTTPException, ImportError, OSError) as err:
++        logger.warning(&quot;warm-up skipped: %s&quot;, err)
++        return
++    logger.info(&quot;warm-up done in %.1f s&quot;, time.perf_counter() - started)
++
++
++@asynccontextmanager
++async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
++    warm_up()
++    yield
++
++
++app = FastAPI(title=&quot;my-ai-project&quot;, lifespan=lifespan)
+ 
+ 
+ @app.middleware(&quot;http&quot;)
+@@ -216,17 +240,33 @@ class AskResponse(BaseModel):
+     sources: list[SearchHit]
+ 
+ 
++def answer_cache(http: Request) -&gt; AnswerCache:
++    if getattr(http.app.state, &quot;cache&quot;, None) is None:
++        http.app.state.cache = AnswerCache(ttl_seconds=float(os.environ.get(&quot;CACHE_TTL_SECONDS&quot;, &quot;300&quot;)))
++    return http.app.state.cache  # type: ignore[no-any-return]
++
++
+ @app.post(&quot;/api/ask&quot;)
+ def ask(
+     http: Request,
+     request: AskRequest, embedder: EmbedderDep, store: StoreDep, keywords: KeywordsDep, writer: WriterDep, role: RoleDep, audit: AuditLogDep
+ ) -&gt; AskResponse:
+-    try:
+-        result = answer_question(request.question, embedder, store, keywords, writer, top_k=request.top_k, allowed_kinds=allowed_kinds(role))
+-    except psycopg.OperationalError as err:
+-        raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
+-    audit.record(&quot;question&quot;, role, question=request.question, refused=result.refused, reason=result.reason, sources=[s.doc_id for s in result.sources])
+-    http.state.usage = {&quot;outcome&quot;: &quot;refused&quot; if result.refused else &quot;answered&quot;, &quot;input_tokens&quot;: result.input_tokens, &quot;output_tokens&quot;: result.output_tokens}
++    cache = answer_cache(http)
++    key = cache_key(role, request.question, request.top_k)
++    cached = cache.get(key)
++    if isinstance(cached, RagAnswer):
++        result, model, tokens = cached, &quot;cache&quot;, (0, 0)   # no model call: no tokens, no cost
++    else:
++        try:
++            result = answer_question(request.question, embedder, store, keywords, writer, top_k=request.top_k, allowed_kinds=allowed_kinds(role))
++        except psycopg.OperationalError as err:
++            raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
++        except Unavailable as err:
++            raise HTTPException(status_code=503, detail=&quot;the assistant is temporarily unavailable&quot;) from err
++        model, tokens = getattr(writer, &quot;used&quot;, os.environ.get(&quot;LLM_MODEL&quot;, &quot;stand-in&quot;)), (result.input_tokens, result.output_tokens)
++        cache.put(key, result)
++    audit.record(&quot;question&quot;, role, question=request.question, refused=result.refused, reason=result.reason, cached=model == &quot;cache&quot;, sources=[s.doc_id for s in result.sources])
++    http.state.usage = {&quot;outcome&quot;: &quot;refused&quot; if result.refused else &quot;answered&quot;, &quot;input_tokens&quot;: tokens[0], &quot;output_tokens&quot;: tokens[1], &quot;model&quot;: model}
+     sources = [
+         SearchHit(citation=f.citation, doc_id=f.doc_id, chunk_index=f.chunk_index, title=f.title, kind=f.kind, text=f.text, similarity=f.similarity)
+         for f in result.sources
+@@ -260,3 +300,35 @@ def assist_with_tools(request: AssistRequest, model: ToolModelDep, role: RoleDep
+         raise HTTPException(status_code=502, detail=&quot;the model call failed&quot;) from err
+     calls = [ToolCallInfo(name=c.name, tool_input=c.tool_input, is_error=c.is_error) for c in result.tool_calls]
+     return AssistResponse(answer=result.answer, tool_calls=calls, rounds=result.rounds, gave_up=result.gave_up)
++
++
++def metrics_dsn() -&gt; str:
++    return os.environ.get(&quot;METRICS_DATABASE_URL&quot;) or os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)
++
++
++class FeedbackRequest(BaseModel):
++    request_id: str = Field(pattern=r&quot;^[A-Za-z0-9._-]{1,64}$&quot;, description=&quot;the X-Request-Id of the answer that is being rated&quot;)
++    rating: Rating
++    comment: str | None = Field(default=None, max_length=500)
++
++
++@app.post(&quot;/api/feedback&quot;, status_code=201)
++def feedback(request: FeedbackRequest) -&gt; dict[str, str]:
++    try:
++        stored = FeedbackStore(metrics_dsn()).record(request.request_id, request.rating, request.comment)
++    except psycopg.OperationalError as err:
++        raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
++    if not stored:
++        raise HTTPException(status_code=404, detail=&quot;no request has that id&quot;)
++    return {&quot;status&quot;: &quot;stored&quot;}
++
++
++@app.get(&quot;/api/stats&quot;)
++def stats(role: RoleDep) -&gt; dict[str, object]:
++    &quot;&quot;&quot;The numbers of the dashboard. Staff only: they describe how the system is used.&quot;&quot;&quot;
++    if role != &quot;staff&quot;:
++        raise HTTPException(status_code=403, detail=&quot;only staff may read the statistics&quot;)
++    try:
++        return compute_stats(metrics_dsn())
++    except psycopg.OperationalError as err:
++        raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
+diff --git a/src/my_ai_project/deps.py b/src/my_ai_project/deps.py
+index 1d99a00..84b18a3 100644
+--- a/src/my_ai_project/deps.py
++++ b/src/my_ai_project/deps.py
+@@ -14,6 +14,7 @@ from my_ai_project.access import ALLOWED_KINDS
+ from my_ai_project.audit import AuditLog
+ from my_ai_project.grounding import Writer
+ from my_ai_project.hybrid import KeywordIndex
++from my_ai_project.reliability import FallbackWriter
+ from my_ai_project.pipeline import Searcher
+ from my_ai_project.simulated import SimulatedWriter
+ from my_ai_project.tool_loop import AnthropicToolModel, PretendToolModel, ToolModel
+@@ -68,7 +69,10 @@ def get_writer() -&gt; Writer:
+         api_key = os.environ.get(&quot;ANTHROPIC_API_KEY&quot;)
+         if not api_key:
+             raise RuntimeError(&quot;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&quot;)
+-        return RetryingClient(AnthropicClient(api_key=api_key, timeout=30.0), max_attempts=3)
++        primary = RetryingClient(AnthropicClient(api_key=api_key, model=os.environ.get(&quot;LLM_MODEL&quot;, &quot;claude-haiku-4-5-20251001&quot;), timeout=30.0), max_attempts=2)
++        backup_model = os.environ.get(&quot;LLM_FALLBACK_MODEL&quot;)
++        backup = RetryingClient(AnthropicClient(api_key=api_key, model=backup_model, timeout=30.0), max_attempts=2) if backup_model else None
++        return FallbackWriter(primary, backup, timeout=45.0, names=(os.environ.get(&quot;LLM_MODEL&quot;, &quot;primary&quot;), backup_model or &quot;fallback&quot;))
+     return SimulatedWriter()   # NOT a real model: it lets you run and test the pipeline with no key
+ 
+ </code></pre></details><details><summary>Read the result</summary><p>The most important test is the one for the key: an answer cached for <strong>staff</strong> must not be served to a <strong>customer</strong>. It is also the one that is easiest to forget, because everything else works without it. Run the API twice with the same question and look at the metrics:</p><div class="out"><b>You should see</b><br>model&nbsp;&nbsp;&nbsp;&nbsp; rows&nbsp;&nbsp; avg latency&nbsp;&nbsp; tokens in<br>cache&nbsp;&nbsp;&nbsp;&nbsp; 3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1.4 ms&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &lt;- the same question asked again by the same role: no model, no cost<br>stand-in&nbsp;&nbsp;21&nbsp;&nbsp;&nbsp;&nbsp; 11.4 ms&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 3573</div><p>(From the 24 requests of the dashboard run: three questions were repeated.) A cache hit took about 1.4 ms against 11.4 ms on average, and cost no tokens. And the limit, to write in your README: <em>an answer can be as old as the time to live (here 300 seconds); after a change to the pages, restart the service or clear the cache.</em> A conftest fixture that resets the cache between tests is also needed: without it, an answer cached by one test leaks into the next (this was a real failure while writing this lesson).</p></details></section>
+<section><h2><span class="n">4</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is the role part of the cache key?</li><li>What limit must you write down for a cache?</li><li>Why reset the cache between tests?</li></ol><details><summary>Answers</summary><ol><li>So that an answer made for staff (with staff-only sources) is never served to a customer.</li><li>How old an answer can be: the time to live, and the fact that a change to the pages is not seen until it expires or the cache is cleared.</li><li>A cache in the application state lives as long as the process, so an answer cached by one test would be served in the next and hide bugs.</li></ol></details></section>
+<section id="game-day138" class="game"><h2><span class="n">+</span> &middot; Game: Cache Check <span class="t">5 min</span></h2>
+<p><p>You test a cache. Read the case, pick what happens.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day138-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day138-play">Start the game</button></div>
+<div id="day138-round" hidden><div class="gtop"><span id="day138-num">Round 1</span><span id="day138-score">Score 0</span></div>
+<pre hidden><code id="day138-code"></code></pre><div class="q" id="day138-q"></div><div class="choices" id="day138-opts"></div>
+<div class="fb" id="day138-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day138-next" hidden>Next round</button></p></div>
+<div id="day138-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day138",[{"c": "cache_key('staff', 'What does E104 mean?', 3) and the same for 'customer'", "q": "Are the keys equal?", "o": ["No: the role is part of the key", "Yes", "Only if top_k is equal"], "a": 0, "out": "(test: the role is part of the cache key)", "why": "An answer made for staff must never be served to a customer."}, {"c": "'  What  does E104 MEAN? ' and 'what does e104 mean?'", "q": "Are the keys equal?", "o": ["Yes: the question is normalised", "No", "Only for staff"], "a": 0, "out": "(trim, lower case, one space)", "why": "The same question in different clothes is one key."}, {"c": "An entry with a TTL of 10 s, read at 11 s (a fake clock)", "q": "What does get return?", "o": ["None: it has expired", "The value", "An error"], "a": 0, "out": "(test: an entry expires after its time to live)", "why": "A test can move time with an injected clock."}, {"c": "The same question asked twice by the same role", "q": "What do the metrics say for the second one?", "o": ["model = cache, 0 tokens, about 1.4 ms", "The same as the first", "An error"], "a": 0, "out": "cache  3 rows  1.4 ms avg  0 tokens in\nstand-in  21 rows  11.4 ms avg  3573 tokens in", "why": "A hit costs no model call."}, {"c": "You change one page of the knowledge base", "q": "What does the cache serve until the TTL ends?", "o": ["The old answer: write the limit in the README", "The new answer", "Nothing"], "a": 0, "out": "(restart or clear the cache after a change)", "why": "A cache trades freshness for speed."}, {"c": "Tests that share an application cache", "q": "What goes wrong without a reset?", "o": ["An answer cached by one test is served in the next", "Nothing", "The tests run faster"], "a": 0, "out": "(a conftest fixture sets app.state.cache = None)", "why": "State that lives as long as the process leaks between tests."}],["Cache rookie", "Cache regular", "Cache keeper"],"A cache key holds everything that changes the answer, above all the role; the TTL is the written limit; hits cost nothing; and tests need a fresh cache each time.");</script>
+<p><small>Tick &ldquo;Play the Cache Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a fallback with a timeout and a clear failure, a cache whose key contains the role and whose limit is written down, tests for both (including a role leak), and the wiring into the API and the metrics.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 138 checklist.</li><li>Share one line in the comments: what is the time to live of your cache, and why?</li><li><strong>Next:</strong> Friday is a teach-back: you explain SLI versus SLO.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

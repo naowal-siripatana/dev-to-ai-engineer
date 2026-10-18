@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 135 - Reliability: timeouts, fallback and caching</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 135 &middot; LEVEL 12: LLMOPS</div><h1>Reliability: timeouts, fallback and caching</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to make a model call survive a failure with a timeout and a fallback, and say what a safe cache needs.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Which five numbers are on your dashboard plan?</li><li>What is the difference between NULL and 0 for the tokens of a request?</li></ol><details><summary>Answers</summary><ol><li>Question count, success rate, average (and median) response time, total cost and failed queries.</li><li>NULL means not measured; 0 means measured and zero (for example no model was called).</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your model provider has an outage at 2 a.m. for ten minutes. What does your assistant do, and what does the user see: an error, a spinner, or an answer?</strong></p><details><summary>Guess first, then open</summary><p>It depends on what you built <em>before</em> the outage. A system that has a <strong>timeout</strong> (so that it does not wait for ever), a <strong>fallback</strong> (a second model to try), and a clear message when everything fails, gives an answer or an honest &ldquo;try again in a minute&rdquo;. One that has none of these hangs, or shows a stack trace.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: a timeout, so that you stop waiting</h3>
+<p>A model call can hang. Without a limit, your request hangs too, and so does your user. A <strong>timeout</strong> says &ldquo;if there is no answer in N seconds, give up&rdquo;. Choose N from what a good call needs plus some room. One honest limit: in Python you cannot kill a thread, so the slow call keeps running in the background, and its answer is simply ignored.</p>
+<h3>Piece 2: a fallback, and honesty about which one answered</h3>
+<p>When the first model fails or is too slow, try a <strong>second model</strong>. It may be cheaper, weaker or from another provider. Do not hide it: record <strong>which model answered</strong> in the metrics, so that you can see how often you fall back, and what it costs you in quality. Only fall back on <em>expected</em> failures (a provider error, a timeout). A bug in your own code must still be seen, not hidden by a fallback. And when <em>everything</em> fails, give a clear <code>503</code> with a message, not a crash.</p>
+<h3>Piece 3: a cache trades freshness for speed and cost</h3>
+<p>If the same question comes again, you can serve the last answer and skip the model: faster and free. But a cache can serve a <strong>wrong</strong> answer if its key is not complete, and an <strong>old</strong> one if the knowledge changed. So the key must contain everything that changes the answer, above all the <strong>role</strong> (an answer made for staff must never be served to a customer), and the limit (the time to live) must be written down.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> the timeout is a <code>CancellationToken</code> with a deadline (or Polly&rsquo;s timeout policy), the fallback is Polly&rsquo;s fallback policy, and the cache is <code>IMemoryCache</code> with an absolute expiration. The same warning applies to the cache key: it is the one place where a missing part becomes a security bug.</div>
+<div class="box cap"><strong>Capstone:</strong> a real service is judged by what it does when something is wrong. This week you add exactly these, and on Saturday the dashboard shows how often they were needed.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>What can go wrong, and what to do about each:</p><pre><code>what can go wrong with a model call           what you do                                        what it costs you
+it fails (an error, a 503)                    retry (Day 51), then fall back to a second model   a second model to pay for and test
+it is slow                                    a TIMEOUT: stop waiting after N seconds             a few answers lost, and a thread you cannot kill
+it is down for a while                        fall back, and say so in the metrics                the fallback may be weaker or different
+you ask the same thing again and again        a CACHE with a time to live                         an answer may be as old as the TTL
+everything fails                               a clear 503 message, not a crash or a blank page    the user waits, and knows why</code></pre><div class="box"><strong>The models here are stand-ins.</strong> We have no key, so the &ldquo;first model&rdquo; and the &ldquo;second model&rdquo; are small classes: one that works, one that always fails (a 503) and one that sleeps too long. They are <strong>not real models</strong>. They let you test the <em>system around</em> a model, which is the only part that is the same for every provider.</div><p>The module, in <code>src/my_ai_project/reliability.py</code>: <code>with_timeout</code>, <code>FallbackWriter</code> (which remembers which model answered in <code>used</code>), and the <code>AnswerCache</code> with its key. The cache is for Thursday; read the first two now:</p><pre><code>import concurrent.futures
+import logging
+import re
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from my_ai_project.grounding import Writer
+from my_ai_project.llm import LlmError
+
+logger = logging.getLogger(&quot;reliability&quot;)
+
+
+class Unavailable(Exception):
+    &quot;&quot;&quot;Every way of getting an answer failed. The caller shows a clear message; it does not crash.&quot;&quot;&quot;
+
+
+def with_timeout(call: Callable[[], str], seconds: float) -&gt; str:
+    &quot;&quot;&quot;Give up waiting after some seconds. The slow call keeps running in its thread (Python cannot kill a thread): the answer is simply ignored.&quot;&quot;&quot;
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(call)
+    try:
+        return future.result(timeout=seconds)
+    except concurrent.futures.TimeoutError as err:
+        raise TimeoutError(f&quot;no answer after {seconds} seconds&quot;) from err
+    finally:
+        pool.shutdown(wait=False)
+
+
+class FallbackWriter:
+    &quot;&quot;&quot;Try the first model; if it fails or is too slow, try the second. `used` says which one answered, for the metrics.&quot;&quot;&quot;
+
+    def __init__(self, primary: Writer, secondary: Writer | None, timeout: float = 20.0, names: tuple[str, str] = (&quot;primary&quot;, &quot;fallback&quot;)) -&gt; None:
+        self.primary, self.secondary, self.timeout, self.names = primary, secondary, timeout, names
+        self.used = names[0]
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        try:
+            return with_timeout(lambda: self.primary.complete(prompt, system), self.timeout)
+        except (LlmError, TimeoutError) as err:
+            logger.warning(&quot;the first model failed (%s: %s)&quot;, type(err).__name__, err)
+            if self.secondary is None:
+                raise Unavailable(&quot;the model did not answer and there is no fallback&quot;) from err
+        secondary = self.secondary
+        try:
+            self.used = self.names[1]
+            return with_timeout(lambda: secondary.complete(prompt, system), self.timeout)
+        except (LlmError, TimeoutError) as err:
+            logger.error(&quot;the fallback model failed too (%s: %s)&quot;, type(err).__name__, err)
+            raise Unavailable(&quot;neither model answered&quot;) from err
+
+
+def normalize(question: str) -&gt; str:
+    return re.sub(r&quot;\s+&quot;, &quot; &quot;, question.strip().lower())
+
+
+def cache_key(role: str, question: str, top_k: int) -&gt; str:
+    &quot;&quot;&quot;The role is part of the key: an answer made for staff must never be served to a customer.&quot;&quot;&quot;
+    return f&quot;{role}|{top_k}|{normalize(question)}&quot;
+
+
+@dataclass
+class Entry:
+    value: object
+    expires_at: float
+
+
+class AnswerCache:
+    &quot;&quot;&quot;A small in-memory cache with a time to live. It trades freshness for speed and cost, so its limit is written down: an answer can be this old.&quot;&quot;&quot;
+
+    def __init__(self, ttl_seconds: float = 300.0, max_entries: int = 500, clock: Callable[[], float] = time.monotonic) -&gt; None:
+        self.ttl, self.max_entries, self.clock = ttl_seconds, max_entries, clock
+        self.entries: dict[str, Entry] = {}
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key: str) -&gt; object | None:
+        entry = self.entries.get(key)
+        if entry is None or entry.expires_at &lt;= self.clock():
+            self.entries.pop(key, None)
+            self.misses += 1
+            return None
+        self.hits += 1
+        return entry.value
+
+    def put(self, key: str, value: object) -&gt; None:
+        if len(self.entries) &gt;= self.max_entries:
+            self.entries.pop(next(iter(self.entries)))   # the oldest one goes
+        self.entries[key] = Entry(value, self.clock() + self.ttl)
+
+    def clear(self) -&gt; None:
+        self.entries.clear()</code></pre><p>Five scenarios on the real pipeline (real retrieval, the real question about the alarm), with a timeout of half a second. <code>fallback_demo.py</code>:</p><pre><code>import os
+import time
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.hybrid import KeywordIndex
+from my_ai_project.llm import LlmError
+from my_ai_project.rag import answer_question
+from my_ai_project.reliability import FallbackWriter, Unavailable
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkStore
+
+
+class Down:
+    &quot;&quot;&quot;A stand-in for a model that is down. NOT a real model.&quot;&quot;&quot;
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        raise LlmError(&quot;the provider answered 503&quot;)
+
+
+class Slow:
+    &quot;&quot;&quot;A stand-in for a model that takes too long. NOT a real model.&quot;&quot;&quot;
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        time.sleep(2.0)
+        return &quot;an answer that comes too late&quot;
+
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+embedder, keywords = FastEmbedder(), KeywordIndex(store.all_chunks())
+question = &quot;How do I silence the alarm?&quot;
+backup = SimulatedWriter()   # the second &#x27;model&#x27; is also a stand-in
+
+SCENARIOS = [
+    (&quot;1 the first model works&quot;, FallbackWriter(SimulatedWriter(), backup, timeout=0.5)),
+    (&quot;2 the first model is down&quot;, FallbackWriter(Down(), backup, timeout=0.5)),
+    (&quot;3 the first model is too slow (timeout 0.5 s)&quot;, FallbackWriter(Slow(), backup, timeout=0.5)),
+    (&quot;4 both models are down&quot;, FallbackWriter(Down(), Down(), timeout=0.5)),
+    (&quot;5 the first model is down and there is no fallback&quot;, FallbackWriter(Down(), None, timeout=0.5)),
+]
+for label, writer in SCENARIOS:
+    started = time.perf_counter()
+    try:
+        result = answer_question(question, embedder, store, keywords, writer, allowed_kinds=allowed_kinds(&quot;staff&quot;))
+        outcome = f&quot;answered by &#x27;{writer.used}&#x27;: {result.text}&quot;
+    except Unavailable as err:
+        outcome = f&quot;Unavailable: {err}&quot;
+    print(f&quot;{label:&lt;52}{(time.perf_counter() - started) * 1000:&gt;6.0f} ms   {outcome}&quot;)</code></pre><div class="out"><b>You should see</b><br>1 the first model works&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 37 ms&nbsp;&nbsp; answered by 'primary': Open Settings, choose Sound, and set the alarm to Silent [faq-alarm-sound#0].<br>2 the first model is down&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;7 ms&nbsp;&nbsp; answered by 'fallback': Open Settings, choose Sound, and set the alarm to Silent [faq-alarm-sound#0].<br>3 the first model is too slow (timeout 0.5 s)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;519 ms&nbsp;&nbsp; answered by 'fallback': Open Settings, choose Sound, and set the alarm to Silent [faq-alarm-sound#0].<br>4 both models are down&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;22 ms&nbsp;&nbsp; Unavailable: neither model answered<br>5 the first model is down and there is no fallback&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;11 ms&nbsp;&nbsp; Unavailable: the model did not answer and there is no fallback<br><br>(and in the log, one line per failure:)<br>the first model failed (LlmError: the provider answered 503)<br>the first model failed (TimeoutError: no answer after 0.5 seconds)<br>the fallback model failed too (LlmError: the provider answered 503)</div><p>Read it. In 2 the failure costs almost nothing (7 ms): the second model answers at once. In 3 the user waits the whole timeout (519 ms) before the second model is tried: <strong>a timeout is the price of a slow failure</strong>, so choose it with care. In 4 and 5 the answer is a clear <code>Unavailable</code>, which the API turns into a <code>503</code>. And every failure left a line in the log.</p><p>The rules of a safe cache, for Thursday:</p><pre><code>a cache is only safe if its KEY contains everything that changes the answer
+  the question (normalised: trim, lower case, one space)
+  the ROLE      (Day 79: an answer made for staff must never be served to a customer)
+  top_k and anything else that changes what is retrieved
+and its LIMIT is written down: an answer can be as old as the time to live. After the pages change, the cache can still serve the old answer
+until the TTL ends (or until you clear it, or restart).</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c reliability</code>). The database must be running; no key is needed.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>reliability.py</code> (leave the cache for now, or keep it) and <code>fallback_demo.py</code>, and run it. Match the five lines.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Change the timeout of scenario 3 to 0.1 s and to 3 s. <strong>Predict first:</strong> how long will the user wait in each case, and which model answers?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Make the first model raise a <code>ValueError</code> (a bug in your own code) instead of an <code>LlmError</code>. Does the fallback hide it? Should it?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Write the tests of the template: first model works; first model down; first model too slow; both down; no fallback; a bug is not hidden. Then wire it in: <code>get_writer</code> builds a <code>FallbackWriter</code> (a primary model and an optional second one from an environment variable), the route turns <code>Unavailable</code> into a <code>503</code>, and the metrics record <code>writer.used</code> as the model.</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Add a timeout and a fallback model&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The test for the slow model takes a long time</strong>: the slow stand-in sleeps. Keep its sleep short (1 s) and the timeout shorter (0.1 s).</li><li><strong>Everything is slow after a timeout</strong>: the slow thread is still running. That is the limit of threads in Python; a real HTTP client has its own timeout, which you should set as well (<code>timeout=30</code> in the SDK).</li><li><strong>The fallback hides a real bug</strong>: catch only <code>LlmError</code> and <code>TimeoutError</code>, not <code>Exception</code>.</li><li><strong>mypy: the type of the writer</strong>: both models implement the <code>Writer</code> protocol (<code>complete(prompt, system)</code>).</li></ul><details><summary>Solution: Step 2</summary><p>With 0.1 s the user waits about 0.1 s and the fallback answers; with 3 s the slow model answers after 2 s (it is not too slow any more), so the user waits 2 s and the <em>first</em> model answers. The timeout decides who answers, and how long the user waits.</p></details><details><summary>Solution: Step 3</summary><p>It must not hide it: a <code>ValueError</code> is a bug, not a provider failure, and falling back would only make the bug harder to see. The test &ldquo;a bug is not hidden by the fallback&rdquo; keeps it that way. Fall back on failures you expect, and let the rest crash loudly (in a test, or in a log you read).</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What does a timeout cost you?</li><li>Why record which model answered?</li><li>Why catch only some errors in the fallback?</li></ol><details><summary>Answers</summary><ol><li>A slow failure costs the user the whole timeout before the second try, and the slow call may keep running in the background.</li><li>To see how often you fall back and what it does to quality and cost.</li><li>A provider error is expected and recoverable; a bug in your own code should not be hidden by a second model.</li></ol></details></section>
+<section id="game-day135" class="game"><h2><span class="n">+</span> &middot; Game: Fallback Check <span class="t">5 min</span></h2>
+<p><p>You make a call reliable. Read the scenario, pick what happens, then see the real output. (The models are stand-ins.)</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day135-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day135-play">Start the game</button></div>
+<div id="day135-round" hidden><div class="gtop"><span id="day135-num">Round 1</span><span id="day135-score">Score 0</span></div>
+<pre hidden><code id="day135-code"></code></pre><div class="q" id="day135-q"></div><div class="choices" id="day135-opts"></div>
+<div class="fb" id="day135-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day135-next" hidden>Next round</button></p></div>
+<div id="day135-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day135",[{"c": "The first model works", "q": "Which model answers?", "o": ["The first: 'primary', about 37 ms", "The fallback", "Neither"], "a": 0, "out": "1 the first model works     37 ms   answered by 'primary': Open Settings, choose Sound, and set the alarm to Silent [faq-alarm-sound#0].", "why": "The fallback is only for failures."}, {"c": "The first model is down (a 503)", "q": "What happens?", "o": ["The fallback answers at once, in about 7 ms", "The user sees an error", "A 10 s wait"], "a": 0, "out": "2 the first model is down     7 ms   answered by 'fallback': ...", "why": "A fast failure costs almost nothing."}, {"c": "The first model is too slow (timeout 0.5 s)", "q": "How long does the user wait?", "o": ["About 519 ms: the whole timeout, then the fallback", "2 s", "0 ms"], "a": 0, "out": "3 the first model is too slow (timeout 0.5 s)   519 ms   answered by 'fallback': ...", "why": "A timeout is the price of a slow failure."}, {"c": "Both models are down", "q": "What does the code raise?", "o": ["Unavailable: neither model answered (the API turns it into a 503)", "A crash", "An empty answer"], "a": 0, "out": "4 both models are down   22 ms   Unavailable: neither model answered", "why": "A clear message, not a stack trace."}, {"c": "The first model raises a ValueError (a bug of your own)", "q": "What should the fallback do?", "o": ["Nothing: it only catches expected failures, so the bug is seen", "Hide it and call the second model", "Retry for ever"], "a": 0, "out": "(test: a bug is not hidden by the fallback)", "why": "A fallback must not hide your own bugs."}, {"c": "Why record which model answered?", "q": "What does it tell you?", "o": ["How often you fall back, and what that does to quality and cost", "Nothing useful", "Which model is cheaper"], "a": 0, "out": "model: 'backup-model'   (in the metrics row)", "why": "Honesty in the metrics."}],["Reliability rookie", "Reliability regular", "Fallback builder"],"Set a timeout, fall back only on expected failures, say which model answered, and give a clear 503 when everything fails.");</script>
+<p><small>Tick &ldquo;Play the Fallback Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a timeout, a fallback to a second model that says which one answered, a clear <code>Unavailable</code> when everything fails, and tests for each case.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 135 checklist.</li><li>Share one line in the comments: what is a sensible timeout for your calls, and why?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you add a thumbs up or down and store it, and learn what an SLI and an SLO are.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
