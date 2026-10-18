@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 124 &middot; LEVEL 11: SECURITY &middot; MIXED PRACTICE</div><h1>Mixed practice: try 5 injections and record what happened</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to attack your own system several ways and record what stopped each attack, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why an allow-list and not a deny-list?</li><li>Name two things that do not belong in an audit log.</li></ol><details><summary>Answers</summary><ol><li>A deny-list misses what you did not think of; an allow-list accepts only what is written down.</li><li>Secrets or keys, the text of answers, personal data you do not need (hide emails).</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why an allow-list and not a deny-list?</li><li>Name two things that do not belong in an audit log.</li></ol><details><summary>Answers</summary><ol><li>A deny-list misses what you did not think of; an allow-list accepts only what is written down.</li><li>Secrets or keys, the text of answers, personal data you do not need (hide emails).</li></ol></details><div class="spaced" data-day="124" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You attack your own assistant five or more ways, and record what each attack did and what stopped it. You get a contract, and you write the script yourself, from a blank file. Use <code>api.py</code>, <code>deps.py</code>, <code>tool_loop.py</code> and <code>audit.py</code>.</p><pre><code>run_injections.py
   runs ATTACKS against the real API (FastAPI TestClient, real database) and prints one table:
      attack | where it enters | result | which defence caught it (or &#x27;NOTHING&#x27;)

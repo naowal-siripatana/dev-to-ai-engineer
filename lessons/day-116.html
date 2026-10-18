@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 116 &middot; LEVEL 10: DESIGN</div><h1>When NOT to use AI, and decision frameworks</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to choose between a rule, one model call, RAG, an agent and a person for a use case, and defend the simplest choice with evidence.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What makes a requirement testable?</li><li>Why write &ldquo;where you are today&rdquo; next to a success criterion?</li></ol><details><summary>Answers</summary><ol><li>It says one thing and comes with a check: a yes or no, or a number, and the script that gives it.</li><li>The gap between the two is the plan, and it keeps the criterion honest.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What makes a requirement testable?</li><li>Why write &ldquo;where you are today&rdquo; next to a success criterion?</li></ol><details><summary>Answers</summary><ol><li>It says one thing and comes with a check: a yes or no, or a number, and the script that gives it.</li><li>The gap between the two is the plan, and it keeps the criterion honest.</li></ol></details><div class="spaced" data-day="116" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A teammate says: &ldquo;Let&rsquo;s use AI for the error code lookup too.&rdquo; Your vector search failed to find the E104 page for the question about E104. What is a better tool for that job?</strong></p><details><summary>Guess first, then open</summary><p>A <strong>dictionary</strong>: the code is the key, the answer is the value. It is exact, instant, free and always right. The best use of AI is knowing <em>where not to use it</em>: when a rule gives the exact answer, a model can only be slower and less sure.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown stackonly"><li class="box-d"><b>1  A rule or plain code</b><span>start here</span></li><li class="box-d"><b>2  One model call</b></li><li class="box-d"><b>3  RAG</b><span>when it needs your documents</span></li><li class="box-d"><b>4  An agent</b><span>when it must choose steps</span></li><li class="box-d"><b>5  A person</b><span>when it must not be wrong</span></li></ol><figcaption>Start at the top and move down only with evidence.</figcaption></figure>
 <h3>Piece 1: a ladder, and you start at the top</h3>
 <p>There are five ways to solve a problem, from the simplest to the most complex: a <strong>rule</strong>, one <strong>model call</strong>, <strong>RAG</strong>, an <strong>agent</strong>, or a <strong>person</strong>. Each step down costs more, is slower, is less predictable and is harder to test. So you start at the top, and you move down only when the step above <em>cannot</em> do the job. Most beginners start at the bottom, because it is more exciting.</p>
 <h3>Piece 2: five questions decide it</h3>

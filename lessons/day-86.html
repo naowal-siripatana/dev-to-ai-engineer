@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 86 &middot; LEVEL 7: TOOLS</div><h1>Tool design: schemas, permissions, errors</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to design a tool with a clear description, a strict schema, a structured error and a permission check that runs first.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a tool error go back to the model as a result?</li><li>Who runs the function when a model &ldquo;calls&rdquo; it?</li></ol><details><summary>Answers</summary><ol><li>The model can read it and recover, or explain it to the user. An exception ends the loop and nobody learns why.</li><li>Your code. The model only sends a request that names the tool and the input.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a tool error go back to the model as a result?</li><li>Who runs the function when a model &ldquo;calls&rdquo; it?</li></ol><details><summary>Answers</summary><ol><li>The model can read it and recover, or explain it to the user. An exception ends the loop and nobody learns why.</li><li>Your code. The model only sends a request that names the tool and the input.</li></ol></details><div class="spaced" data-day="86" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Two tools do the same lookup. One is called <code>error</code> with the description &ldquo;errors&rdquo;. The other has a clear name, a clear description and a strict schema. Which one will the model use correctly, and why?</strong></p><details><summary>Guess first, then open</summary><p>The second. A tool&rsquo;s name, description and schema are the <em>only</em> things the model knows about it. They are a prompt. A vague tool gets called at the wrong time, with the wrong input, or never.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown stackonly"><li class="box-d"><b>The description</b><span>is a prompt</span></li><li class="box-d"><b>The schema</b><span>says what is allowed</span></li><li class="box-d"><b>The permissions</b><span>the tool acts for the user</span></li><li class="box-d"><b>The errors</b><span>come back as results</span></li></ol><figcaption>A tool is designed like an API for a reader that guesses.</figcaption></figure>
 <h3>Piece 1: the description is a prompt</h3>
 <p>Write it for the model. Say what the tool does, <strong>when to use it</strong>, and <strong>when not to</strong>. Put the format of the input in the schema (a <code>pattern</code>, an <code>enum</code>, a short <code>description</code> on each field), because a schema can be checked by code and a sentence cannot.</p>
 <h3>Piece 2: the error is part of the design</h3>

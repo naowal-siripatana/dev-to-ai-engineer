@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 21 &middot; LEVEL 3: DATA AND ML &middot; PROJECT LAB &middot; M2 CHECKPOINT</div><h1>Project Lab 3: a real LLM call</h1>
 <div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to call a real model from /api/chat with the key in an environment variable, log every call, and test it without a key.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Where does your app decide which LLM client every route uses?</li><li>Why do your tests use a fake client, and what would break if they called a real model?</li></ol><details><summary>Answers</summary><ol><li>In <code>deps.py</code>, in <code>get_llm_client</code>.</li><li>A fake is fast, free and the same every time. A real model costs money, is slow, needs a key, and gives different answers, so a test could fail for reasons you cannot control.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Where does your app decide which LLM client every route uses?</li><li>Why do your tests use a fake client, and what would break if they called a real model?</li></ol><details><summary>Answers</summary><ol><li>In <code>deps.py</code>, in <code>get_llm_client</code>.</li><li>A fake is fast, free and the same every time. A real model costs money, is slow, needs a key, and gives different answers, so a test could fail for reasons you cannot control.</li></ol></details><div class="spaced" data-day="21" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You are about to put a secret in your project. It will sit next to code that you push to GitHub every week. What is the one mistake that must never happen, and what stops it?</strong></p><details><summary>Guess first, then open</summary><p>The key must never reach Git. Things that stop it: the key lives in an <strong>environment variable</strong> (loaded from a <code>.env</code> file), and <code>.env</code> is listed in <code>.gitignore</code> <em>before</em> the file exists. Today you build that, plus a log line for every call so you can see what the model costs you.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
 <h3>Piece 1: a real client is just another client</h3>

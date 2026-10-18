@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 145 &middot; LEVEL 13: DEPLOYMENT &middot; MIXED PRACTICE</div><h1>Mixed practice: health checks and compose up</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to write health checks and a start order in a Compose file, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>depends_on</code> without a condition wait for?</li><li>Why does the service reach the database as <code>db</code> and not <code>localhost</code>?</li></ol><details><summary>Answers</summary><ol><li>Only for the other container to <em>start</em>, not to be ready.</li><li><code>localhost</code> is the container itself. The service name is the address on the Compose network.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>depends_on</code> without a condition wait for?</li><li>Why does the service reach the database as <code>db</code> and not <code>localhost</code>?</li></ol><details><summary>Answers</summary><ol><li>Only for the other container to <em>start</em>, not to be ready.</li><li><code>localhost</code> is the container itself. The service name is the address on the Compose network.</li></ol></details><div class="spaced" data-day="145" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Today <span class="t">2 min</span></h2><p><strong>Today you practise without the lesson open.</strong> Goal: <em>one command, <code>docker compose up -d --build</code>, starts the database, fills it, and starts the AI service only when both are ready.</em> You write the pieces from a blank file, then compare with the model below.</p><div class="box"><strong>Be clear about what was run.</strong> No container was started for this lesson (the Docker engine on the author&rsquo;s laptop did not respond). Checked for real: the files with <code>docker compose config</code>, two error messages, and the health command with exit codes 0 and 1. That a service really waits for <code>healthy</code> is standard Compose behaviour, and you will see it on your own machine.</div></section>
 <section><h2><span class="n">3</span> &middot; Plan first <span class="t">5 min</span></h2><p>Draw the order on paper before you write a line. Who must be ready before whom? Which part runs once and stops? Then open the sketch.</p><details><summary>The order</summary><pre><code>db        healthy (pg_isready says yes)
 ingest    starts when db is healthy, fills the table, exits 0

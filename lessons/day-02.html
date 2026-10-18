@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 2 &middot; LEVEL 1: PYTHON</div><h1>Project setup with uv</h1>
 <div class="meta"><span>45-60 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to create a Python project with uv, add a typed module, run it, and make your first Git commit.</div>
@@ -15,6 +16,7 @@
 <section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer both from memory, then open the answers.</p><ol><li>What does a type hint do while the program runs?</li><li>Which tool can catch a wrong-typed call before you run the program?</li></ol><details><summary>Answers</summary><ol><li>Nothing. Python ignores hints at runtime.</li><li><code>mypy</code> (or an editor that reads hints).</li></ol></details></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your code works on your laptop. Your friend installs it, and it breaks. Why?</strong></p><details><summary>Guess first, then open</summary><p>Different Python version, missing packages, or files in different places. A project file and a lock file remove the guesswork. That is what <code>uv</code> gives you.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">10 min</span></h2>
+<figure class="diagram"><ol class="flow"><li class="box-d"><b>pyproject.toml</b><span>the ID card: name, Python, packages</span></li><li class="arrow" aria-hidden="true"><i>uv sync</i></li><li class="box-d"><b>.venv</b><span>a private toolbox for this project</span></li><li class="arrow" aria-hidden="true"><i>uv run</i></li><li class="box-d"><b>your code</b><span>uses only that toolbox</span></li></ol><figcaption>Each project carries its own list of packages and its own toolbox.</figcaption></figure>
 <h3>Piece 1: a project has an ID card</h3>
 <p>A project is a folder with a file called <code>pyproject.toml</code>. It says the project name, which Python it needs, and which packages it uses.</p>
 <h3>Piece 2: a private toolbox for each project</h3>

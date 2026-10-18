@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 9 &middot; LEVEL 2: AI BACKEND</div><h1>FastAPI: your first endpoint</h1>
 <div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to run a FastAPI app and call GET /health and POST /api/chat from the docs page.</div>
@@ -15,6 +16,7 @@
 <section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does Pydantic do with <code>top_k=99</code> when the limit is 10?</li><li>How do you try an idea on a branch and then bring it back into <code>main</code>?</li></ol><details><summary>Answers</summary><ol><li>It raises a <code>ValidationError</code> that says the value must be at most 10.</li><li><code>git switch -c idea</code>, commit your work, <code>git switch main</code>, then <code>git merge idea</code>.</li></ol></details></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You type a web address in a browser, and a page appears. What if the &ldquo;page&rdquo; were one of your own Python functions?</strong></p><details><summary>Guess first, then open</summary><p>Then another program, a browser, a phone app or a front end, can call your function from far away. That is what an API is, and today you build the first one.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>HTTP request</b><span>address and body</span></li><li class="arrow" aria-hidden="true"><i>routes to</i></li><li class="box-d"><b>A function</b><span>with a decorator</span></li><li class="arrow" aria-hidden="true"><i>models check</i></li><li class="box-d"><b>Pydantic</b><span>in and out</span></li><li class="arrow" aria-hidden="true"><i>sends</i></li><li class="box-d"><b>JSON response</b><span>and a test page at /docs</span></li></ol><figcaption>An endpoint is a function with an address.</figcaption></figure>
 <h3>Piece 1: an endpoint is a function with an address</h3>
 <p>In FastAPI you put a line above a function: <code>@app.get("/health")</code>. It says: &ldquo;when someone asks for <code>/health</code>, run this function and send back what it returns&rdquo;. <code>get</code> is the kind of request (reading). <code>post</code> is for sending data in.</p>
 <h3>Piece 2: you get a test page for free</h3>

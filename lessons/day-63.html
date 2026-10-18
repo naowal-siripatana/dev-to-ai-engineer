@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 63 &middot; LEVEL 6: RAG &middot; PROJECT LAB</div><h1>Project Lab 9: chunks in Postgres</h1>
 <div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to store chunks with their metadata in Postgres, and return the nearest 3 with one SQL query, with tests that skip when the database is down.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why do you write an upsert and not a plain insert when you fill the database?</li><li>What does an HNSW index trade for speed?</li></ol><details><summary>Answers</summary><ol><li>So the script can run twice without a duplicate key error or doubled data.</li><li>Exactness: it finds almost the same nearest rows, not always exactly the same (the recall is below 100 percent), and it takes time and memory to build.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why do you write an upsert and not a plain insert when you fill the database?</li><li>What does an HNSW index trade for speed?</li></ol><details><summary>Answers</summary><ol><li>So the script can run twice without a duplicate key error or doubled data.</li><li>Exactness: it finds almost the same nearest rows, not always exactly the same (the recall is below 100 percent), and it takes time and memory to build.</li></ol></details><div class="spaced" data-day="63" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>On Day 35 you cut documents into chunks of at most 40 tokens, in memory. Tomorrow someone asks: &ldquo;Which chunk came from which document, and where in it?&rdquo; What does a chunk need to carry with it to answer that?</strong></p><details><summary>Guess first, then open</summary><p>At least the <strong>document id</strong> and the <strong>position</strong> of the chunk in it. That is called <strong>metadata</strong>: facts <em>about</em> the text. Without them an answer cannot say where it came from. Today every chunk is stored with its document id, its index and its token count, next to the vector.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
 <h3>Piece 1: one row per chunk</h3>

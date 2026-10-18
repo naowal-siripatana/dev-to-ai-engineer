@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 40 &middot; LEVEL 4: LLM APPS &middot; MIXED PRACTICE</div><h1>Mixed practice: rank documents by similarity</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to embed documents once and rank them for a question by cosine similarity, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a model call need the whole history on every turn?</li><li>What does <code>cosine similarity</code> say about two vectors that point in the same direction?</li></ol><details><summary>Answers</summary><ol><li>A call is stateless: the model keeps nothing between calls, so your code sends the earlier user and assistant messages again.</li><li>It is 1, the highest value. Unrelated vectors are near 0, and opposite ones are below 0.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a model call need the whole history on every turn?</li><li>What does <code>cosine similarity</code> say about two vectors that point in the same direction?</li></ol><details><summary>Answers</summary><ol><li>A call is stateless: the model keeps nothing between calls, so your code sends the earlier user and assistant messages again.</li><li>It is 1, the highest value. Unrelated vectors are near 0, and opposite ones are below 0.</li></ol></details><div class="spaced" data-day="40" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Another blank file. On Monday you ranked 5 sentences. Today you rank real documents from your knowledge base, and you decide what the computer reads. Does the result depend on what you put in the list?</strong></p><details><summary>Guess first, then open</summary><p>Yes, a lot: on <em>which</em> documents are in the index and on <em>which text</em> you embed for each. Today you will see the best match change when you add documents, and again when you change what you embed. Search quality is built from small choices like these.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
 <p>No new ideas today. The map of what you reuse:</p>

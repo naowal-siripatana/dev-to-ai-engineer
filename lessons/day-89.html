@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 89 &middot; LEVEL 7: TOOLS &middot; MIXED PRACTICE</div><h1>Mixed practice: the incident lookup as an MCP tool</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to expose a lookup as an MCP tool that obeys the same rules as your own loop, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Between which two parties does MCP work, and between which does function calling?</li><li>Why must a stdio server not print to standard output?</li></ol><details><summary>Answers</summary><ol><li>MCP: the host and the tools (a server). Function calling: the host and the model.</li><li>Standard output carries the protocol messages; extra text can break them. Use standard error for logs.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Between which two parties does MCP work, and between which does function calling?</li><li>Why must a stdio server not print to standard output?</li></ol><details><summary>Answers</summary><ol><li>MCP: the host and the tools (a server). Function calling: the host and the model.</li><li>Standard output carries the protocol messages; extra text can break them. Use standard error for logs.</li></ol></details><div class="spaced" data-day="89" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You get a contract, and you write the server and the client yourself, from blank files. Use <code>tool_design.py</code> from Monday and what you learned on Wednesday.</p><pre><code>incident_server.py
   does  : an MCP server (stdio) with ONE tool, lookup_error(code: str)
           the tool uses execute() from tool_design.py (Day 86): same checks, same errors

@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 95 &middot; LEVEL 7: TOOLS</div><h1>Human-in-the-loop, and when not to use agents</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to put a person's approval before a risky tool, in the right order of checks, and say when a workflow is better than an agent.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are the three parts of one turn of an agent loop?</li><li>Which stop rule did you add in the exercise, and who sets it?</li></ol><details><summary>Answers</summary><ol><li>Think (the model decides), act (your code runs the tool), observe (the result goes into the history).</li><li>The maximum number of steps, set by your code.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are the three parts of one turn of an agent loop?</li><li>Which stop rule did you add in the exercise, and who sets it?</li></ol><details><summary>Answers</summary><ol><li>Think (the model decides), act (your code runs the tool), observe (the result goes into the history).</li><li>The maximum number of steps, set by your code.</li></ol></details><div class="spaced" data-day="95" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your agent can read incidents. Now you give it a tool that <em>closes</em> an incident. A model misreads a question and closes the wrong one. Who should have been asked first, and where in the code?</strong></p><details><summary>Guess first, then open</summary><p>A <strong>person</strong>, <em>before</em> the tool runs, and in <strong>your code</strong>, not in the prompt. A tool that only reads can be wrong and nothing is lost. A tool that changes something can do damage, so a human approves each call. This is called <strong>human-in-the-loop</strong>.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>Tool call</b></li><li class="arrow" aria-hidden="true"><i>allowed?</i></li><li class="box-d"><b>Allow-list</b><span>unknown tools stop here</span></li><li class="arrow" aria-hidden="true"><i>risky?</i></li><li class="box-d"><b>Ask a person</b><span>approve or refuse</span></li><li class="arrow" aria-hidden="true"><i>run</i></li><li class="box-d"><b>Audit log</b><span>what, who, when</span></li></ol><figcaption>Check in order: allowed, risky, then act and write it down.</figcaption></figure>
 <h3>Piece 1: mark the risky tools, and ask a person</h3>
 <p>Split your tools into <strong>safe</strong> (they only read) and <strong>risky</strong> (they change, send or delete). Keep the risky ones in a small set. Before a risky tool runs, your code <strong>pauses and asks a person</strong> to approve <em>that exact call</em> (the tool and its input). No approver, or a &ldquo;no&rdquo;, means the tool does not run, and the model gets an error result it can explain.</p>
 <h3>Piece 2: order of the checks</h3>

@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 28 &middot; LEVEL 3: DATA AND ML &middot; PROJECT LAB</div><h1>Project Lab 4: the mock knowledge base</h1>
 <div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to build a 20-document knowledge base and a loader that returns typed Documents, with a test.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does the loader from Day 23 skip a broken file instead of stopping?</li><li>Why do you look at the test pile only once?</li></ol><details><summary>Answers</summary><ol><li>One bad file must not stop the whole load. It writes a warning with the file name and goes on, so you keep every good document and know what was skipped.</li><li>If you look, change something and look again, the test pile starts to teach you, and the score gets too optimistic.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does the loader from Day 23 skip a broken file instead of stopping?</li><li>Why do you look at the test pile only once?</li></ol><details><summary>Answers</summary><ol><li>One bad file must not stop the whole load. It writes a warning with the file name and goes on, so you keep every good document and know what was skipped.</li><li>If you look, change something and look again, the test pile starts to teach you, and the score gets too optimistic.</li></ol></details><div class="spaced" data-day="28" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your loader finds the wrong folder and returns an empty list. No error, no warning, just zero documents. How long until someone notices, and who finds out first: you or your user?</strong></p><details><summary>Guess first, then open</summary><p>Probably the user, much later, when the assistant answers every question with &ldquo;I do not know&rdquo;. A silent empty result is one of the nastiest bugs in data work, because everything <em>looks</em> fine. Today you build the knowledge base, and you make that failure loud.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
 <h3>Piece 1: one knowledge base, three kinds of document</h3>

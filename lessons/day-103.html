@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 103 &middot; LEVEL 8: EVALUATION &middot; MIXED PRACTICE</div><h1>Mixed practice: score 5 questions by hand, then by script</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to score five questions by hand and by script, from a blank file, and compare the two.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the MRR for ranks 1, 3 and none?</li><li>Why does the golden loader check the expected sources?</li></ol><details><summary>Answers</summary><ol><li>(1 + 1/3 + 0) / 3 = 0.44.</li><li>So that a typo in the file is caught as a file error and does not look like a pipeline failure.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the MRR for ranks 1, 3 and none?</li><li>Why does the golden loader check the expected sources?</li></ol><details><summary>Answers</summary><ol><li>(1 + 1/3 + 0) / 3 = 0.44.</li><li>So that a typo in the file is caught as a file error and does not look like a pipeline failure.</li></ol></details><div class="spaced" data-day="103" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. First you score five questions <strong>by hand</strong>, then you write the script, and then you compare. Use <code>golden.py</code>, <code>hybrid.py</code>, <code>rag.py</code>, <code>simulated.py</code> and <code>access.py</code>.</p><pre><code>score_by_script.py
   input : data/golden-5.jsonl (Day 102) and the real pipeline, asked as the role staff
   does  : for each golden question

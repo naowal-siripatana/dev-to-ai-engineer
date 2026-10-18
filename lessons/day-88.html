@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 88 &middot; LEVEL 7: TOOLS</div><h1>MCP: what it is, and a tiny server</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to run a tiny MCP server, list its tools from a client, call one, and say where MCP sits next to function calling.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is the permission checked before the input in a tool?</li><li>Name two parts of a good tool error.</li></ol><details><summary>Answers</summary><ol><li>So that a refused caller learns nothing about the data (no list of valid codes, no hint that a record exists).</li><li>A stable code, a plain message, a hint for the next step.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is the permission checked before the input in a tool?</li><li>Name two parts of a good tool error.</li></ol><details><summary>Answers</summary><ol><li>So that a refused caller learns nothing about the data (no list of valid codes, no hint that a record exists).</li><li>A stable code, a plain message, a hint for the next step.</li></ol></details><div class="spaced" data-day="88" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You wrote a tool for your assistant. A colleague writes another AI app and wants the same tool. Do they copy your code? And what if there are ten apps and ten tools?</strong></p><details><summary>Guess first, then open</summary><p>Copying does not scale: ten apps and ten tools means a hundred little adapters. The <strong>Model Context Protocol</strong> (MCP) is a shared standard: you put the tool in a <em>server</em> once, and any MCP-aware app can list its tools and call them, in the same way, without knowing how they are written.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow"><li class="box-d"><b>Host</b><span>the app you use</span></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>MCP client</b><span>inside the host</span></li><li class="arrow" aria-hidden="true"><i>stdio or HTTP</i></li><li class="box-d"><b>MCP server</b><span>offers tools</span></li></ol><figcaption>One host, one client per server: MCP does not replace function calling.</figcaption></figure>
 <h3>Piece 1: a host, a client and a server</h3>
 <p>The <strong>host</strong> is the AI application. Inside it, an MCP <strong>client</strong> keeps a connection to an MCP <strong>server</strong>, which is a separate program. The server offers <strong>tools</strong> (and, in the protocol, also <em>resources</em> and <em>prompts</em>; today only tools). The client can ask <code>list_tools</code> and <code>call_tool</code>.</p>
 <h3>Piece 2: MCP does not replace function calling</h3>

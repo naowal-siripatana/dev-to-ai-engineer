@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 26 &middot; LEVEL 3: DATA AND ML &middot; MIXED PRACTICE</div><h1>Mixed practice: train a tiny model</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to train a small model, choose its setting with validation, and report the test accuracy once, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are the train, validation and test piles for?</li><li>Why compare a model with a baseline?</li></ol><details><summary>Answers</summary><ol><li>Train: the model learns from it. Validation: you choose settings with it. Test: one final score at the very end.</li><li>Because an accuracy means little alone. A model must beat the dumbest sensible answer (for example always the most common class) to have learned something.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are the train, validation and test piles for?</li><li>Why compare a model with a baseline?</li></ol><details><summary>Answers</summary><ol><li>Train: the model learns from it. Validation: you choose settings with it. Test: one final score at the very end.</li><li>Because an accuracy means little alone. A model must beat the dumbest sensible answer (for example always the most common class) to have learned something.</li></ol></details><div class="spaced" data-day="26" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Another blank file. You know how to split the data, and today you train a model. One rule decides if your result is honest: how many times do you look at the test pile?</strong></p><details><summary>Guess first, then open</summary><p>Once. Every time you look at the test score and then change something, the test pile starts to teach the model, and it stops being a fair exam. You will choose with validation and look at the test pile one time, at the end.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
 <p>No new ideas today, apart from one small model. The map of what you reuse:</p>

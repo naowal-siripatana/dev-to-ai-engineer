@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 33 &middot; LEVEL 3: DATA AND ML &middot; MIXED PRACTICE</div><h1>Mixed practice: tokens and cost</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to count the tokens of every document, estimate the cost of sending them, and explain why pasting everything breaks at real size, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What shares the context window in one call?</li><li>The same Thai sentence was 6 tokens with one encoding and 18 with another. What does that tell you?</li></ol><details><summary>Answers</summary><ol><li>The prompt (question, instructions, documents) and the model&rsquo;s answer.</li><li>Each tokenizer has its own table of pieces, so a token count only makes sense for the model it was counted for. Count with a tokenizer that matches your model.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What shares the context window in one call?</li><li>The same Thai sentence was 6 tokens with one encoding and 18 with another. What does that tell you?</li></ol><details><summary>Answers</summary><ol><li>The prompt (question, instructions, documents) and the model&rsquo;s answer.</li><li>Each tokenizer has its own table of pieces, so a token count only makes sense for the model it was counted for. Count with a tokenizer that matches your model.</li></ol></details><div class="spaced" data-day="33" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your assistant works with 20 documents today. Your boss says: &ldquo;Why not just paste all of them into every prompt?&rdquo; You have two minutes and one script. What do you show?</strong></p><details><summary>Guess first, then open</summary><p>You show numbers, not opinions: how many tokens the knowledge base has, what that costs for a thousand questions, and what happens when the knowledge base is as big as a real one. Today you build that script from a blank file.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
 <p>No new ideas today. The map of what you reuse:</p>

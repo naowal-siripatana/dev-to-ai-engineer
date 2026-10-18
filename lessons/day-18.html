@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 18 &middot; LEVEL 3: DATA AND ML</div><h1>Pandas: load and clean a table</h1>
 <div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to load a CSV of error codes, clean it and print three clean rows.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Where does your app decide which LLM client every route uses?</li><li>A client asks for <code>/api/errors/E999</code> and there is no such error code. Which status should it get?</li></ol><details><summary>Answers</summary><ol><li>In <code>deps.py</code>, in the function <code>get_llm_client</code>.</li><li><code>404</code> Not Found: the address is fine, but the thing it points to does not exist. (You build this on Thursday.)</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Where does your app decide which LLM client every route uses?</li><li>A client asks for <code>/api/errors/E999</code> and there is no such error code. Which status should it get?</li></ol><details><summary>Answers</summary><ol><li>In <code>deps.py</code>, in the function <code>get_llm_client</code>.</li><li><code>404</code> Not Found: the address is fine, but the thing it points to does not exist. (You build this on Thursday.)</li></ol></details><div class="spaced" data-day="18" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A colleague sends you a table of error codes. Some codes are lower case, some have spaces around them, one is missing, and one appears twice. If your assistant reads it as it is, which answers go wrong?</strong></p><details><summary>Guess first, then open</summary><p>Almost all of them. <code>e102</code> and <code>E102</code> are different words to a computer, a code with a space does not match, and the double entry may show up twice in an answer. A model is only as good as the data you give it, and today you clean a small table before anyone uses it.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>CSV file</b></li><li class="arrow" aria-hidden="true"><i>read_csv</i></li><li class="box-d"><b>DataFrame</b><span>a table in memory</span></li><li class="arrow" aria-hidden="true"><i>one line per column</i></li><li class="box-d"><b>Cleaned column</b><span>strip, fix, fill</span></li><li class="arrow" aria-hidden="true"><i>look again</i></li><li class="box-d"><b>Before and after</b><span>check what changed</span></li></ol><figcaption>Look before and after: a clean table you did not check is a guess.</figcaption></figure>
 <h3>Piece 1: a DataFrame is a table in memory</h3>
 <p><strong>pandas</strong> is the Python library for tables. <code>pd.read_csv("file.csv")</code> reads a file and gives you a <strong>DataFrame</strong>: rows, columns, and a name for each column. You pick a column with <code>table["code"]</code>.</p>
 <h3>Piece 2: one line cleans a whole column</h3>

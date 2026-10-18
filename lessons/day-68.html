@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 68 &middot; LEVEL 6: RAG &middot; MIXED PRACTICE</div><h1>Mixed practice: compare 3 chunk sizes</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to compare three chunk sizes on five questions, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are the three steps of the retrieval pipeline?</li><li>What does a metadata filter do to the best similarity?</li></ol><details><summary>Answers</summary><ol><li>Embed the question, search the store, filter by what you know.</li><li>It can only keep it the same or lower it, because it removes candidates.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are the three steps of the retrieval pipeline?</li><li>What does a metadata filter do to the best similarity?</li></ol><details><summary>Answers</summary><ol><li>Embed the question, search the store, filter by what you know.</li><li>It can only keep it the same or lower it, because it removes candidates.</li></ol></details><div class="spaced" data-day="68" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You get a contract, and you write the script yourself, from a blank file. Use your earlier files (<code>strategies.py</code>, <code>embedder.py</code>, <code>retrieval.py</code>, <code>tokens.py</code>).</p><pre><code>compare_sizes.py
   input : data/long/user-guide.md and these 5 questions, each with a phrase that must be in the answer chunk
   does  : for sizes 25, 60 and 120 tokens, cut the guide into whole sentences,

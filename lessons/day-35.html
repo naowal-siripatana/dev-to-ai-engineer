@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 35 &middot; LEVEL 3: DATA AND ML &middot; PROJECT LAB</div><h1>Project Lab 5: split by a token budget</h1>
 <div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to split documents into chunks that fit a token budget, prove it with tests, and write note 1 of your module 3 checkpoint.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is &ldquo;paste the whole knowledge base into every prompt&rdquo; a problem at real size?</li><li>In attention, what do the weights add up to, and what does that mean?</li></ol><details><summary>Answers</summary><ol><li>It does not fit in the context window, it costs the full price of all the tokens for every single question, and it makes every call slower.</li><li>They add up to 1, like a share of attention spread over the words: a bigger weight means the word listens more to that other word.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is &ldquo;paste the whole knowledge base into every prompt&rdquo; a problem at real size?</li><li>In attention, what do the weights add up to, and what does that mean?</li></ol><details><summary>Answers</summary><ol><li>It does not fit in the context window, it costs the full price of all the tokens for every single question, and it makes every call slower.</li><li>They add up to 1, like a share of attention spread over the words: a bigger weight means the word listens more to that other word.</li></ol></details><div class="spaced" data-day="35" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You cut a long document into pieces of 100 tokens by counting tokens and slicing. One piece ends in the middle of a word, and another ends in the middle of a sentence about safety. What goes wrong when the assistant reads only that piece?</strong></p><details><summary>Guess first, then open</summary><p>The piece can say half of what it meant: &ldquo;Do not open the casing while the pump is&rdquo;. A model that reads only that piece may answer with confidence and be wrong. So a good splitter respects the budget <em>and</em> keeps sentences whole, and cuts inside a sentence only as a last resort.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
 <h3>Piece 1: a chunk is a piece that fits a budget</h3>

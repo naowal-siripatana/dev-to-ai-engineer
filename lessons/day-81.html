@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 81 &middot; LEVEL 7: TOOLS</div><h1>Tool calling: your first function call</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to let a model ask for a function, run it in your code, and send the result back.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a customer get &ldquo;not found&rdquo; and not &ldquo;forbidden&rdquo;?</li><li>Where is the role filter applied, and where is it too late?</li></ol><details><summary>Answers</summary><ol><li>&ldquo;Forbidden&rdquo; would tell the user that the page exists.</li><li>In the query (SQL and keyword index), before ranking. After the answer is written it is too late.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a customer get &ldquo;not found&rdquo; and not &ldquo;forbidden&rdquo;?</li><li>Where is the role filter applied, and where is it too late?</li></ol><details><summary>Answers</summary><ol><li>&ldquo;Forbidden&rdquo; would tell the user that the page exists.</li><li>In the query (SQL and keyword index), before ranking. After the answer is written it is too late.</li></ol></details><div class="spaced" data-day="81" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A user asks: <em>What does error E104 mean?</em> Your incident database has the exact record. Could the model look it up itself, instead of you guessing when to search?</strong></p><details><summary>Guess first, then open</summary><p>Yes, with <strong>tool calling</strong>. You describe a function to the model. If it decides it needs the function, it does not run anything: it answers with a request, &ldquo;please call <code>lookup_error</code> with <code>code=E104</code>&rdquo;. <em>Your</em> code runs the function and sends the result back. The model then writes the final answer.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow"><li class="box-d"><b>Model</b><span>asks for a tool</span></li><li class="arrow" aria-hidden="true"><i>your code runs it</i></li><li class="box-d"><b>Result</b><span>goes back to the model</span></li><li class="arrow" aria-hidden="true"><i>then</i></li><li class="box-d"><b>Model</b><span>answers, or asks again</span></li></ol><p class="loopback" aria-hidden="false"><span aria-hidden="true">&#8634;</span> repeat until the model stops asking</p><figcaption>The model asks, your code acts.</figcaption></figure>
 <h3>Piece 1: a tool is a name, a description and a schema</h3>
 <p>You send the model a list of <strong>tools</strong>. Each one has a <code>name</code>, a <code>description</code> (when to use it, written for the model) and an <code>input_schema</code> (a JSON Schema: which arguments, which types). The description is a prompt: a vague one gives wrong calls.</p>
 <h3>Piece 2: the model asks, your code acts</h3>

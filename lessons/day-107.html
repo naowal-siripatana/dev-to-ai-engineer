@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 107 &middot; LEVEL 9: CODING AGENTS</div><h1>AI coding assistants versus agents</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to give a coding agent one small task, read its steps, and judge how it worked.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What goes into a golden item?</li><li>Why is a change checked against the whole table and not only the fixed question?</li></ol><details><summary>Answers</summary><ol><li>An id, the question, the expected sources, optional phrases for the answer, and whether it should be refused.</li><li>A change that fixes one question often breaks another.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What goes into a golden item?</li><li>Why is a change checked against the whole table and not only the fixed question?</li></ol><details><summary>Answers</summary><ol><li>An id, the question, the expected sources, optional phrases for the answer, and whether it should be refused.</li><li>A change that fixes one question often breaks another.</li></ol></details><div class="spaced" data-day="107" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You ask a chat assistant to &ldquo;add a --top-k option to my script&rdquo;. It writes a snippet. You paste it in, run the script, find a problem, and go back. Now imagine that it could read your files, make the edit, run the script, see the problem and fix it, all on its own. What changes for you?</strong></p><details><summary>Guess first, then open</summary><p>The loop you were doing by hand (read, edit, run, look) moves inside the tool: that is an <strong>agent</strong>. It is the loop of Day 93 with tools for files and commands. You do less typing and more <strong>checking</strong>, because the changes arrive fast, in several places, and some of them you did not ask for.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><div class="cols"><div class="col"><h4>An assistant</h4><ul><li>suggests code</li><li>you apply it</li><li>one step at a time</li></ul></div><div class="col"><h4>An agent</h4><ul><li>acts in steps</li><li>reads, edits, runs</li><li>you review and set the limits</li></ul></div></div><figcaption>An assistant suggests, an agent acts: read the steps either way.</figcaption></figure>
 <h3>Piece 1: an assistant suggests, an agent acts</h3>
 <p>An AI <strong>coding assistant</strong> (a chat window, or completion in your editor) gives you text, and you decide what to do with it. A <strong>coding agent</strong> runs in your repository with tools: it <em>searches and reads</em> files, <em>edits</em> them, and <em>runs commands</em> (tests, scripts, git). It repeats think, act and observe until it believes the task is done. The table below shows the difference.</p>
 <h3>Piece 2: its steps are visible, and you should read them</h3>

@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 110 &middot; LEVEL 9: CODING AGENTS &middot; MIXED PRACTICE</div><h1>Mixed practice: ask an agent for a feature and review the diff</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to write a prompt for an agent and review its diff with a checklist, running it with wrong input.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What should an instructions file contain?</li><li>Why is a wrong instructions file worse than none?</li></ol><details><summary>Answers</summary><ol><li>What the agent cannot guess: commands, layout, rules newcomers get wrong, what done means, what needs a human decision.</li><li>The agent trusts it, so a wrong command or a stale rule sends it the wrong way with confidence.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What should an instructions file contain?</li><li>Why is a wrong instructions file worse than none?</li></ol><details><summary>Answers</summary><ol><li>What the agent cannot guess: commands, layout, rules newcomers get wrong, what done means, what needs a human decision.</li><li>The agent trusts it, so a wrong command or a stale rule sends it the wrong way with confidence.</li></ol></details><div class="spaced" data-day="110" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; The task <span class="t">5 min</span></h2><p>Today you ask an agent for <strong>one small feature</strong>, and then you review what it did like a pull request. The prompt is yours to write, from a blank file. A good prompt has four parts:</p><pre><code>goal      what I want, in one sentence, and the user&#x27;s view of it
 look at   the files that matter (so it does not wander), and the instructions file
 rules     what it must not touch or add

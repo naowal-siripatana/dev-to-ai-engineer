@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 131 &middot; LEVEL 12: LLMOPS &middot; MIXED PRACTICE</div><h1>Mixed practice: add a trace id across .NET and Python</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to pass a request id from the .NET gateway to the Python service, with a safe check on each side and tests, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the difference between NULL and 0 for the tokens of a request?</li><li>Why is the first request after a start much slower than the rest?</li></ol><details><summary>Answers</summary><ol><li>NULL means not measured; 0 means measured and zero (for example, no model was called).</li><li>The service loads its model and builds its keyword index when the first request arrives (a cold start).</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the difference between NULL and 0 for the tokens of a request?</li><li>Why is the first request after a start much slower than the rest?</li></ol><details><summary>Answers</summary><ol><li>NULL means not measured; 0 means measured and zero (for example, no model was called).</li><li>The service loads its model and builds its keyword index when the first request arrives (a cold start).</li></ol></details><div class="spaced" data-day="131" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. On Monday you gave every request an id in Python. Now you do the same in the <strong>.NET gateway</strong> and pass the id on, so that one id follows a request across both services. You get a contract, and you write the code yourself, from blank files.</p><pre><code>Gateway (.NET): RequestIds.cs, and changes in Program.cs and PythonServiceClient.cs
   RequestIds.Clean(string? value) -&gt; string
       keeps an id of 1 to 64 characters from  A-Z a-z 0-9 . _ -   (\A ... \z, not ^ ... $)

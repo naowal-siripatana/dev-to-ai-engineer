@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 111 &middot; LEVEL 9: CODING AGENTS &middot; TEACH-BACK</div><h1>Teach-back: how to review AI-written code</h1>
 <div class="meta"><span>30 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to explain in 5 sentences how to review code written by an agent, with examples of what a review finds that tests do not.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A colleague says: &ldquo;The agent wrote it and the tests pass. Why would I read every line?&rdquo; Write what you would answer in two lines. Then write one thing that tests do not catch, and one thing a quick read does not catch.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p></section>
+<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A colleague says: &ldquo;The agent wrote it and the tests pass. Why would I read every line?&rdquo; Write what you would answer in two lines. Then write one thing that tests do not catch, and one thing a quick read does not catch.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p><div class="spaced" data-day="111" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Explain it <span class="t">10 min</span></h2><p><strong>Your task:</strong> explain <strong>how to review code written by an AI agent</strong> in <strong>5 sentences</strong> or a <strong>60-second voice note</strong>.</p><ul><li><strong>Who you are talking to:</strong> the colleague above, who wants to merge when the tests are green.</li><li><strong>Use these words:</strong> diff, edge case, silent failure, scope, responsible.</li><li><strong>Rules:</strong> no notes, and give one example from your own runs.</li></ul><p>Write it or record it now. A rough first try is exactly right.</p><details><summary>Stuck? Sentence starters</summary><p>Use these if you freeze:</p><pre><code>1. AI-written code looks ..., so I review it as ... : a pull request from ... .
 2. I read the diff before the ... , because the summary is what it ..., the diff is what it ... .
 3. I run it with ... input, because the problems are in ... .

@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 42 &middot; LEVEL 4: LLM APPS &middot; PROJECT LAB</div><h1>Project Lab 6: a mini retrieval prototype</h1>
 <div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to embed the knowledge base, take the top 3 for a question, answer with a source name, and say when you do not know.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Embeddings or keywords: which one is better for the question &ldquo;error E105&rdquo;, and why?</li><li>Why do you embed the documents once and the question each time?</li></ol><details><summary>Answers</summary><ol><li>Keywords. An error code is an exact string, and embeddings are fuzzy there: in the lesson, <code>error-e101</code> and <code>error-e105</code> tied. Embeddings are better for meaning, such as &ldquo;network lost&rdquo;.</li><li>The documents do not change between questions, so embedding them again wastes time. The question is new each time.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Embeddings or keywords: which one is better for the question &ldquo;error E105&rdquo;, and why?</li><li>Why do you embed the documents once and the question each time?</li></ol><details><summary>Answers</summary><ol><li>Keywords. An error code is an exact string, and embeddings are fuzzy there: in the lesson, <code>error-e101</code> and <code>error-e105</code> tied. Embeddings are better for meaning, such as &ldquo;network lost&rdquo;.</li><li>The documents do not change between questions, so embedding them again wastes time. The question is new each time.</li></ol></details><div class="spaced" data-day="42" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A user asks the assistant something that is not in your knowledge base at all. Retrieval always finds a &ldquo;closest&rdquo; document. What should the assistant say, and who decides: the search or the model?</strong></p><details><summary>Guess first, then open</summary><p>Both can, and you should not rely on only one. The search can say &ldquo;nothing is close enough&rdquo; with a minimum score. The model can say &ldquo;the sources do not contain the answer&rdquo; if you tell it to. Today you build both guards, so the assistant admits it does not know.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
 <h3>Piece 1: retrieve, then generate</h3>

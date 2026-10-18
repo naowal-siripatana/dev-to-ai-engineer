@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 30 &middot; LEVEL 3: DATA AND ML</div><h1>Neural networks and transformers, 10 minutes</h1>
 <div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to draw the flow from text to tokens to a model to the next token, and run a toy model that follows it.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is the test set looked at only once?</li><li>What is overfitting, in one line?</li></ol><details><summary>Answers</summary><ol><li>Once you tune on it, it stops being new data, and the score becomes too optimistic.</li><li>The model memorises its practice rows and does worse on new ones.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is the test set looked at only once?</li><li>What is overfitting, in one line?</li></ol><details><summary>Answers</summary><ol><li>Once you tune on it, it stops being new data, and the score becomes too optimistic.</li><li>The model memorises its practice rows and does worse on new ones.</li></ol></details><div class="spaced" data-day="30" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You type &ldquo;The sensor timed&rdquo; into a chat window and the model finishes it with &ldquo;out&rdquo;. It has never seen your sentence. How can it know what comes next?</strong></p><details><summary>Guess first, then open</summary><p>It does not &ldquo;know&rdquo;. It has seen a huge amount of text and learned which pieces tend to follow which. For your words it gives a score to every possible next piece, picks one, and repeats. Today you build a tiny version of that, so the big version stops being magic.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>Text</b></li><li class="arrow" aria-hidden="true"><i>split</i></li><li class="box-d"><b>Tokens</b></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Attention</b><span>which words matter</span></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Next-token chances</b></li><li class="arrow" aria-hidden="true"><i>pick one</i></li><li class="box-d"><b>One more token</b><span>then repeat</span></li></ol><figcaption>A language model writes by predicting the next token, again and again.</figcaption></figure>
 <h3>Piece 1: a neural network is a pile of adjustable numbers</h3>
 <p>A <strong>neural network</strong> is many small calculation steps in a row. Each step multiplies its input by numbers called <strong>weights</strong>. Think of a huge mixing desk with billions of knobs. <strong>Training</strong> means turning the knobs a tiny bit, again and again, so the output gets closer to the right answer on many examples. After training the knobs stay fixed, and using the network is called <strong>inference</strong>.</p>
 <h3>Piece 2: a language model predicts the next token</h3>

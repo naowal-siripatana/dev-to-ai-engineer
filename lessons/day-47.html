@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 47 &middot; LEVEL 4: LLM APPS &middot; MIXED PRACTICE</div><h1>Mixed practice: streaming and structured output</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to stream a JSON answer and validate it once at the end, with a result or an error event, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why can a streaming endpoint not answer <code>502</code> when the model fails halfway?</li><li>What does your structured helper do after an invalid answer?</li></ol><details><summary>Answers</summary><ol><li>The <code>200</code> status is sent before the first piece, so the only way to signal the failure is an <code>error</code> event inside the stream.</li><li>It asks again with the exact problem, up to a small number of attempts, and raises <code>StructuredOutputError</code> if none is valid.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why can a streaming endpoint not answer <code>502</code> when the model fails halfway?</li><li>What does your structured helper do after an invalid answer?</li></ol><details><summary>Answers</summary><ol><li>The <code>200</code> status is sent before the first piece, so the only way to signal the failure is an <code>error</code> event inside the stream.</li><li>It asks again with the exact problem, up to a small number of attempts, and raises <code>StructuredOutputError</code> if none is valid.</li></ol></details><div class="spaced" data-day="47" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Another blank file. You can stream text, and you can validate JSON. But validation needs the <em>whole</em> answer, and streaming gives you pieces. Can one endpoint do both, and when exactly can you validate?</strong></p><details><summary>Guess first, then open</summary><p>Yes: stream the pieces so the user sees progress, collect them as they pass, and validate <em>once, at the end</em>, then send the validated result as a final event. You cannot validate half of a JSON object, so the check has to wait for the last piece. If it fails, the last event is an error, not a result.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
 <p>No new ideas today. The map of what you reuse:</p>

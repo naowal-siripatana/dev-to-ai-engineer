@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 160 &middot; LEVEL 13: MODEL SERVING &middot; TEACH-BACK</div><h1>Teach-back: VRAM and quantization</h1>
 <div class="meta"><span>30 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to explain in 5 sentences what VRAM and quantization are, with one calculation and what quantization costs.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A friend says: &ldquo;I have 16 GB of memory and I want to run a 13 billion model. Will it work?&rdquo; Write what you would answer in two lines, with a number. Then write what you would give up if it does not fit.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p></section>
+<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A friend says: &ldquo;I have 16 GB of memory and I want to run a 13 billion model. Will it work?&rdquo; Write what you would answer in two lines, with a number. Then write what you would give up if it does not fit.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p><div class="spaced" data-day="160" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Explain it <span class="t">10 min</span></h2><p><strong>Your task:</strong> explain <strong>VRAM and quantization</strong> in <strong>5 sentences</strong> or a <strong>60-second voice note</strong>.</p><ul><li><strong>Who you are talking to:</strong> the friend above, who can code but has never run a model.</li><li><strong>Use these words:</strong> weights, VRAM, bits, quantization, context.</li><li><strong>Rules:</strong> no notes, give one calculation with numbers, and say what quantization costs.</li></ul><p>Write it or record it now. A rough first try is exactly right.</p><details><summary>Stuck? Sentence starters</summary><p>Use these if you freeze:</p><pre><code>1. VRAM is ..., and the weights of a model must ... because ...
 2. A model with N billion weights in 16 bits needs about ... GB, because each weight takes ...
 3. Quantization stores each weight in ..., so the model gets ... and ..., but ...

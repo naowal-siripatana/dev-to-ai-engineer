@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 153 &middot; LEVEL 13: DEPLOYMENT &middot; TEACH-BACK</div><h1>Teach-back: why secrets stay out of Git</h1>
 <div class="meta"><span>30 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to explain in 5 sentences why a secret never goes into Git, what to do instead and what to do after a leak.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A teammate says: &ldquo;The repository is private and I deleted the password in the next commit. Why are you worried?&rdquo; Write what you would answer in two lines. Then write who can read a private repository, over its whole life.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p></section>
+<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A teammate says: &ldquo;The repository is private and I deleted the password in the next commit. Why are you worried?&rdquo; Write what you would answer in two lines. Then write who can read a private repository, over its whole life.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p><div class="spaced" data-day="153" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Explain it <span class="t">10 min</span></h2><p><strong>Your task:</strong> explain <strong>why secrets stay out of Git</strong> in <strong>5 sentences</strong> or a <strong>60-second voice note</strong>.</p><ul><li><strong>Who you are talking to:</strong> the teammate above.</li><li><strong>Use these words:</strong> history, environment variable, rotate, <code>.gitignore</code>, secret store.</li><li><strong>Rules:</strong> no notes, and say what you do <em>after</em> a leak, not only how to avoid one.</li></ul><p>Write it or record it now. A rough first try is exactly right.</p><details><summary>Stuck? Sentence starters</summary><p>Use these if you freeze:</p><pre><code>1. A secret is ..., for example ...
 2. Git keeps ..., so when I commit a password ...
 3. Removing it in the next commit ... but ...

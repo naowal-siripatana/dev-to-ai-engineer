@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 1 &middot; LEVEL 1: PYTHON</div><h1>Python type hints</h1>
 <div class="meta"><span>45-60 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to write a typed Python function, and explain what a type hint does and does not do.</div>
@@ -21,6 +22,7 @@
 <details><summary>Guess first, then open</summary><p>It shrugs, and tries to run it. If something fails, it fails later, inside the function. That surprise is today&rsquo;s lesson.</p></details></section>
 
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">10 min</span></h2>
+<figure class="diagram"><div class="cols"><div class="col"><h4>mypy, before you run</h4><ul><li>reads the hints</li><li>finds a mismatch</li><li>no code runs</li></ul></div><div class="col"><h4>Python, when it runs</h4><ul><li>ignores the hints</li><li>runs the line anyway</li><li>fails only if that line breaks</li></ul></div></div><figcaption>A hint is a sticky note for tools, not a lock for Python.</figcaption></figure>
 <h3>Piece 1: a hint is a sticky note</h3>
 <p>A type hint says what a function takes and returns, like a sticky note on a door: &ldquo;numbers only, please&rdquo;.</p>
 <pre><code>def double(x: int) -&gt; int:

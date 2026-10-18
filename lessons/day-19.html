@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 19 &middot; LEVEL 3: DATA AND ML &middot; MIXED PRACTICE</div><h1>Mixed practice: serve the error codes</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to serve a clean pandas table from your API with a filter, a 404 and tests, built from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>.drop_duplicates(subset=[&quot;code&quot;])</code> do?</li><li>In a test, how do you make a route use a different client than the app does?</li></ol><details><summary>Answers</summary><ol><li>It keeps only the first row for each value of <code>code</code> and removes the later repeats.</li><li>You set <code>app.dependency_overrides[get_llm_client] = ...</code> in the test, and clear the overrides afterwards.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>.drop_duplicates(subset=[&quot;code&quot;])</code> do?</li><li>In a test, how do you make a route use a different client than the app does?</li></ol><details><summary>Answers</summary><ol><li>It keeps only the first row for each value of <code>code</code> and removes the later repeats.</li><li>You set <code>app.dependency_overrides[get_llm_client] = ...</code> in the test, and clear the overrides afterwards.</li></ol></details><div class="spaced" data-day="19" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Again no recipe. You have a clean table (Wednesday), a way to hand things to routes (Monday) and a way to test them (Thursday last week). Can you put the three together?</strong></p><details><summary>Why a blank file?</summary><p>Reading a solution feels like learning. Building from a contract, getting stuck and finding the way out is learning. If you get stuck for more than ten minutes, open the hint in Stuck.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
 <p>No new ideas today. The map of what you reuse:</p>

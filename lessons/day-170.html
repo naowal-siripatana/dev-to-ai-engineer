@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 170 &middot; LEVEL 13: SHOW YOUR WORK</div><h1>Final checklist and known bugs</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to hunt bugs with awkward requests, rank them, and fix the top three with tests that fail first.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does the freeze rule allow?</li><li>Why does the secret finder go to the top of the repository first?</li></ol><details><summary>Answers</summary><ol><li>Bug fixes, the README and the demo: no new features.</li><li><code>git ls-files</code> lists only the folder you are in, so started in one folder it checks only that folder.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does the freeze rule allow?</li><li>Why does the secret finder go to the top of the repository first?</li></ol><details><summary>Answers</summary><ol><li>Bug fixes, the README and the demo: no new features.</li><li><code>git ls-files</code> lists only the folder you are in, so started in one folder it checks only that folder.</li></ol></details><div class="spaced" data-day="170" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You have one week to the workshop and a list of 20 things that could be better. You can fix three. Which three?</strong></p><details><summary>Guess first, then open</summary><p>The three that would hurt most <em>in front of people</em>, ranked by <strong>who is hurt</strong> and <strong>how likely it is</strong>, and cheap enough to fix with a test. The rest are not ignored: they go into the README as known limits, said honestly.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>Probe</b><span>awkward requests</span></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Rank</b><span>who is hurt, how likely</span></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>A test that fails</b></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>The fix</b><span>and the test passes</span></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Known limits</b><span>the rest, written down</span></li></ol><figcaption>Hunt first, rank, and write the test before the fix.</figcaption></figure>
 <h3>Piece 1: hunt before you decide</h3>
 <p>You will not find your worst bug by reading code you wrote. Send it <strong>awkward requests</strong> on purpose: empty, huge, in another language, not JSON, no body, the wrong method, an injection, the same vote ten times, the service behind it switched off. Write the cases in a small script, so that you can run them again after each fix.</p>
 <h3>Piece 2: rank by who is hurt and how likely</h3>

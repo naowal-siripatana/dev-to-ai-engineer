@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 163 &middot; LEVEL 13: SHOW YOUR WORK</div><h1>README and architecture diagram</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to write a README in the order a stranger reads, draw one architecture diagram, and explain each box in one line.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does the comparison of two models keep retrieval and prompt the same?</li><li>What does a cost of 0 per token not mean?</li></ol><details><summary>Answers</summary><ol><li>So that any difference comes from the model and not from something else you changed.</li><li>Not free: the machine, its electricity and your time cost something.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does the comparison of two models keep retrieval and prompt the same?</li><li>What does a cost of 0 per token not mean?</li></ol><details><summary>Answers</summary><ol><li>So that any difference comes from the model and not from something else you changed.</li><li>Not free: the machine, its electricity and your time cost something.</li></ol></details><div class="spaced" data-day="163" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A recruiter opens your repository for 90 seconds. They do not run anything. What do they see first, and can they tell what you built, how it fits together, and what is real?</strong></p><details><summary>Guess first, then open</summary><p>They see the <strong>README</strong>, and often only the top of it. If the first screen says what it is, shows one picture of how the parts fit, and says honestly what is a stand-in, they will keep reading. If it is the empty template that the tool made, they close the tab.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>What is it</b></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>How it fits</b><span>one diagram</span></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>How to run</b></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Settings and tests</b></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>What not to trust</b></li></ol><figcaption>Answer a stranger&#x27;s questions in the order they ask them.</figcaption></figure>
 <h3>Piece 1: write the README for a stranger, in the order they ask</h3>
 <p>A reader asks the same questions in the same order: what is this, how does it fit together, how do I run it, what can I change, how do I know it works, and what should I not trust. Give each one a heading, in that order. Put the honest part (<em>what is real and what is not</em>) near the top: it makes every later claim believable.</p>
 <h3>Piece 2: one diagram, boxes that are real</h3>

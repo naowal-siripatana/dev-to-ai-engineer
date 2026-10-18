@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 5 &middot; LEVEL 1: PYTHON</div><h1>Testing with pytest and a fake LLM client</h1>
 <div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to write a pytest test that checks an AI function without calling the real model.</div>
@@ -15,6 +16,7 @@
 <section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why is <code>except Exception: pass</code> a bad idea?</li><li>What does <code>uv run</code> do that plain <code>python3</code> does not?</li></ol><details><summary>Answers</summary><ol><li>It hides the real problem, so you get a confusing error later, or no error at all.</li><li>It uses the project&rsquo;s private toolbox, so your own package and its libraries are found.</li></ol></details></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your function calls an AI model. Every test run costs money, takes seconds, and the answer is a little different each time. How can a test say &ldquo;pass&rdquo; or &ldquo;fail&rdquo; and mean it?</strong></p><details><summary>Guess first, then open</summary><p>Do not call the real model in a test. Hand the function a <em>fake</em> that returns a fixed answer. The test runs in a blink, for free, and gives the same result every time.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>pytest</b><span>runs the test</span></li><li class="arrow" aria-hidden="true"><i>calls</i></li><li class="box-d"><b>Your function</b><span>takes its helper as an argument</span></li><li class="arrow" aria-hidden="true"><i>gets</i></li><li class="box-d"><b>FakeClient</b><span>no network, no cost</span></li><li class="arrow" aria-hidden="true"><i>then</i></li><li class="box-d"><b>assert</b><span>check the result</span></li></ol><figcaption>The fake stands where the real model would be, so a test is fast and free.</figcaption></figure>
 <h3>Piece 1: a test is a small function that checks one thing</h3>
 <p><code>pytest</code> runs every function named <code>test_...</code> in files named <code>test_....py</code>. Inside, <code>assert</code> says what must be true. No error means pass. A broken <code>assert</code> means fail, and pytest shows you why.</p>
 <h3>Piece 2: hand the helper in, so a test can swap it</h3>

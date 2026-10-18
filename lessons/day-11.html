@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 11 &middot; LEVEL 2: AI BACKEND</div><h1>Request and response models with Pydantic</h1>
 <div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to send a bad request, get a 422, and read the error.</div>
@@ -15,6 +16,7 @@
 <section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>You call <code>GET /api/chat</code> in your browser and see <code>405</code>. What does that status mean?</li><li>Which tool gives you a free test page for every endpoint, and at which address?</li></ol><details><summary>Answers</summary><ol><li>Method Not Allowed: the address exists, but not for this kind of request. <code>/api/chat</code> only accepts <code>POST</code>.</li><li>FastAPI builds it for you at <code>/docs</code>.</li></ol></details></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A client sends <code>{"top_k": 99, "language": "fr"}</code> with no question at all. How many things are wrong, and how many does your API tell the client about?</strong></p><details><summary>Guess first, then open</summary><p>Three things are wrong: no question, <code>top_k</code> too big, a language you do not support. A good API reports all three at once, so the client fixes everything in one go. Today you let Pydantic do that, and you teach it one rule of your own.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>Request JSON</b></li><li class="arrow" aria-hidden="true"><i>checked by</i></li><li class="box-d"><b>Request model</b><span>the rulebook at the door</span></li><li class="arrow" aria-hidden="true"><i>valid data</i></li><li class="box-d"><b>Your function</b></li><li class="arrow" aria-hidden="true"><i>shaped by</i></li><li class="box-d"><b>Response model</b><span>the rulebook at the exit</span></li><li class="arrow" aria-hidden="true"><i>sends</i></li><li class="box-d"><b>Response JSON</b><span>wrong input: 422</span></li></ol><figcaption>Models at both ends: the door and the exit each have a rulebook.</figcaption></figure>
 <h3>Piece 1: the request model is the rulebook at the door</h3>
 <p>Each field in <code>ChatRequest</code> can carry rules: <code>min_length</code> and <code>max_length</code> for text, <code>ge</code> and <code>le</code> for numbers (&ldquo;greater or equal&rdquo;, &ldquo;less or equal&rdquo;), and <code>Literal["en", "th"]</code> for a short list of allowed values. A field with a default (<code>top_k=3</code>) is optional. A field without one is required.</p>
 <h3>Piece 2: write your own rule with a validator</h3>

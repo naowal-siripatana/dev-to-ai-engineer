@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 4 &middot; LEVEL 1: PYTHON</div><h1>Errors and logging</h1>
 <div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to make a failed lookup leave a clear log line instead of silence.</div>
@@ -15,6 +16,7 @@
 <section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>asyncio.gather</code> do with three one-second calls?</li><li>What does Pydantic do when the data is bad?</li></ol><details><summary>Answers</summary><ol><li>It starts them together, so they finish in about one second.</li><li>It raises a <code>ValidationError</code> that lists the problems.</li></ol></details></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your AI call fails at 2 a.m. In the morning, what do you want to find: nothing, or a message that tells you what, where and why?</strong></p><details><summary>Guess first, then open</summary><p>Nothing is the worst answer. A silent failure means you do not even know something broke. Today you will make your code fail <em>loudly and clearly</em>.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>A line fails</b></li><li class="arrow" aria-hidden="true"><i>raise</i></li><li class="box-d"><b>A specific error</b><span>with a clear message</span></li><li class="arrow" aria-hidden="true"><i>catch only here</i></li><li class="box-d"><b>A place that can act</b><span>or let it travel up</span></li><li class="arrow" aria-hidden="true"><i>log</i></li><li class="box-d"><b>One clear log line</b><span>never swallow it silently</span></li></ol><figcaption>Raise clearly, catch specifically, and either handle the error or let it travel.</figcaption></figure>
 <h3>Piece 1: raise a clear error, catch a specific one</h3>
 <p>When something is wrong, <code>raise</code> an error with a message. Make your own error type with one line (<code>class DocumentNotFoundError(Exception)</code>), so the name says what happened. Then catch <em>that</em> error, not everything. Think of a label on a box: &ldquo;fragile&rdquo; tells you more than &ldquo;thing&rdquo;. An <strong>exception</strong> is Python&rsquo;s word for an error you can catch.</p>
 <h3>Piece 2: logs are for you, <code>print</code> is for the user</h3>

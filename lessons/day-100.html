@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 100 &middot; LEVEL 8: EVALUATION</div><h1>Why evaluation comes first</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to find three ways your assistant fails by reading real answers, and say why a score must come before tuning.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What did the human-in-the-loop step protect you from?</li><li>Name one stop rule for an agent loop.</li></ol><details><summary>Answers</summary><ol><li>A risky tool (one that changes something) running by mistake: a person approves the exact call first.</li><li>A maximum number of steps, or stopping before a repeated action.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What did the human-in-the-loop step protect you from?</li><li>Name one stop rule for an agent loop.</li></ol><details><summary>Answers</summary><ol><li>A risky tool (one that changes something) running by mistake: a person approves the exact call first.</li><li>A maximum number of steps, or stopping before a repeated action.</li></ol></details><div class="spaced" data-day="100" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You change one thing in your assistant: the chunk size, the prompt, the minimum similarity. How do you know whether it got better or worse? &ldquo;I tried three questions and they looked fine&rdquo;?</strong></p><details><summary>Guess first, then open</summary><p>You do not know. A few good-looking answers prove little, and a change that fixes one question often breaks another. <strong>Evaluation</strong> means a fixed set of questions with expected results and a script that scores them, so that every change gets a number. It comes <em>first</em>: before you tune anything, you need a way to see whether tuning helps.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>Run real questions</b></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Find how it fails</b><span>from real runs</span></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Measure one number</b></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Fix one thing</b><span>then measure again</span></li></ol><p class="loopback" aria-hidden="false"><span aria-hidden="true">&#8634;</span> measure again after every change</p><figcaption>You cannot improve what you do not measure.</figcaption></figure>
 <h3>Piece 1: you cannot improve what you do not measure</h3>
 <p>Without a score, every change is a guess, and you will keep the changes that <em>feel</em> good. With a score, you can see that a change made one thing better and two things worse. In AI work the surprise is the normal case, because the parts depend on each other.</p>
 <h3>Piece 2: find the ways it fails, from real runs</h3>

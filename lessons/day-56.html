@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 56 &middot; LEVEL 5: PROMPTS AND CONTEXT &middot; PROJECT LAB</div><h1>Project Lab 8: retries and a rewritten prompt</h1>
 <div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to make real-mode calls retry, and show a before and after score for a rewritten prompt on five questions.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is an ablation, and why do you change one thing at a time?</li><li>Which part of the context grows the most in a long conversation?</li></ol><details><summary>Answers</summary><ol><li>You remove one part of a prompt and measure again, to see which part matters. With one change at a time you know which change did what.</li><li>The conversation history: with 51 turns it was 78 percent of the call in the lesson, while the sources were 9 percent.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is an ablation, and why do you change one thing at a time?</li><li>Which part of the context grows the most in a long conversation?</li></ol><details><summary>Answers</summary><ol><li>You remove one part of a prompt and measure again, to see which part matters. With one change at a time you know which change did what.</li><li>The conversation history: with 51 turns it was 78 percent of the call in the lesson, while the sources were 9 percent.</li></ol></details><div class="spaced" data-day="56" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You rewrite the system prompt and the answers &ldquo;feel&rdquo; better. Your manager asks: &ldquo;How do you know?&rdquo; What is the one thing you must have done <em>before</em> you changed the prompt?</strong></p><details><summary>Guess first, then open</summary><p>Measured the old prompt. Without a <em>before</em> number there is no comparison, only a feeling. So today the first thing you do is score the weak prompt on five fixed questions, then you change one thing, and score again.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
 <h3>Piece 1: reliability and quality are two separate jobs</h3>

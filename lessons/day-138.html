@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 138 &middot; LEVEL 12: LLMOPS &middot; MIXED PRACTICE</div><h1>Mixed practice: a provider fallback plus a cache</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to write a fallback and a cache with a safe key and tests, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are an SLI and an SLO?</li><li>Why does a vote need a request id?</li></ol><details><summary>Answers</summary><ol><li>An SLI is a measurement of what the user feels; an SLO is the target for it.</li><li>So that the vote can be investigated: the id finds the question, sources, tokens and logs.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are an SLI and an SLO?</li><li>Why does a vote need a request id?</li></ol><details><summary>Answers</summary><ol><li>An SLI is a measurement of what the user feels; an SLO is the target for it.</li><li>So that the vote can be investigated: the id finds the question, sources, tokens and logs.</li></ol></details><div class="spaced" data-day="138" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You write the reliability module yourself, from a blank file, with its tests. You get a contract.</p><pre><code>reliability.py
   Unavailable(Exception)                         raised when every way of getting an answer failed
   with_timeout(call, seconds) -&gt; str             waits at most `seconds`; raises TimeoutError; the slow call is simply ignored

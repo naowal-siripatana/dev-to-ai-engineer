@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 96 &middot; LEVEL 7: TOOLS &middot; MIXED PRACTICE</div><h1>Mixed practice: a loop with a stop rule and a test</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to write a loop with three stop rules and tests for each, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>In which order do you check rights, input, approval and action?</li><li>Name one question that tells you to use a workflow and not an agent.</li></ol><details><summary>Answers</summary><ol><li>Rights, then input, then approval, then action.</li><li>For example: &ldquo;Can I write the steps down in advance?&rdquo; Yes means a workflow.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>In which order do you check rights, input, approval and action?</li><li>Name one question that tells you to use a workflow and not an agent.</li></ol><details><summary>Answers</summary><ol><li>Rights, then input, then approval, then action.</li><li>For example: &ldquo;Can I write the steps down in advance?&rdquo; Yes means a workflow.</li></ol></details><div class="spaced" data-day="96" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You get a contract, and you write the loop yourself, from a blank file. It is the agent loop with the model and the tools taken out, so you can see the stop rules clearly and test them without anything else.</p><pre><code>loop.py
   run_loop(decide, act, max_steps=5) -&gt; LoopResult
     decide(history) -&gt; an action, or None when it is finished.

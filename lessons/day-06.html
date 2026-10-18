@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 6 &middot; LEVEL 1: PYTHON</div><h1>Git workflows</h1>
 <div class="meta"><span>50-60 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to try a change on a branch and merge it back into main.</div>
@@ -15,6 +16,7 @@
 <section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why do we hand the AI client into a function instead of creating it inside?</li><li>Git says <code>nothing to commit</code> and you are sure you changed a file. What are two likely reasons?</li></ol><details><summary>Answers</summary><ol><li>So a test can hand in a fake: no network, no key, the same answer every time.</li><li>The file was not saved, or you are in the wrong folder.</li></ol></details></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You change five files, and now nothing works. How do you get back to the version that worked an hour ago?</strong></p><details><summary>Guess first, then open</summary><p>Only if you saved that version before. In Git, a <strong>commit</strong> is a save point you can return to. Today you will make small save points, and try a risky idea on a safe copy.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>main</b><span>your line of work</span></li><li class="arrow" aria-hidden="true"><i>branch</i></li><li class="box-d"><b>A branch</b><span>a safe copy</span></li><li class="arrow" aria-hidden="true"><i>commits</i></li><li class="box-d"><b>Save points</b><span>add, then commit</span></li><li class="arrow" aria-hidden="true"><i>merge</i></li><li class="box-d"><b>main</b><span>with the change</span></li></ol><p class="loopback" aria-hidden="false"><span aria-hidden="true">&#8634;</span> repeat: small commits, one branch per idea</p><figcaption>A commit is a save point, a branch is a safe copy, a merge brings it back.</figcaption></figure>
 <h3>Piece 1: a commit is a save point, made in two steps</h3>
 <p>Think of a box. <code>git add</code> puts files in the box (this is called <strong>staging</strong>). <code>git commit -m "message"</code> seals the box and writes a note on it. Small commits with clear messages make a history you can read.</p>
 <h3>Piece 2: a branch is a safe copy of your line of work</h3>

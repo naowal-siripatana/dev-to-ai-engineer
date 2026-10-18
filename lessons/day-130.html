@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 130 &middot; LEVEL 12: LLMOPS</div><h1>Token, latency and cost tracking</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to store latency, tokens and cost for every question in a table, and say what each number really means.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What connects logs, metrics and traces?</li><li>Why check the shape of a request id that comes from outside?</li></ol><details><summary>Answers</summary><ol><li>The request id.</li><li>A header is user input: a line break in it could forge extra lines in your log.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What connects logs, metrics and traces?</li><li>Why check the shape of a request id that comes from outside?</li></ol><details><summary>Answers</summary><ol><li>The request id.</li><li>A header is user input: a line break in it could forge extra lines in your log.</li></ol></details><div class="spaced" data-day="130" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your manager asks: &ldquo;How much does the assistant cost per question, and how fast is it?&rdquo; You have a log full of text. Can you answer in a minute? What would you need to have stored?</strong></p><details><summary>Guess first, then open</summary><p>One <strong>row per request</strong> with numbers: latency, input tokens, output tokens, cost, and how it ended. Then the answer is a SQL query. A log is for reading <em>one</em> request; a table is for answering questions about <em>all</em> of them.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>A request</b></li><li class="arrow" aria-hidden="true"><i>measured</i></li><li class="box-d"><b>Three numbers</b><span>time, tokens, cost</span></li><li class="arrow" aria-hidden="true"><i>one row</i></li><li class="box-d"><b>A metrics table</b></li><li class="arrow" aria-hidden="true"><i>if storing fails</i></li><li class="box-d"><b>The request still succeeds</b><span>recording never breaks it</span></li></ol><figcaption>Be exact about what each number means, and say what is estimated.</figcaption></figure>
 <h3>Piece 1: three numbers per request</h3>
 <p>For every request, store <strong>latency</strong> (how long it took), <strong>tokens</strong> (input and output) and <strong>cost</strong> (from tokens and a price), together with <strong>how it ended</strong>: answered, refused, or error. Put them in a table in PostgreSQL, one row per request, with the request id. Now you can count, average, find the slow ones, and add up the cost.</p>
 <h3>Piece 2: be exact about what a number means</h3>

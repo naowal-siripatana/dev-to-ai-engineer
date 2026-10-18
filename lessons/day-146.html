@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 146 &middot; LEVEL 13: DEPLOYMENT &middot; TEACH-BACK</div><h1>Teach-back: image versus container</h1>
 <div class="meta"><span>30 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to explain in 5 sentences the difference between an image and a container, with what each one keeps.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A friend who has never used Docker asks: &ldquo;I ran <code>docker run</code> twice and now I have two things. Which one is the program?&rdquo; Write what you would answer in two lines. Then write what happens to a file created inside a container when you remove the container.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p></section>
+<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A friend who has never used Docker asks: &ldquo;I ran <code>docker run</code> twice and now I have two things. Which one is the program?&rdquo; Write what you would answer in two lines. Then write what happens to a file created inside a container when you remove the container.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p><div class="spaced" data-day="146" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Explain it <span class="t">10 min</span></h2><p><strong>Your task:</strong> explain <strong>image versus container</strong> in <strong>5 sentences</strong> or a <strong>60-second voice note</strong>.</p><ul><li><strong>Who you are talking to:</strong> the friend above, who knows how to run a program but not Docker.</li><li><strong>Use these words:</strong> image, container, layer, volume, registry.</li><li><strong>Rules:</strong> no notes, and say what is <em>not</em> true: a container is not a virtual machine with its own full system.</li></ul><p>Write it or record it now. A rough first try is exactly right.</p><details><summary>Stuck? Sentence starters</summary><p>Use these if you freeze:</p><pre><code>1. An image is ..., and a container is ...
 2. One image can ..., so ...
 3. When I remove a container, ... stays, but ... is gone, so ...

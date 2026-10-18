@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 152 &middot; LEVEL 13: DEPLOYMENT &middot; MIXED PRACTICE</div><h1>Mixed practice: make a failing test block the build</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to write a small workflow from a blank file where a red test stops the build, and say how a gate can be undone by mistake.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>needs:</code> do between two jobs?</li><li>Why does the CI of your project use <code>LLM_MODE=fake</code>?</li></ol><details><summary>Answers</summary><ol><li>The second job starts only when the first is green; if it fails, the second is skipped.</li><li>CI must not need a real key: a leak would cost money, and a test must not touch a real model.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>needs:</code> do between two jobs?</li><li>Why does the CI of your project use <code>LLM_MODE=fake</code>?</li></ol><details><summary>Answers</summary><ol><li>The second job starts only when the first is green; if it fails, the second is skipped.</li><li>CI must not need a real key: a leak would cost money, and a test must not touch a real model.</li></ol></details><div class="spaced" data-day="152" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Today <span class="t">2 min</span></h2><p><strong>Today you practise without the lesson open.</strong> Goal: <em>a red test stops the image build, and you can show it.</em> You write a small workflow from a blank file, then compare with the model.</p><div class="box"><strong>Be clear about what was run.</strong> The workflow was <strong>never run on GitHub</strong>. What was run for real: the linter on the file, a test that fails on purpose (with the real exit code), and the same command behind <code>&amp;&amp;</code> and behind <code>|| true</code>. How GitHub shows a skipped job is standard behaviour that was not observed.</div></section>
 <section><h2><span class="n">3</span> &middot; Plan first <span class="t">5 min</span></h2><p>Draw two boxes and one arrow on paper: which job runs first, which must wait, and what should happen to the second when the first is red? Then open the sketch.</p><details><summary>The plan</summary><pre><code>test    -&gt; runs the tests                         red = stop
 build   -&gt; needs: test, builds the image          grey (skipped) when test is red

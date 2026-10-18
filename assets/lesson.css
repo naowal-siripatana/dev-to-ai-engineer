@@ -1,5 +1,5 @@
 /* Shared styles for all lesson pages. One file, cached by the browser. */
-:root{--cream:#FFF1E2;--card:#FFF9F2;--peach:#FFE9D2;--ink:#3A2450;--muted:#7A6590;--line:#E3C3A5;--outline:#1C1430;--coral-d:#D9472A;--honey:#FFC15E;--mint:#7FE0C2;--mint-d:#17806A;--px:'Jersey 15',monospace;--body:'Nunito',system-ui,sans-serif}
+:root{--cream:#FFF1E2;--card:#FFF9F2;--peach:#FFE9D2;--ink:#3A2450;--muted:#7A6590;--line:#E3C3A5;--outline:#1C1430;--coral-d:#C23A1F;--honey:#FFC15E;--mint:#7FE0C2;--mint-d:#136B58;--px:'Jersey 15',monospace;--body:'Nunito',system-ui,sans-serif}
 *{box-sizing:border-box;margin:0}
 body{font-family:var(--body);color:var(--ink);line-height:1.6;background:linear-gradient(180deg,#2A1F45 0%,#4B3873 25%,#B77C9E 70%,#FFC4A3 100%) fixed}
 a{color:var(--mint-d);font-weight:700}
@@ -56,3 +56,46 @@ footer{max-width:820px;margin:0 auto;padding:0 max(16px,4vw) 40px;color:var(--cr
 
 @media(max-width:600px){table{display:block;overflow-x:auto}}
 :not(pre)>code{overflow-wrap:anywhere}
+
+/* skip link: visible only when it has keyboard focus */
+.skip{position:absolute;left:12px;top:-60px;z-index:20;background:var(--ink);color:var(--cream);padding:10px 16px;border-radius:0 0 10px 10px;font-weight:800;text-decoration:none}.skip:focus{top:0;outline:3px solid var(--honey)}
+
+/* diagrams: plain HTML and CSS, so that a screen reader can read them and a phone can reflow them */
+.diagram{margin:12px 0 16px;padding:14px;background:var(--peach);border:3px solid var(--outline);border-radius:14px;box-shadow:4px 4px 0 var(--outline)}
+.diagram ol,.diagram ul{list-style:none;margin:0;padding:0}
+.diagram .flow{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch}
+.diagram .box-d{flex:1 1 140px;background:var(--card);color:var(--ink);border:2px solid var(--outline);border-radius:10px;padding:8px 10px;font-size:.92rem;line-height:1.3;display:flex;flex-direction:column;justify-content:center;text-align:center}
+.diagram .box-d b{font-family:var(--px);font-size:1.05rem;font-weight:400}
+.diagram .box-d span{display:block;margin-top:2px;font-size:.82rem}
+.diagram .group{flex:1 1 150px;display:flex}.diagram .group ul{display:flex;flex-direction:column;gap:6px;width:100%}.diagram .group .box-d{flex:1 1 auto}
+.diagram .arrow{flex:0 0 auto;align-self:center;display:flex;flex-direction:column;align-items:center;font-family:var(--px);font-size:1.5rem;line-height:1;color:var(--coral-d)}
+.diagram .arrow::before{content:"\2192"}.diagram .arrow i{font-style:normal;font-family:var(--body,inherit);font-size:.72rem;line-height:1.15;color:var(--ink);max-width:90px;text-align:center;margin-top:2px}
+.diagram .stackdown{flex-direction:column}.diagram .stackdown .box-d,.diagram .stackdown .group{flex:0 0 auto}.diagram .stackdown .arrow::before{content:"\2193"}
+.diagram .stackonly .box-d{text-align:left}
+.diagram .loopback{margin:8px 0 0;padding:6px 10px;background:var(--card);border:2px dashed var(--outline);border-radius:10px;font-size:.88rem;color:var(--ink);text-align:center}.diagram .loopback span{font-size:1.2rem;color:var(--coral-d);margin-right:4px}
+.diagram .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+.diagram .col{background:var(--card);border:2px solid var(--outline);border-radius:10px;padding:8px 12px}.diagram .col h4{font-family:var(--px);font-weight:400;font-size:1.05rem;margin:0 0 4px}.diagram .col ul{list-style:disc;padding-left:18px;font-size:.9rem}
+.diagram figcaption{margin-top:10px;font-size:.92rem;color:var(--ink);font-weight:700;text-align:center}
+@media(max-width:620px){.diagram .flow:not(.stackdown) .arrow::before{content:"\2193"}.diagram .flow:not(.stackdown){flex-direction:column}.diagram .flow:not(.stackdown) .box-d,.diagram .flow:not(.stackdown) .group{flex:0 0 auto}.diagram .arrow i{max-width:none}}
+
+/* long flows go top to bottom: compact boxes, the arrow and its label on one line */
+.diagram .stackdown{align-items:center;gap:4px}
+.diagram .stackdown>.box-d{width:min(100%,560px);padding:6px 12px}
+.diagram .stackdown>.group{width:min(100%,560px)}.diagram .stackdown .group ul{flex-direction:row;flex-wrap:wrap}.diagram .stackdown .group .box-d{flex:1 1 150px}
+.diagram .stackdown .arrow{flex-direction:row;gap:8px;font-size:1.15rem;min-height:18px}.diagram .stackdown .arrow i{font-size:.8rem;max-width:none;margin:0;text-align:left}
+.diagram .stackdown .box-d span{display:inline;margin:0 0 0 8px}.diagram .stackdown .box-d span::before{content:"\00b7\00a0"}
+.diagram .stackdown .box-d{display:block;text-align:center}
+.diagram .stackdown .group .box-d{text-align:center}
+.diagram .stackdown .group .box-d span{display:block;margin:2px 0 0}.diagram .stackdown .group .box-d span::before{content:none}
+
+/* spaced review: questions from earlier days (assets/review.js) */
+.spaced{margin-top:14px;padding:12px 14px;background:var(--peach);border:2px dashed var(--outline);border-radius:12px}
+.spaced h3{margin:0 0 4px}.spaced .note{font-size:.9rem;margin:0 0 8px}
+.spaced-q{background:var(--card);border:2px solid var(--outline);border-radius:10px;padding:10px 12px;margin:8px 0}
+.spaced-q .from{font-size:.82rem;font-weight:800;margin:0 0 4px}.spaced-q .q{font-weight:700;margin:6px 0}.spaced-q .ctx{font-style:italic;margin:4px 0}
+.spaced-q pre{white-space:pre-wrap;word-break:break-word;margin:4px 0 8px}
+.spaced .choices{display:flex;flex-direction:column;gap:6px}
+.spaced button{font:inherit;font-weight:600;text-align:left;color:var(--ink);background:var(--honey);border:3px solid var(--outline);border-radius:12px;padding:6px 14px;min-height:44px;cursor:pointer}
+.spaced button:hover:not(:disabled){background:var(--mint)}.spaced button:focus-visible{outline:3px solid var(--coral-d);outline-offset:2px}
+.spaced button:disabled{cursor:default}.spaced button.right{background:var(--mint)}.spaced button.wrong{background:#FFD0C4}.spaced button.pick{outline:3px solid var(--outline)}
+.spaced .fb{margin-top:8px;padding:8px 12px;background:var(--cream);border-left:8px solid var(--mint-d);border-radius:8px;font-size:.92rem}

@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 75 &middot; LEVEL 6: RAG &middot; MIXED PRACTICE</div><h1>Mixed practice: cite or refuse</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to answer five questions with citations and refuse when there is no source, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why do you fuse two searches by rank and not by adding the scores?</li><li>What is an invented citation?</li></ol><details><summary>Answers</summary><ol><li>The scores are in different units: a keyword score is much bigger than a similarity, so one list would decide. Ranks can be compared.</li><li>A citation in the answer that is not one of the chunks you gave to the model.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why do you fuse two searches by rank and not by adding the scores?</li><li>What is an invented citation?</li></ol><details><summary>Answers</summary><ol><li>The scores are in different units: a keyword score is much bigger than a similarity, so one list would decide. Ranks can be compared.</li><li>A citation in the answer that is not one of the chunks you gave to the model.</li></ol></details><div class="spaced" data-day="75" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You get a contract, and you write the script yourself, from a blank file. Use your earlier files (<code>pipeline.py</code>, <code>grounding.py</code>, <code>simulated.py</code>, <code>embedder.py</code>, <code>store.py</code>).</p><pre><code>ask_cited.py
   input : the chunks table (Day 67) and these 5 questions
   does  : for each question, retrieve the top 3 chunks, look at the best similarity;

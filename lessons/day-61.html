@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 61 &middot; LEVEL 6: RAG &middot; MIXED PRACTICE</div><h1>Mixed practice: embeddings in pgvector</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to store 10 embeddings in pgvector and query them from Python, with the same ranking as in memory, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What do the image, the container and the volume do?</li><li>Which operator gives the cosine distance, and how do you sort for the nearest rows?</li></ol><details><summary>Answers</summary><ol><li>The image is the recipe, the container is one running copy, and the volume keeps the data outside the container so it survives a restart.</li><li><code>&lt;=&gt;</code>, sorted ascending: <code>ORDER BY embedding &lt;=&gt; query LIMIT 3</code>. A smaller distance is closer.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What do the image, the container and the volume do?</li><li>Which operator gives the cosine distance, and how do you sort for the nearest rows?</li></ol><details><summary>Answers</summary><ol><li>The image is the recipe, the container is one running copy, and the volume keeps the data outside the container so it survives a restart.</li><li><code>&lt;=&gt;</code>, sorted ascending: <code>ORDER BY embedding &lt;=&gt; query LIMIT 3</code>. A smaller distance is closer.</li></ol></details><div class="spaced" data-day="61" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Another blank file. On Day 40 you ranked 10 documents in Python. Today the same ten go into a database. If everything is right, what should the ranking look like, compared with the one in memory?</strong></p><details><summary>Guess first, then open</summary><p>Identical: the same documents, the same model, the same cosine similarity, so the same order and the same scores. A database that gives a different answer than your in-memory code would be a bug, so the comparison is a good test. Today you also see something new: the data stays, so you can restart the database and ask again without embedding the documents.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">5 min</span></h2>
 <p>No new ideas today. The map of what you reuse:</p>

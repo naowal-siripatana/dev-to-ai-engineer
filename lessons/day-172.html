@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 172 &middot; LEVEL 13: SHOW YOUR WORK</div><h1>Practice the demo</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to check your demo path with a script, rehearse the demo twice without stopping, and say what you will do when it breaks.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>How do you rank bugs when you can fix only three?</li><li>What is the difference between <code>/health</code> and <code>/ready</code>?</li></ol><details><summary>Answers</summary><ol><li>By who is hurt, how likely it is, and the size of the fix: the worst small ones first.</li><li>Liveness (the process runs) against readiness (it can do its job, so it asks what it depends on).</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>How do you rank bugs when you can fix only three?</li><li>What is the difference between <code>/health</code> and <code>/ready</code>?</li></ol><details><summary>Answers</summary><ol><li>By who is hurt, how likely it is, and the size of the fix: the worst small ones first.</li><li>Liveness (the process runs) against readiness (it can do its job, so it asks what it depends on).</li></ol></details><div class="spaced" data-day="172" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You have read your script twenty times and it is perfect in your head. Then you stand up, the first question takes ten seconds, and you forget your first sentence. What would have saved you?</strong></p><details><summary>Guess first, then open</summary><p><strong>Doing it for real, twice, without stopping.</strong> A demo is a performance with a machine on stage: the machine and your memory both fail in ways you cannot predict from your desk. The first full run teaches you, the second without stopping builds the habit of carrying on.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow stackdown"><li class="box-d"><b>Demo check</b><span>a script for the beats</span></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Rehearse twice</b><span>the second time you do not stop</span></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Failure drill</b><span>a calm sentence for each</span></li><li class="arrow" aria-hidden="true"></li><li class="box-d"><b>Start, warm up, then go</b></li></ol><figcaption>Make the demo a test you can run, and drill what can break.</figcaption></figure>
 <h3>Piece 1: make the demo a test you can run</h3>
 <p>Your demo is six beats, and each beat has an expected result. Write them as a <strong>demo check</strong>: a script that runs every beat against the running system and says which one is wrong. Run it before every rehearsal, and the morning of the workshop. If it passes, the <em>system</em> is ready; the rest is you.</p>
 <h3>Piece 2: rehearse twice, and the second time do not stop</h3>

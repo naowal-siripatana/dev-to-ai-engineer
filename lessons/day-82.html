@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 82 &middot; LEVEL 7: TOOLS &middot; MIXED PRACTICE</div><h1>Mixed practice: tool schema, validation and errors</h1>
 <div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to validate a tool's input and return a clear error result, from a blank file.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>stop_reason: tool_use</code> mean?</li><li>What happened in the loop when the model asked for <code>E999</code>?</li></ol><details><summary>Answers</summary><ol><li>The model wants a tool result before it can go on. It has asked for a function; nothing has run yet.</li><li>The function raised <code>UnknownErrorCode</code>, nothing caught it, and the loop crashed with a traceback. The model never learned that the code does not exist.</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>stop_reason: tool_use</code> mean?</li><li>What happened in the loop when the model asked for <code>E999</code>?</li></ol><details><summary>Answers</summary><ol><li>The model wants a tool result before it can go on. It has asked for a function; nothing has run yet.</li><li>The function raised <code>UnknownErrorCode</code>, nothing caught it, and the loop crashed with a traceback. The model never learned that the code does not exist.</li></ol></details><div class="spaced" data-day="82" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You get a contract, and you write the module yourself, from a blank file. Use <code>incident.py</code> from Wednesday and Pydantic.</p><pre><code>tool_executor.py
   input : a tool_use from the model: its id, its name and its input (a dict)
   does  : check the name; check the input with a Pydantic model (the code is the letter E and three digits);

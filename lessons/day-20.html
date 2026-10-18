@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 20 &middot; LEVEL 3: DATA AND ML &middot; TEACH-BACK</div><h1>Teach-back: Depends() vs constructor injection</h1>
 <div class="meta"><span>30 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to explain in 5 sentences how Depends() and constructor injection differ and work together.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. On paper, write what each of these means to you in <strong>one line</strong>: <em>dependency</em>, <em>constructor</em>, <em>Depends()</em>. Then write one thing you are <em>not</em> sure about.</p><p>Do not look anything up. The unsure line is the most useful line you will write today.</p></section>
+<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. On paper, write what each of these means to you in <strong>one line</strong>: <em>dependency</em>, <em>constructor</em>, <em>Depends()</em>. Then write one thing you are <em>not</em> sure about.</p><p>Do not look anything up. The unsure line is the most useful line you will write today.</p><div class="spaced" data-day="20" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Explain it <span class="t">10 min</span></h2><p><strong>Your task:</strong> explain the difference between <code>Depends()</code> and constructor injection, in <strong>5 sentences</strong> or a <strong>60-second voice note</strong>.</p><ul><li><strong>Who you are talking to:</strong> a teammate who knows classes in Python but has never used FastAPI&rsquo;s <code>Depends</code>.</li><li><strong>Use these words:</strong> client, class, route, test, swap.</li><li><strong>Rules:</strong> no notes, and say what each technical word means in a few plain words.</li></ul><p>Write it or record it now. A rough first try is exactly right.</p><details><summary>Stuck? Sentence starters</summary><p>Use these if you freeze:</p><pre><code>1. Both are ways to ... what a piece of code needs, instead of ...
 2. With constructor injection, a class gets ... in its ..., and I pass it ...
 3. With Depends(), a route function ..., and FastAPI ... for each request.

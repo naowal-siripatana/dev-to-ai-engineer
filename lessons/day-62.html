@@ -7,12 +7,13 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 62 &middot; LEVEL 6: RAG &middot; TEACH-BACK</div><h1>Teach-back: why a vector database</h1>
 <div class="meta"><span>30 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to explain in 5 sentences why vectors live in a database, with the speed, accuracy and cost of an index measured.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A colleague says: &ldquo;I keep 1,000 embeddings in a numpy array and it works. Why would I run a database for vectors?&rdquo; Write what you would answer in two lines. Then write one situation in which the colleague is right, and one in which they are not.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p></section>
+<section><h2><span class="n">1</span> &middot; Warm-up: write down what you know <span class="t">5 min</span></h2><p>Close your notes. A colleague says: &ldquo;I keep 1,000 embeddings in a numpy array and it works. Why would I run a database for vectors?&rdquo; Write what you would answer in two lines. Then write one situation in which the colleague is right, and one in which they are not.</p><p>Do not look anything up. Your guess is the most useful line you will write today.</p><div class="spaced" data-day="62" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Explain it <span class="t">10 min</span></h2><p><strong>Your task:</strong> explain <strong>why we use a vector database</strong> (here: PostgreSQL with pgvector) instead of a list in memory, in <strong>5 sentences</strong> or a <strong>60-second voice note</strong>.</p><ul><li><strong>Who you are talking to:</strong> the colleague above, who is happy with numpy.</li><li><strong>Use these words:</strong> persist, index, nearest, filter, approximate.</li><li><strong>Rules:</strong> no notes, and be fair: give the case where the database is <em>not</em> needed.</li></ul><p>Write it or record it now. A rough first try is exactly right.</p><details><summary>Stuck? Sentence starters</summary><p>Use these if you freeze:</p><pre><code>1. A vector database keeps ... so that ...
 2. Searching without an index means ..., so it gets ... when there are more rows.
 3. An index such as HNSW ..., but the answer is only ...

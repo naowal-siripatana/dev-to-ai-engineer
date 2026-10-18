@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="../assets/fonts.css">
 <link rel="stylesheet" href="../assets/lesson.css"></head><body>
 <div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
-<main>
+<a class="skip" href="#main">Skip to the lesson</a>
+<main id="main">
 <div class="hero"><div class="kicker">DAY 135 &middot; LEVEL 12: LLMOPS</div><h1>Reliability: timeouts, fallback and caching</h1>
 <div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
 <div class="goal">Today you will be able to make a model call survive a failure with a timeout and a fallback, and say what a safe cache needs.</div>
 
-<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Which five numbers are on your dashboard plan?</li><li>What is the difference between NULL and 0 for the tokens of a request?</li></ol><details><summary>Answers</summary><ol><li>Question count, success rate, average (and median) response time, total cost and failed queries.</li><li>NULL means not measured; 0 means measured and zero (for example no model was called).</li></ol></details></section>
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Which five numbers are on your dashboard plan?</li><li>What is the difference between NULL and 0 for the tokens of a request?</li></ol><details><summary>Answers</summary><ol><li>Question count, success rate, average (and median) response time, total cost and failed queries.</li><li>NULL means not measured; 0 means measured and zero (for example no model was called).</li></ol></details><div class="spaced" data-day="135" data-lags="14,28" hidden></div><script src="../assets/review.js" defer></script></section>
 <section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your model provider has an outage at 2 a.m. for ten minutes. What does your assistant do, and what does the user see: an error, a spinner, or an answer?</strong></p><details><summary>Guess first, then open</summary><p>It depends on what you built <em>before</em> the outage. A system that has a <strong>timeout</strong> (so that it does not wait for ever), a <strong>fallback</strong> (a second model to try), and a clear message when everything fails, gives an answer or an honest &ldquo;try again in a minute&rdquo;. One that has none of these hangs, or shows a stack trace.</p></details></section>
 <section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<figure class="diagram"><ol class="flow"><li class="box-d"><b>Ask model 1</b><span>with a timeout</span></li><li class="arrow" aria-hidden="true"><i>failed or slow?</i></li><li class="box-d"><b>Fallback</b><span>say which one answered</span></li><li class="arrow" aria-hidden="true"><i>same question again?</i></li><li class="box-d"><b>Cache</b><span>key includes the role</span></li></ol><figcaption>A cache trades freshness for speed; a fallback trades quality for staying up.</figcaption></figure>
 <h3>Piece 1: a timeout, so that you stop waiting</h3>
 <p>A model call can hang. Without a limit, your request hangs too, and so does your user. A <strong>timeout</strong> says &ldquo;if there is no answer in N seconds, give up&rdquo;. Choose N from what a good call needs plus some room. One honest limit: in Python you cannot kill a thread, so the slow call keeps running in the background, and its answer is simply ignored.</p>
 <h3>Piece 2: a fallback, and honesty about which one answered</h3>
