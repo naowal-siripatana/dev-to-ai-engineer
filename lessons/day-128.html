@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 128 - Logging and tracing LLM calls</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 128 &middot; LEVEL 12: LLMOPS</div><h1>Logging and tracing LLM calls</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to give every request an id and follow one request through your logs by that id.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Which attack got through in your Day 124 table?</li><li>Why must an audit log never raise an error?</li></ol><details><summary>Answers</summary><ol><li>The forged role header: a customer sent <code>x-demo-role: staff</code>, because the role comes from something the caller writes.</li><li>A log that cannot be written must not cost the user an answer.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A user writes: &ldquo;I asked a question at 11:49 and it took forever.&rdquo; Your system has a .NET gateway, a Python service and a database. In which log do you look, and for what?</strong></p><details><summary>Guess first, then open</summary><p>You cannot look in one: the request passed through several. You need something that is the <strong>same in every one</strong>: a <strong>request id</strong>. The gateway makes it (or accepts the caller&rsquo;s), sends it to the Python service, and both write it on every log line. Then one search finds the whole story of one request, in every service.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: logs, metrics and traces</h3>
+<p><strong>Logs</strong> say what happened, one line per event. <strong>Metrics</strong> are numbers about many requests (a median, an error count). A <strong>trace</strong> follows <em>one</em> request through several services and shows where the time went. You need all three, and the thing that connects them is the <strong>request id</strong> (also called a correlation id or trace id).</p>
+<h3>Piece 2: one id, set at the door, passed on, written everywhere</h3>
+<p>The first service that sees the request <em>sets</em> the id: it uses the caller&rsquo;s if it is safe, and makes a new one if not. It puts the id on the <strong>response</strong>, so the caller can quote it, on <strong>every log line</strong>, and in the header of every <strong>call to the next service</strong>. A header comes from outside, so it is <em>user input</em>: accept only a safe shape (letters, digits, dot, dash, underscore, up to 64 characters). A newline in it could forge extra lines in your log.</p>
+<h3>Piece 3: log what you will need at 2 a.m., and not what you must protect</h3>
+<p>For an LLM call, record the route, the role, the latency, the model, the tokens, the outcome, and the ids of the sources, and whether a guardrail blocked something. Keep out secrets, and be careful with the text of prompts and answers: they may hold private data, so hide it (as the audit log hides emails) or do not store it.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> ASP.NET Core already gives every request a <code>TraceIdentifier</code> and, through <code>Activity</code>, a W3C trace id (the <code>traceparent</code> header). Our <code>X-Request-Id</code> is the simplest version of the same idea, and it is the stepping stone to OpenTelemetry. In .NET, <code>ILogger.BeginScope</code> is how you put the id on every line; in Python, a <code>logging.Filter</code> and a <code>ContextVar</code> do it.</div>
+<div class="box cap"><strong>Capstone:</strong> Module 12 ends with a dashboard of five numbers, built on the rows you will store per request. It all starts with the id.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>The three kinds of record, and what to put in an LLM call&rsquo;s record:</p><pre><code>LOGS     what happened, in words, one line per event.            &#x27;POST /api/ask -&gt; 200 in 3584 ms&#x27;
+METRICS  numbers about many requests, to count and compare.       &#x27;median 8 ms, p95 10 ms, 1 error in 20&#x27;
+TRACES   the path of ONE request through several services.        &#x27;demo-123: gateway 3723 ms, of which Python 3584 ms&#x27;
+All three share one thing: the REQUEST ID, so that you can move from a number, to a line, to one request.</code></pre><pre><code>what to record for an LLM call                              what to keep out
+request id, route, role, status, outcome                     secrets and keys
+latency (and where the time went)                            the full prompt and answer text (they may hold private data)
+model name, input tokens, output tokens, cost                questions as typed, unless hidden (emails) and with a retention rule
+which sources were used (ids, not text)
+whether a guardrail blocked something, and why</code></pre><p>The Python side, in <code>src/my_ai_project/observability.py</code>: a context variable that holds the id of the current request, a function that cleans an incoming id, and a logging filter that adds it to every line:</p><pre><code>import contextvars
+import logging
+import re
+import uuid
+
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(&quot;request_id&quot;, default=&quot;-&quot;)
+
+# What a request id may look like when it comes from outside. Anything else is replaced: a header is user input, and a newline in it
+# would let a caller forge extra lines in your log.
+VALID_REQUEST_ID = re.compile(r&quot;[A-Za-z0-9._-]{1,64}&quot;)
+
+
+def clean_request_id(value: str | None) -&gt; str:
+    &quot;&quot;&quot;Use the id the caller sent if it is safe, otherwise make a new one.&quot;&quot;&quot;
+    if value is not None and VALID_REQUEST_ID.fullmatch(value):
+        return value
+    return uuid.uuid4().hex
+
+
+class RequestIdFilter(logging.Filter):
+    &quot;&quot;&quot;Puts the id of the current request on every log record, so that one grep follows a request through the whole system.&quot;&quot;&quot;
+
+    def filter(self, record: logging.LogRecord) -&gt; bool:
+        record.request_id = request_id_var.get()
+        return True
+
+
+LOG_FORMAT = &quot;%(asctime)s %(levelname)s %(name)s rid=%(request_id)s %(message)s&quot;
+
+
+def setup_logging() -&gt; None:
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(RequestIdFilter())</code></pre><p>A middleware in <code>api.py</code> sets the id for each request, puts it on the response, and times the request (the diff; the part about metrics is for Wednesday):</p><pre><code>diff --git a/src/my_ai_project/api.py b/src/my_ai_project/api.py
+index 2b66821..7e6d111 100644
+--- a/src/my_ai_project/api.py
++++ b/src/my_ai_project/api.py
+@@ -1,11 +1,13 @@
+ import json
+ import logging
++import os
++import time
+ from collections.abc import Iterator
+ from typing import Annotated, Any, Literal
+ 
+ import anthropic
+ import psycopg
+-from fastapi import FastAPI, HTTPException, Query
++from fastapi import FastAPI, HTTPException, Query, Request
+ from fastapi.responses import StreamingResponse
+ from pydantic import BaseModel, Field, ValidationError, field_validator
+ 
+@@ -14,15 +16,46 @@ from my_ai_project.structured import StructuredOutputError, ask_structured, extr
+ from my_ai_project.extractor import Extraction, ExtractionError, extract
+ from my_ai_project.access import allowed_kinds
+ from my_ai_project.deps import AuditLogDep, EmbedderDep, KeywordsDep, LlmDep, RoleDep, StoreDep, SummaryDep, ToolModelDep, WriterDep
++from my_ai_project.metrics import RequestMetrics, default_store
++from my_ai_project.observability import clean_request_id, request_id_var, setup_logging
+ from my_ai_project.pipeline import retrieve
+ from my_ai_project.rag import answer_question
+ from my_ai_project.tool_loop import assist
+ 
+-logging.basicConfig(level=logging.INFO, format=&quot;%(asctime)s %(levelname)s %(name)s %(message)s&quot;)
++setup_logging()
++logger = logging.getLogger(&quot;api&quot;)
+ 
+ app = FastAPI(title=&quot;my-ai-project&quot;)
+ 
+ 
++@app.middleware(&quot;http&quot;)
++async def observe(request: Request, call_next):  # type: ignore[no-untyped-def]
++    &quot;&quot;&quot;Gives every request an id (the caller&#x27;s, if it is safe), times it, and writes one row of metrics when it ends.&quot;&quot;&quot;
++    request_id = clean_request_id(request.headers.get(&quot;x-request-id&quot;))
++    token = request_id_var.set(request_id)
++    request.state.usage = {}
++    started = time.perf_counter()
++    status = 500
++    try:
++        response = await call_next(request)
++        status = response.status_code
++        response.headers[&quot;x-request-id&quot;] = request_id
++        return response
++    finally:
++        latency_ms = (time.perf_counter() - started) * 1000
++        logger.info(&quot;%s %s -&gt; %s in %.0f ms&quot;, request.method, request.url.path, status, latency_ms)
++        if request.url.path.startswith(&quot;/api/&quot;):
++            usage = request.state.usage
++            outcome = usage.get(&quot;outcome&quot;) or (&quot;answered&quot; if status &lt; 400 else &quot;error&quot;)
++            store = getattr(request.app.state, &quot;metrics&quot;, None) or default_store()
++            store.record(RequestMetrics(
++                request_id=request_id, route=request.url.path, role=request.headers.get(&quot;x-demo-role&quot;, &quot;customer&quot;), status_code=status,
++                latency_ms=latency_ms, outcome=outcome if status &lt; 500 else &quot;error&quot;, model=usage.get(&quot;model&quot;, os.environ.get(&quot;LLM_MODEL&quot;, &quot;stand-in&quot;)),
++                input_tokens=usage.get(&quot;input_tokens&quot;), output_tokens=usage.get(&quot;output_tokens&quot;),
++            ))
++        request_id_var.reset(token)
++
++
+ class ChatRequest(BaseModel):
+     question: str = Field(min_length=1, max_length=2000)
+     top_k: int = Field(default=3, ge=1, le=10)
+@@ -185,6 +218,7 @@ class AskResponse(BaseModel):
+ 
+ @app.post(&quot;/api/ask&quot;)
+ def ask(
++    http: Request,
+     request: AskRequest, embedder: EmbedderDep, store: StoreDep, keywords: KeywordsDep, writer: WriterDep, role: RoleDep, audit: AuditLogDep
+ ) -&gt; AskResponse:
+     try:
+@@ -192,6 +226,7 @@ def ask(
+     except psycopg.OperationalError as err:
+         raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
+     audit.record(&quot;question&quot;, role, question=request.question, refused=result.refused, reason=result.reason, sources=[s.doc_id for s in result.sources])
++    http.state.usage = {&quot;outcome&quot;: &quot;refused&quot; if result.refused else &quot;answered&quot;, &quot;input_tokens&quot;: result.input_tokens, &quot;output_tokens&quot;: result.output_tokens}
+     sources = [
+         SearchHit(citation=f.citation, doc_id=f.doc_id, chunk_index=f.chunk_index, title=f.title, kind=f.kind, text=f.text, similarity=f.similarity)
+         for f in result.sources</code></pre><p>The goal, shown with the whole system running (the .NET gateway on port 5100 and the Python service on 8000). One call with an id of our own choice:</p><div class="out"><b>You should see</b><br>$ curl -D - -X POST localhost:5100/api/ask -H "x-demo-role: staff" -H "X-Request-Id: demo-123" -d '{"question": "What does error E104 mean?"}'<br>HTTP/1.1 200 OK<br>X-Request-Id: demo-123</div><p>And the story of that one request, found by searching for <code>demo-123</code> in every place that writes something:</p><div class="out"><b>You should see</b><br>--- the .NET gateway (trimmed)<br>11:49:33 info: AskGateway.PythonServiceClient[0] rid=demo-123 calling the AI service: POST /api/ask<br>11:49:36 info: ClientHandler[101] rid=demo-123 => HTTP POST http://localhost:8000/api/ask Received HTTP response headers after 3691.6557ms - 200<br>11:49:36 info: Request[0] rid=demo-123 POST /api/ask -> 200 in 3723 ms<br>--- the Python service<br>2026-10-18 11:49:36,746 INFO api rid=demo-123 POST /api/ask -> 200 in 3584 ms<br>--- the audit log of the Python service<br>{"time": "2026-10-18T04:49:36.743285+00:00", "request_id": "demo-123", "event": "question", "role": "staff", "question": "What does error E104 mean?", "refused": false, "reason": "", "sources": ["error-e104"]}</div><p>Read it as an investigator. The gateway took 3723 ms, and the Python service took 3584 ms of that: so about 140 ms were spent <em>outside</em> Python (the gateway, the network). And the whole request was slow because it was the <strong>first</strong> one: the Python service loads its model and builds its keyword index on the first request. You would never have known without the id and the times.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c observability</code>). Today you do the <strong>Python side</strong>. On Thursday you add the .NET side from a blank file.</p>
+<h3><span class="step">Step 1</span> Add the request id</h3>
+<p>Add <code>observability.py</code>, change <code>api.py</code> as in the diff (leave out the metrics part for now: keep the id, the header and the log line), and make the audit log write <code>request_id</code>. Start the API.</p>
+<h3><span class="step">Step 2</span> Follow one request</h3>
+<p>Send a request with your own id (<code>-H &quot;X-Request-Id: my-first-trace&quot;</code>) and one without. <strong>Predict first:</strong> what will the header of the response be in each case? Then <code>grep</code> your log and your audit file for the id.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Send an id with a space or a semicolon in it, and one that is 100 characters long. What does the response header say, and why is that the right behaviour?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Write the tests of the template: a safe id is kept and echoed, an unsafe one is replaced, a missing one is made, and the audit line carries the id. Then write down: <em>what would you want to know about one slow request that your log does not tell you yet?</em> (That list is Wednesday.)</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Give every request an id&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The id is <code>-</code> in the log</strong>: the filter is not on the handler, or the line was written outside a request (for example by uvicorn&rsquo;s own access log, which does not use your filter).</li><li><strong>The id is missing in the audit log</strong>: <code>audit.py</code> must read <code>request_id_var</code>, and the middleware must set it before the route runs.</li><li><strong>The response has no header</strong>: set it on the response object that comes back from <code>call_next</code>.</li><li><strong>mypy and the middleware</strong>: the function has an untyped signature in the diff, with a comment that explains it.</li></ul><details><summary>Solution: Step 2 (the shape to expect, abbreviated)</summary><div class="out"><b>You should see</b><br>$ curl -D - -X POST localhost:8000/api/ask -H "x-demo-role: staff" -H "X-Request-Id: demo-123" -d '{"question": "What does error E104 mean?"}'<br>HTTP/1.1 200 OK<br>x-request-id: demo-123<br><br>$ grep demo-123 python.log audit.jsonl<br>python.log:   ... INFO api rid=demo-123 POST /api/ask -> 200 in ... ms<br>audit.jsonl:  {"time": "...", "request_id": "demo-123", "event": "question", "role": "staff", ...}</div><p>With your own safe id the response repeats it. Without one, the service makes a new 32-character id, and the caller can quote it when it reports a problem.</p></details><details><summary>Solution: Step 3</summary><p>The unsafe ids are replaced by a new 32-character id, and the bad value never reaches a log line. A header is something the caller writes: if you copied it into your log as it came, a caller could put a line break in it and write fake lines, for example a line that says an administrator logged in. Checking the shape of everything that comes from outside is the rule here, as in Module 11.</p></details><details><summary>Solution: Step 4 (what is still missing)</summary><p>Usually: how many <strong>tokens</strong> the request used, what it <strong>cost</strong>, and how it <strong>ended</strong> (answered, refused or failed), as numbers that you can add up across requests. Logs are for reading one request; for the totals you need a table. That is Wednesday.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What are logs, metrics and traces, and what connects them?</li><li>Why must you check the shape of an incoming request id?</li><li>Name three things to record for an LLM call, and two to keep out.</li></ol><details><summary>Answers</summary><ol><li>Logs say what happened, metrics are numbers across requests, a trace follows one request through services. The request id connects them.</li><li>A header is user input; a line break in it could forge extra lines in your log. Accept only a safe shape and replace anything else.</li><li>For example the route, the latency, the tokens and the outcome. Keep out secrets and the full text of prompts and answers (or hide private strings).</li></ol></details></section>
+<section id="game-day128" class="game"><h2><span class="n">+</span> &middot; Game: Follow the Request <span class="t">5 min</span></h2>
+<p><p>You follow one request by its id. Read the line, pick what it tells you, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day128-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day128-play">Start the game</button></div>
+<div id="day128-round" hidden><div class="gtop"><span id="day128-num">Round 1</span><span id="day128-score">Score 0</span></div>
+<pre hidden><code id="day128-code"></code></pre><div class="q" id="day128-q"></div><div class="choices" id="day128-opts"></div>
+<div class="fb" id="day128-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day128-next" hidden>Next round</button></p></div>
+<div id="day128-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day128",[{"c": "curl -D - ... -H \"X-Request-Id: demo-123\"", "q": "What is in the response header?", "o": ["X-Request-Id: demo-123", "A new id", "Nothing"], "a": 0, "out": "HTTP/1.1 200 OK\nX-Request-Id: demo-123", "why": "A safe id from the caller is kept and echoed, so the caller can quote it."}, {"c": "grep demo-123 on the gateway log and the Python log", "q": "What do the two lines say about the time?", "o": ["Gateway 3723 ms, Python 3584 ms: about 140 ms outside Python", "Both 8 ms", "Python 4000 ms"], "a": 0, "out": "Request[0] rid=demo-123 POST /api/ask -> 200 in 3723 ms\napi rid=demo-123 POST /api/ask -> 200 in 3584 ms", "why": "Two numbers for one request show where the time went."}, {"c": "Why was demo-123 so slow?", "q": "What is the reason?", "o": ["It was the first request: the service loads its model and builds its keyword index", "The database was down", "The gateway is slow"], "a": 0, "out": "(a cold start)", "why": "Without the id and the times you would never know."}, {"c": "X-Request-Id: has a space", "q": "What does the service do?", "o": ["Replaces it with a new 32-character id", "Logs it as it came", "Rejects the request"], "a": 0, "out": "(test: an unsafe id is replaced and never forwarded)", "why": "A header is user input; a line break in it could forge log lines."}, {"c": "Logs, metrics, traces", "q": "Which follows ONE request through several services?", "o": ["A trace", "A metric", "A log level"], "a": 0, "out": "demo-123: gateway 3723 ms, of which Python 3584 ms", "why": "The request id connects all three."}, {"c": "What to record for an LLM call", "q": "What do you keep out?", "o": ["Secrets, and the full text of prompts and answers (or hide private strings)", "The latency", "The model name"], "a": 0, "out": "(route, role, latency, model, tokens, outcome, source ids, blocks)", "why": "Prompts and answers may hold private data."}],["Trace rookie", "Trace regular", "Request follower"],"Give every request an id at the door, check its shape, pass it on and write it everywhere, so that one search follows one request through every service.");</script>
+<p><small>Tick &ldquo;Play the Follow the Request game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a request id that is set at the door, returned to the caller, written on every log line and in the audit log, a safe check for ids from outside, and a way to follow one request by searching for it.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 128 checklist.</li><li>Share one line in the comments: what would you want your log to tell you about a slow request?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you record tokens, latency and cost for every question, in a table.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

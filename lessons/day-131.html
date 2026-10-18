@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 131 - Mixed practice: add a trace id across .NET and Python</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 131 &middot; LEVEL 12: LLMOPS &middot; MIXED PRACTICE</div><h1>Mixed practice: add a trace id across .NET and Python</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to pass a request id from the .NET gateway to the Python service, with a safe check on each side and tests, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the difference between NULL and 0 for the tokens of a request?</li><li>Why is the first request after a start much slower than the rest?</li></ol><details><summary>Answers</summary><ol><li>NULL means not measured; 0 means measured and zero (for example, no model was called).</li><li>The service loads its model and builds its keyword index when the first request arrives (a cold start).</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. On Monday you gave every request an id in Python. Now you do the same in the <strong>.NET gateway</strong> and pass the id on, so that one id follows a request across both services. You get a contract, and you write the code yourself, from blank files.</p><pre><code>Gateway (.NET): RequestIds.cs, and changes in Program.cs and PythonServiceClient.cs
+  RequestIds.Clean(string? value) -&gt; string
+      keeps an id of 1 to 64 characters from  A-Z a-z 0-9 . _ -   (\A ... \z, not ^ ... $)
+      replaces anything else, and a missing id, with a new Guid written as 32 hex characters
+  a middleware that, for every request:
+      takes the id from the header X-Request-Id (if it is safe), sets HttpContext.TraceIdentifier,
+      puts it on the RESPONSE header, writes it in a logging scope (rid=...) and logs &#x27;METHOD PATH -&gt; STATUS in N ms&#x27;
+  the client of the Python service sends the same id in the header X-Request-Id
+  the console logger includes scopes, on one line
+
+Python (already done on Monday): the same rules, for the header x-request-id.
+
+Tests (xUnit, with a stub in place of the Python service):
+  1  a new request gets an id; the same id is on the response and in the call to Python
+  2  a safe id from the caller is kept on the response and in the call to Python
+  3  three unsafe ids (a space, a semicolon, 70 characters) are replaced and never forwarded</code></pre><p><strong>Predict first</strong>, before you write anything: where in the .NET code does the client of the Python service get the id? (The gateway already has a <code>TraceIdentifier</code> for every request: what is it, and why set it yourself?)</p></section>
+<section><h2><span class="n">3</span> &middot; Do it <span class="t">25 min</span></h2><ol><li>Write <code>RequestIds.cs</code>, the middleware and the change to the client. Do not open the solution until you have tried for 15 minutes.</li><li>Write the three tests (they need a stub that remembers the last request, as in the tests of Day 98).</li><li>Run both services and send one request with your own id. <strong>Search</strong> the logs of both services for it.</li><li>Commit in both projects: <code>git add .</code> and <code>git commit -m &quot;Pass a request id from the gateway to the Python service&quot;</code>.</li></ol><details><summary>Hint: where to start</summary><p>A static class with a <code>[GeneratedRegex]</code> for <code>\A[A-Za-z0-9._-]{1,64}\z</code>. <code>app.Use(async (context, next) =&gt; ...)</code> before the endpoints: clean the id, set <code>context.TraceIdentifier</code> and the response header <em>before</em> <code>await next()</code>, and open a scope with <code>logger.BeginScope</code>. The client gets an <code>IHttpContextAccessor</code> (register it with <code>AddHttpContextAccessor</code>) and reads <code>HttpContext.TraceIdentifier</code>. In the logging setup, <code>AddSimpleConsole</code> with <code>IncludeScopes = true</code>.</p></details><details><summary>Solution: the id helper</summary><pre><code>using System.Text.RegularExpressions;
+
+namespace AskGateway;
+
+public static partial class RequestIds
+{
+    public const string Header = &quot;X-Request-Id&quot;;
+
+    // What an id from outside may look like. Anything else is replaced: a header is user input, and a newline in it
+    // would let a caller forge extra lines in the log. \A and \z, not ^ and $ ($ also matches before a final newline).
+    [GeneratedRegex(@&quot;\A[A-Za-z0-9._-]{1,64}\z&quot;)]
+    private static partial Regex Valid();
+
+    public static string Clean(string? value) =&gt;
+        value is not null &amp;&amp; Valid().IsMatch(value) ? value : Guid.NewGuid().ToString(&quot;N&quot;);
+}</code></pre></details><details><summary>Solution: the middleware and the client</summary><p>The changes to <code>Program.cs</code> and <code>PythonServiceClient.cs</code>:</p><pre><code>diff --git a/AskGateway/Program.cs b/AskGateway/Program.cs
+index 5ab4b61..2c28ed9 100644
+--- a/AskGateway/Program.cs
++++ b/AskGateway/Program.cs
+@@ -1,7 +1,15 @@
++using System.Diagnostics;
+ using AskGateway;
+ 
+ var builder = WebApplication.CreateBuilder(args);
+ 
++builder.Logging.AddSimpleConsole(options =&gt;
++{
++    options.IncludeScopes = true;      // so that every line of a request carries its id
++    options.SingleLine = true;
++    options.TimestampFormat = &quot;HH:mm:ss &quot;;
++});
++builder.Services.AddHttpContextAccessor();
+ builder.Services.AddValidation();                       // checks [Required], [StringLength], [Range] on the request
+ builder.Services.ConfigureHttpJsonOptions(o =&gt; o.SerializerOptions.PropertyNamingPolicy = ApiJson.Options.PropertyNamingPolicy);
+ builder.Services.AddHttpClient&lt;PythonServiceClient&gt;(client =&gt;
+@@ -13,6 +21,21 @@ builder.Services.AddHttpClient&lt;PythonServiceClient&gt;(client =&gt;
+ 
+ var app = builder.Build();
+ 
++// Every request gets an id: the caller&#x27;s, if it is safe, otherwise a new one. It goes on the response, into every log line, and to the Python service.
++app.Use(async (context, next) =&gt;
++{
++    var requestId = RequestIds.Clean(context.Request.Headers[RequestIds.Header].FirstOrDefault());
++    context.TraceIdentifier = requestId;
++    context.Response.Headers[RequestIds.Header] = requestId;
++    var logger = context.RequestServices.GetRequiredService&lt;ILoggerFactory&gt;().CreateLogger(&quot;Request&quot;);
++    using (logger.BeginScope(&quot;rid={RequestId}&quot;, requestId))
++    {
++        var started = Stopwatch.GetTimestamp();
++        await next();
++        logger.LogInformation(&quot;{Method} {Path} -&gt; {Status} in {Elapsed:F0} ms&quot;, context.Request.Method, context.Request.Path, context.Response.StatusCode, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
++    }
++});
++
+ app.MapGet(&quot;/health&quot;, () =&gt; Results.Ok(new { status = &quot;ok&quot; }));
+ 
+ app.MapPost(&quot;/api/ask&quot;, (AskRequest request, HttpContext http, PythonServiceClient python, CancellationToken cancellationToken) =&gt;
+diff --git a/AskGateway/PythonServiceClient.cs b/AskGateway/PythonServiceClient.cs
+index dcb33c0..9005305 100644
+--- a/AskGateway/PythonServiceClient.cs
++++ b/AskGateway/PythonServiceClient.cs
+@@ -7,7 +7,7 @@ public class PythonServiceException(int statusCode, string message) : Exception(
+     public int StatusCode { get; } = statusCode;
+ }
+ 
+-public class PythonServiceClient(HttpClient http, ILogger&lt;PythonServiceClient&gt; logger)
++public class PythonServiceClient(HttpClient http, IHttpContextAccessor accessor, ILogger&lt;PythonServiceClient&gt; logger)
+ {
+     public const string RoleHeader = &quot;x-demo-role&quot;;   // DEMO ONLY: a real role comes from a login (Module 8)
+ 
+@@ -24,6 +24,12 @@ public class PythonServiceClient(HttpClient http, ILogger&lt;PythonServiceClient&gt; l
+         {
+             message.Headers.Add(RoleHeader, role);
+         }
++        var requestId = accessor.HttpContext?.TraceIdentifier;
++        if (!string.IsNullOrEmpty(requestId))
++        {
++            message.Headers.Add(RequestIds.Header, requestId);   // the Python service logs and stores the same id
++        }
++        logger.LogInformation(&quot;calling the AI service: POST {Path}&quot;, path);
+ 
+         HttpResponseMessage response;
+         try</code></pre></details><details><summary>Solution: the tests</summary><pre><code>diff --git a/AskGateway.Tests/GatewayTests.cs b/AskGateway.Tests/GatewayTests.cs
+index 36dca11..61dde62 100644
+--- a/AskGateway.Tests/GatewayTests.cs
++++ b/AskGateway.Tests/GatewayTests.cs
+@@ -123,4 +123,43 @@ public class GatewayTests
+         var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/assist&quot;, new { question = &quot;x&quot; });
+         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+     }
++
++    [Fact]
++    public async Task A_new_request_gets_an_id_that_is_sent_to_python_and_returned()
++    {
++        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.OK, AssistAnswer));
++        var response = await ClientWith(python).PostAsJsonAsync(&quot;/api/assist&quot;, new { question = &quot;x&quot; });
++
++        var returned = response.Headers.GetValues(&quot;X-Request-Id&quot;).Single();
++        Assert.Equal(32, returned.Length);
++        Assert.Equal(returned, python.LastRequest!.Headers.GetValues(&quot;X-Request-Id&quot;).Single());
++    }
++
++    [Fact]
++    public async Task A_safe_id_from_the_caller_is_kept_all_the_way()
++    {
++        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.OK, AssistAnswer));
++        var http = ClientWith(python);
++        http.DefaultRequestHeaders.Add(&quot;X-Request-Id&quot;, &quot;demo-123&quot;);
++        var response = await http.PostAsJsonAsync(&quot;/api/assist&quot;, new { question = &quot;x&quot; });
++
++        Assert.Equal(&quot;demo-123&quot;, response.Headers.GetValues(&quot;X-Request-Id&quot;).Single());
++        Assert.Equal(&quot;demo-123&quot;, python.LastRequest!.Headers.GetValues(&quot;X-Request-Id&quot;).Single());
++    }
++
++    [Theory]
++    [InlineData(&quot;has a space&quot;)]
++    [InlineData(&quot;semi;colon&quot;)]
++    [InlineData(&quot;xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&quot;)]
++    public async Task An_unsafe_id_is_replaced_and_never_forwarded(string unsafeId)
++    {
++        var python = new StubHandler(_ =&gt; Json(HttpStatusCode.OK, AssistAnswer));
++        var http = ClientWith(python);
++        http.DefaultRequestHeaders.TryAddWithoutValidation(&quot;X-Request-Id&quot;, unsafeId);
++        var response = await http.PostAsJsonAsync(&quot;/api/assist&quot;, new { question = &quot;x&quot; });
++
++        var returned = response.Headers.GetValues(&quot;X-Request-Id&quot;).Single();
++        Assert.NotEqual(unsafeId, returned);
++        Assert.Equal(returned, python.LastRequest!.Headers.GetValues(&quot;X-Request-Id&quot;).Single());
++    }
+ }</code></pre><div class="out"><b>You should see</b><br>gateway: Passed!  - Failed: 0, Passed: 15, Skipped: 0, Total: 15   (10 of Day 98, and 5 new: 1 + 1 + 3)<br>python:  13 passed in test_observability.py   (whole project: 187 passed, 4 skipped; mypy clean)</div><p>The Python side is the observability file of Monday; its tests (and the metrics) are in this file:</p><pre><code>import json
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from conftest import FakeMetrics
+from my_ai_project.api import app
+from my_ai_project.audit import AuditLog
+from my_ai_project.deps import get_audit_log, get_embedder, get_keywords, get_store, get_writer
+from my_ai_project.embedder import FakeEmbedder
+from my_ai_project.hybrid import KeywordIndex
+from my_ai_project.metrics import MetricsStore, RequestMetrics, cost_usd
+from my_ai_project.observability import clean_request_id
+from my_ai_project.simulated import SimulatedWriter
+from test_ask_api import CHUNKS, InMemoryStore
+
+BATTERY = {&quot;question&quot;: &quot;Is it true that the battery lasts about eight hours?&quot;}
+
+
+@pytest.fixture
+def client(tmp_path: Path) -&gt; Iterator[TestClient]:
+    app.dependency_overrides[get_embedder] = FakeEmbedder
+    app.dependency_overrides[get_store] = InMemoryStore
+    app.dependency_overrides[get_keywords] = lambda: KeywordIndex(CHUNKS)
+    app.dependency_overrides[get_writer] = SimulatedWriter
+    app.dependency_overrides[get_audit_log] = lambda: AuditLog(tmp_path / &quot;audit.jsonl&quot;)
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def test_a_safe_request_id_from_the_caller_is_kept_and_echoed(client: TestClient) -&gt; None:
+    response = client.post(&quot;/api/ask&quot;, json=BATTERY, headers={&quot;x-request-id&quot;: &quot;demo-123&quot;})
+    assert response.headers[&quot;x-request-id&quot;] == &quot;demo-123&quot;
+
+
+@pytest.mark.parametrize(&quot;bad&quot;, [&quot;has a space&quot;, &quot;semi;colon&quot;, &quot;x&quot; * 65, &quot;pct%20&quot;, &quot;&quot;])
+def test_an_unsafe_request_id_is_replaced(bad: str, client: TestClient) -&gt; None:
+    echoed = client.post(&quot;/api/ask&quot;, json=BATTERY, headers={&quot;x-request-id&quot;: bad}).headers[&quot;x-request-id&quot;]
+    assert echoed != bad and len(echoed) == 32
+
+
+def test_a_missing_request_id_is_made(client: TestClient) -&gt; None:
+    assert len(client.get(&quot;/health&quot;).headers[&quot;x-request-id&quot;]) == 32
+    assert clean_request_id(None) != clean_request_id(None)
+
+
+def test_the_audit_line_carries_the_request_id(client: TestClient, tmp_path: Path) -&gt; None:
+    client.post(&quot;/api/ask&quot;, json=BATTERY, headers={&quot;x-request-id&quot;: &quot;trace-7&quot;})
+    line = json.loads((tmp_path / &quot;audit.jsonl&quot;).read_text(encoding=&quot;utf-8&quot;).splitlines()[0])
+    assert line[&quot;request_id&quot;] == &quot;trace-7&quot;
+
+
+def test_every_api_request_leaves_one_metrics_row(client: TestClient, metrics_in_memory: FakeMetrics) -&gt; None:
+    client.post(&quot;/api/ask&quot;, json=BATTERY, headers={&quot;x-request-id&quot;: &quot;m-1&quot;})
+    client.get(&quot;/health&quot;)   # not an API route: no row
+    assert len(metrics_in_memory.rows) == 1
+    row = metrics_in_memory.rows[0]
+    assert isinstance(row, RequestMetrics)
+    assert row.request_id == &quot;m-1&quot; and row.route == &quot;/api/ask&quot; and row.outcome == &quot;answered&quot;
+    assert (row.input_tokens or 0) &gt; 0 and (row.output_tokens or 0) &gt; 0 and row.latency_ms &gt; 0
+
+
+def test_a_refusal_before_the_model_costs_zero_tokens(client: TestClient, metrics_in_memory: FakeMetrics) -&gt; None:
+    client.post(&quot;/api/ask&quot;, json={&quot;question&quot;: &quot;Where can I buy a coffee?&quot;})
+    row = metrics_in_memory.rows[0]
+    assert isinstance(row, RequestMetrics)
+    assert row.outcome == &quot;refused&quot; and row.input_tokens == 0 and row.output_tokens == 0
+
+
+def test_a_failed_request_is_an_error_row(client: TestClient, metrics_in_memory: FakeMetrics) -&gt; None:
+    client.post(&quot;/api/ask&quot;, json=BATTERY, headers={&quot;x-demo-role&quot;: &quot;admin&quot;})   # 422: an unknown role
+    row = metrics_in_memory.rows[0]
+    assert isinstance(row, RequestMetrics)
+    assert row.status_code == 422 and row.outcome == &quot;error&quot;
+
+
+def test_unknown_tokens_are_not_zero_tokens() -&gt; None:
+    assert cost_usd(None, None) is None
+    assert cost_usd(0, 0) == 0.0
+    assert cost_usd(1_000_000, 1_000_000, {&quot;input&quot;: 1.0, &quot;output&quot;: 5.0}) == 6.0
+
+
+def test_a_broken_metrics_store_never_breaks_the_caller() -&gt; None:
+    store = MetricsStore(&quot;postgresql://nobody:x@127.0.0.1:1/none&quot;)
+    store.record(RequestMetrics(&quot;r&quot;, &quot;/api/ask&quot;, &quot;customer&quot;, 200, 1.0, &quot;answered&quot;, &quot;stand-in&quot;, 1, 1))</code></pre></details><details><summary>Read the result</summary><p>One id, in the order it travels:</p><div class="out"><b>You should see</b><br>caller --X-Request-Id: demo-123--> gateway (sets TraceIdentifier, response header, log scope)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; --X-Request-Id: demo-123--> Python (context variable, every log line, audit line, metrics row)<br><br>gateway log&nbsp;&nbsp; rid=demo-123 POST /api/ask -> 200 in 3723 ms<br>python log&nbsp;&nbsp;&nbsp;&nbsp;rid=demo-123 POST /api/ask -> 200 in 3584 ms<br>audit log&nbsp;&nbsp;&nbsp;&nbsp; "request_id": "demo-123"<br>metrics row&nbsp;&nbsp; ('demo-123', '/api/ask', 'staff', 200, 3584.3 ms, 'answered', 'stand-in', 240 in, 14 out, 0.000310 USD)</div><p>Why set <code>TraceIdentifier</code> yourself? ASP.NET Core makes its own id for every request, but it is <em>its</em> id, and the caller cannot choose it. Setting it to <em>your</em> id (the caller&rsquo;s, if safe) makes every standard log line of the framework carry the same id as yours. Notice also that the gateway checks the id <strong>and</strong> the Python service checks it again: each service defends itself and does not rely on the other.</p></details></section>
+<section><h2><span class="n">4</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does each service check the id again, even if the other one already did?</li><li>Why <code>\A ... \z</code> and not <code>^ ... $</code> in .NET?</li><li>Where does the id appear after a request, in total?</li></ol><details><summary>Answers</summary><ol><li>Each service must protect itself: the Python service can be called directly, and a rule that depends on another service&rsquo;s check is not a rule.</li><li><code>$</code> also matches before a final newline, so an id with a trailing line break would pass. <code>\z</code> matches only at the very end.</li><li>On the response header, in every log line of the gateway and of Python, in the audit log, and in the metrics row.</li></ol></details></section>
+<section id="game-day131" class="game"><h2><span class="n">+</span> &middot; Game: Id Across Services <span class="t">5 min</span></h2>
+<p><p>You pass an id from .NET to Python. Read the case, pick what happens.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day131-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day131-play">Start the game</button></div>
+<div id="day131-round" hidden><div class="gtop"><span id="day131-num">Round 1</span><span id="day131-score">Score 0</span></div>
+<pre hidden><code id="day131-code"></code></pre><div class="q" id="day131-q"></div><div class="choices" id="day131-opts"></div>
+<div class="fb" id="day131-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day131-next" hidden>Next round</button></p></div>
+<div id="day131-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day131",[{"c": "A request with no X-Request-Id arrives at the gateway", "q": "What happens?", "o": ["The gateway makes a 32-character id, returns it and sends it to Python", "No id is used", "Python makes a different one"], "a": 0, "out": "(test: A_new_request_gets_an_id_that_is_sent_to_python_and_returned)", "why": "The first service sets the id."}, {"c": "X-Request-Id: demo-123", "q": "What happens?", "o": ["It is kept on the response and in the call to Python", "It is replaced", "It is ignored"], "a": 0, "out": "(test: A_safe_id_from_the_caller_is_kept_all_the_way)", "why": "A safe id from the caller is trusted."}, {"c": "X-Request-Id: a 70-character string", "q": "What happens?", "o": ["Replaced, and never forwarded", "Forwarded as it is", "A crash"], "a": 0, "out": "(test: An_unsafe_id_is_replaced_and_never_forwarded)", "why": "Up to 64 characters of a safe set."}, {"c": "[GeneratedRegex(@\"\\A[A-Za-z0-9._-]{1,64}\\z\")]", "q": "Why \\z and not $?", "o": ["$ also matches before a final newline, so a trailing line break would pass", "$ is slower", "No reason"], "a": 0, "out": "(an id with a trailing newline must be replaced)", "why": "Be strict about the details."}, {"c": "context.TraceIdentifier = requestId", "q": "Why set it yourself?", "o": ["The framework's own log lines then carry your id too", "It is required by .NET", "It makes requests faster"], "a": 0, "out": "gateway log   rid=demo-123 POST /api/ask -> 200 in 3723 ms", "why": "One id in every line."}, {"c": "The Python service also checks the id", "q": "Why, when the gateway did?", "o": ["Each service defends itself; it can be called directly", "A mistake", "To be slower"], "a": 0, "out": "(both sides: the same rule)", "why": "A rule that depends on another service's check is not a rule."}],["Id rookie", "Id regular", "Cross-service tracer"],"Set the id at the door, check its shape in every service, pass it on in a header, and test the three cases: new, safe and unsafe.");</script>
+<p><small>Tick &ldquo;Play the Id Across Services game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a request id that crosses the gateway and the Python service, with a safe check on each side and tests for both, and a search that finds one request in every log.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 131 checklist.</li><li>Share one line in the comments: where did the id first show up in your logs?</li><li><strong>Next:</strong> Friday is a teach-back: you explain what you would check at 2 a.m.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

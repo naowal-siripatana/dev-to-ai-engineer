@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 130 - Token, latency and cost tracking</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 130 &middot; LEVEL 12: LLMOPS</div><h1>Token, latency and cost tracking</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to store latency, tokens and cost for every question in a table, and say what each number really means.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What connects logs, metrics and traces?</li><li>Why check the shape of a request id that comes from outside?</li></ol><details><summary>Answers</summary><ol><li>The request id.</li><li>A header is user input: a line break in it could forge extra lines in your log.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your manager asks: &ldquo;How much does the assistant cost per question, and how fast is it?&rdquo; You have a log full of text. Can you answer in a minute? What would you need to have stored?</strong></p><details><summary>Guess first, then open</summary><p>One <strong>row per request</strong> with numbers: latency, input tokens, output tokens, cost, and how it ended. Then the answer is a SQL query. A log is for reading <em>one</em> request; a table is for answering questions about <em>all</em> of them.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: three numbers per request</h3>
+<p>For every request, store <strong>latency</strong> (how long it took), <strong>tokens</strong> (input and output) and <strong>cost</strong> (from tokens and a price), together with <strong>how it ended</strong>: answered, refused, or error. Put them in a table in PostgreSQL, one row per request, with the request id. Now you can count, average, find the slow ones, and add up the cost.</p>
+<h3>Piece 2: be exact about what a number means</h3>
+<p>A missing number is not zero. <code>NULL</code> means &ldquo;not measured&rdquo; (a failed request, a tool loop that does not report tokens yet). <code>0</code> means &ldquo;measured, and it was zero&rdquo; (a question refused before the model was called costs nothing). Mixing them gives averages that lie. Also say where each number comes from: an <em>estimate</em> with a tokenizer is not the <em>billed</em> number, and a price in a config file is an <em>example</em> until you check it.</p>
+<h3>Piece 3: recording must never break the request</h3>
+<p>Writing a metrics row happens at the end of every request. If the database is down, the row is lost, and that is acceptable; failing the user&rsquo;s request is not. So the writer catches database errors and logs a warning, like the audit log. Note the irony: when the database is down, your metrics table is down too, so the log lines are what you have left.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> it is the same as request-duration and request-count metrics that you would export from ASP.NET Core (for example with OpenTelemetry), only stored in a SQL table you can query. The percentile (<code>percentile_cont</code>) is what you would otherwise read off a histogram.</div>
+<div class="box cap"><strong>Capstone:</strong> next week the five numbers of the dashboard (question count, success rate, average time, total cost, failed queries) come straight from this table.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>The formula, and the difference between &ldquo;not measured&rdquo; and &ldquo;zero&rdquo;:</p><pre><code>cost = (input_tokens x price_in + output_tokens x price_out) / 1,000,000
+e.g. 240 in, 14 out at 1.00 and 5.00 per million:  (240 x 1.00 + 14 x 5.00) / 1,000,000 = 0.000310 USD
+
+NULL   = not measured     (the request failed, or the tool loop does not report tokens yet)
+0      = measured, and zero  (the model was never called)
+These are different facts. Never store a missing number as 0.</code></pre><div class="box"><strong>What is real, and what is not.</strong> No real model was called, so there are no billed tokens and no model latency. The tokens are <strong>estimates</strong> made with tiktoken, and the prices are <strong>example</strong> values (1 and 5 US dollars per million tokens). The numbers show how the <em>system</em> works; replace the price and the token source with real ones when you have them.</div><pre><code>tokens        ESTIMATED with tiktoken (the o200k_base tokenizer). A model counts with its own tokenizer, so the billed number will differ.
+              With a real model, store the &#x27;usage&#x27; that the API returns, and keep the estimate only as a fallback.
+prices        EXAMPLE values in a config. Check your provider&#x27;s price list, and note the date. Prices change.
+latency       here: without a model call. A real call adds hundreds of milliseconds to seconds, and it will dominate.
+cost          a model call is only part of the cost: the database, the servers and your time are not in this table.</code></pre><p>The metrics module, in <code>src/my_ai_project/metrics.py</code>: the cost function, the table, and a store that writes one row and never raises:</p><pre><code>import logging
+import os
+from dataclasses import dataclass
+from typing import Protocol
+
+import psycopg
+
+logger = logging.getLogger(&quot;metrics&quot;)
+
+# EXAMPLE prices in US dollars per million tokens. They are placeholders: put the real prices of YOUR model here, from its price list.
+PRICES_PER_MILLION = {&quot;input&quot;: 1.00, &quot;output&quot;: 5.00}
+
+
+def cost_usd(input_tokens: int | None, output_tokens: int | None, prices: dict[str, float] | None = None) -&gt; float | None:
+    &quot;&quot;&quot;None means &#x27;not measured&#x27;. 0.0 means &#x27;measured, and it was free&#x27; (for example: no model was called).&quot;&quot;&quot;
+    if input_tokens is None or output_tokens is None:
+        return None
+    price = prices or PRICES_PER_MILLION
+    return (input_tokens * price[&quot;input&quot;] + output_tokens * price[&quot;output&quot;]) / 1_000_000
+
+
+@dataclass
+class RequestMetrics:
+    request_id: str
+    route: str
+    role: str
+    status_code: int
+    latency_ms: float
+    outcome: str                 # answered, refused, error
+    model: str
+    input_tokens: int | None     # None = not measured
+    output_tokens: int | None
+
+
+class Metrics(Protocol):
+    def record(self, row: RequestMetrics) -&gt; None: ...
+
+
+SCHEMA = &quot;&quot;&quot;
+CREATE TABLE IF NOT EXISTS requests (
+    id bigserial PRIMARY KEY,
+    time timestamptz NOT NULL DEFAULT now(),
+    request_id text NOT NULL,
+    route text NOT NULL,
+    role text NOT NULL,
+    status_code int NOT NULL,
+    latency_ms real NOT NULL,
+    outcome text NOT NULL,
+    model text NOT NULL,
+    input_tokens int,
+    output_tokens int,
+    cost_usd numeric(12, 6)
+);
+CREATE INDEX IF NOT EXISTS requests_time_idx ON requests (time);
+CREATE INDEX IF NOT EXISTS requests_request_id_idx ON requests (request_id);
+&quot;&quot;&quot;
+
+
+class MetricsStore:
+    &quot;&quot;&quot;One row per request in PostgreSQL: how long it took, what it cost, how it ended.&quot;&quot;&quot;
+
+    def __init__(self, dsn: str) -&gt; None:
+        self.dsn = dsn
+        self.ready = False
+
+    def record(self, row: RequestMetrics) -&gt; None:
+        &quot;&quot;&quot;Never raises: if the database is down, the metrics are lost, but the user&#x27;s request must not be.&quot;&quot;&quot;
+        try:
+            with psycopg.connect(self.dsn) as conn:
+                if not self.ready:
+                    conn.execute(SCHEMA)
+                    self.ready = True
+                conn.execute(
+                    &quot;INSERT INTO requests (request_id, route, role, status_code, latency_ms, outcome, model, input_tokens, output_tokens, cost_usd) &quot;
+                    &quot;VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)&quot;,
+                    (row.request_id, row.route, row.role, row.status_code, row.latency_ms, row.outcome, row.model,
+                     row.input_tokens, row.output_tokens, cost_usd(row.input_tokens, row.output_tokens)),
+                )
+        except psycopg.Error as err:
+            logger.warning(&quot;could not store the metrics of %s: %s&quot;, row.request_id, err)
+
+
+def default_store() -&gt; MetricsStore:
+    &quot;&quot;&quot;The metrics go to the same database, unless METRICS_DATABASE_URL says otherwise.&quot;&quot;&quot;
+    return MetricsStore(os.environ.get(&quot;METRICS_DATABASE_URL&quot;) or os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))</code></pre><p>The pipeline now reports the tokens it spent: the instructions and the numbered sources count as input, the answer as output. A question that is refused before the writer is called spends nothing; one that is refused <em>after</em> the writer was called still spent its tokens. The audit log gains the request id. The changes:</p><pre><code>diff --git a/src/my_ai_project/audit.py b/src/my_ai_project/audit.py
+index c6aaaed..9c62962 100644
+--- a/src/my_ai_project/audit.py
++++ b/src/my_ai_project/audit.py
+@@ -4,6 +4,8 @@ import re
+ from datetime import datetime, timezone
+ from pathlib import Path
+ 
++from my_ai_project.observability import request_id_var
++
+ logger = logging.getLogger(&quot;audit&quot;)
+ 
+ EMAIL = re.compile(r&quot;[\w.+-]+@[\w-]+\.[\w.-]+&quot;)
+@@ -29,7 +31,7 @@ class AuditLog:
+ 
+     def record(self, event: str, role: str, **details: object) -&gt; None:
+         &quot;&quot;&quot;Never raises: a log that cannot be written must not cost the user their answer.&quot;&quot;&quot;
+-        line = {&quot;time&quot;: datetime.now(timezone.utc).isoformat(), &quot;event&quot;: event, &quot;role&quot;: role, **{k: redact(v) for k, v in details.items()}}
++        line = {&quot;time&quot;: datetime.now(timezone.utc).isoformat(), &quot;request_id&quot;: request_id_var.get(), &quot;event&quot;: event, &quot;role&quot;: role, **{k: redact(v) for k, v in details.items()}}
+         try:
+             self.path.parent.mkdir(parents=True, exist_ok=True)
+             with self.path.open(&quot;a&quot;, encoding=&quot;utf-8&quot;) as file:
+diff --git a/src/my_ai_project/rag.py b/src/my_ai_project/rag.py
+index f56a287..6e4b2c9 100644
+--- a/src/my_ai_project/rag.py
++++ b/src/my_ai_project/rag.py
+@@ -1,13 +1,14 @@
+ from collections.abc import Sequence
+-from dataclasses import dataclass, field
++from dataclasses import dataclass, field, replace
+ 
+ from my_ai_project.embedder import Embedder
+-from my_ai_project.grounding import GroundedAnswer, Writer, ground
++from my_ai_project.grounding import RULES, GroundedAnswer, Writer, build_message, ground
+ from my_ai_project.guardrails import check_output
+ from my_ai_project.hybrid import KeywordIndex, hybrid_search
+ from my_ai_project.pipeline import Searcher
+ from my_ai_project.prompts import NO_ANSWER
+ from my_ai_project.store import Found
++from my_ai_project.tokens import count_tokens
+ 
+ 
+ @dataclass
+@@ -17,6 +18,8 @@ class RagAnswer:
+     sources: list[Found] = field(default_factory=list)  # the chunks the answer cites
+     refused: bool = False
+     reason: str = &quot;&quot;
++    input_tokens: int = 0      # estimated with tiktoken, not billed: 0 means that no model was called
++    output_tokens: int = 0
+ 
+ 
+ def refuse(question: str, reason: str) -&gt; RagAnswer:
+@@ -40,13 +43,19 @@ def answer_question(
+     if best &lt; min_score:
+         return refuse(question, f&quot;best similarity {best:.2f} is under {min_score}&quot;)
+     grounded: GroundedAnswer = ground(question, found, writer)
++    tokens_in = count_tokens(RULES) + count_tokens(build_message(question, found))
++    tokens_out = count_tokens(grounded.text)
++
++    def refuse_after_model(reason: str) -&gt; RagAnswer:
++        return replace(refuse(question, reason), input_tokens=tokens_in, output_tokens=tokens_out)   # the model was called: the tokens were spent
++
+     if grounded.refused:
+-        return refuse(question, &quot;the writer found no answer in the sources&quot;)
++        return refuse_after_model(&quot;the writer found no answer in the sources&quot;)
+     if grounded.invented:
+-        return refuse(question, f&quot;the answer cited {grounded.invented[0]}, which was not retrieved&quot;)
++        return refuse_after_model(f&quot;the answer cited {grounded.invented[0]}, which was not retrieved&quot;)
+     if not grounded.sources:
+-        return refuse(question, &quot;the answer cited no source&quot;)
++        return refuse_after_model(&quot;the answer cited no source&quot;)
+     violation = check_output(grounded.text)
+     if violation is not None:
+-        return refuse(question, f&quot;output check: {violation}&quot;)
+-    return RagAnswer(question, grounded.text, grounded.sources)
++        return refuse_after_model(f&quot;output check: {violation}&quot;)
++    return RagAnswer(question, grounded.text, grounded.sources, input_tokens=tokens_in, output_tokens=tokens_out)</code></pre><p>The result after 20 real requests through the gateway (the first one with the id <code>demo-123</code>, then the 18 golden questions as staff, then two bad requests):</p><div class="out"><b>You should see</b><br>request_id&nbsp;&nbsp;route&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;role&nbsp;&nbsp; status&nbsp;&nbsp;outcome&nbsp;&nbsp; ms&nbsp;&nbsp;&nbsp;&nbsp;in&nbsp;&nbsp; out&nbsp;&nbsp;cost_usd<br>demo-123&nbsp;&nbsp;&nbsp;&nbsp;/api/ask&nbsp;&nbsp; staff&nbsp;&nbsp;200&nbsp;&nbsp;&nbsp;&nbsp; answered&nbsp;&nbsp;3584&nbsp;&nbsp;240&nbsp;&nbsp;14&nbsp;&nbsp; 0.000310&nbsp;&nbsp;&nbsp;&nbsp; &lt;- the FIRST request: cold start<br>g-q03&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /api/ask&nbsp;&nbsp; staff&nbsp;&nbsp;200&nbsp;&nbsp;&nbsp;&nbsp; answered&nbsp;&nbsp;8&nbsp;&nbsp;&nbsp;&nbsp; 240&nbsp;&nbsp;14&nbsp;&nbsp; 0.000310<br>g-q05&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /api/ask&nbsp;&nbsp; staff&nbsp;&nbsp;200&nbsp;&nbsp;&nbsp;&nbsp; refused&nbsp;&nbsp; 8&nbsp;&nbsp;&nbsp;&nbsp; 0&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;&nbsp;0.000000&nbsp;&nbsp;&nbsp;&nbsp; &lt;- refused before the model: no tokens, no cost<br>bad-role&nbsp;&nbsp;&nbsp;&nbsp;/api/ask&nbsp;&nbsp; staff&nbsp;&nbsp;422&nbsp;&nbsp;&nbsp;&nbsp; error&nbsp;&nbsp;&nbsp;&nbsp; 1&nbsp;&nbsp;&nbsp;&nbsp; NULL NULL NULL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &lt;- a failed request: tokens not measured (NULL, not 0)</div><div class="out"><b>You should see</b><br>rows: 20<br>by outcome: answered 16, refused 3, error 1<br>latency ms (all, including the first cold request): avg 187  median 8  p95 189  max 3584<br>without the first one: median 8  p95 10<br>tokens in/out: 3609 / 275      cost at the example prices: 0.004984 USD<br>answered: 16 questions, 3609 tokens in, 275 out      refused: 3 questions, 0 tokens      error: 1 question, 0 tokens</div><p>Look at three things. The first request took <strong>3584 ms</strong> and the rest a median of <strong>8 ms</strong>: a <em>cold start</em>, which an average (187 ms) hides, so always look at the median and the worst case. Refused questions cost nothing. And the whole run cost under half a cent <em>at the example prices</em>, with a stand-in writer: with a real model, the cost and the latency will be very different, and you will want this table to tell you by how much.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c metrics</code>). The database must be running.</p>
+<h3><span class="step">Step 1</span> Add the table and the store</h3>
+<p>Add <code>metrics.py</code>, change <code>rag.py</code> to count tokens, and finish the middleware of Monday so that it writes one row for every <code>/api/</code> request. Make the tests use an in-memory fake (a fixture in <code>conftest.py</code>), so that no test needs a database.</p>
+<h3><span class="step">Step 2</span> Fill it and look</h3>
+<p>Ask 10 or more questions (your golden questions, in a loop with <code>curl</code>, as staff), including one that should be refused and one request that fails (an unknown role). Then query the table. <strong>Predict first:</strong> how many tokens does a refused question use? What is the latency of the very first request compared with the rest?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Set <code>METRICS_DATABASE_URL</code> to a database that is not there (a wrong port), restart the API, and ask a question. Does the user still get an answer? Where do you see that the row was lost?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Write the tests of the template: cost with and without tokens, a refusal before the model costs zero tokens, a failed request is an error row, and a broken store never breaks the caller. Then write one SQL query that answers: <em>which five requests were the slowest, and what were they?</em></p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Store latency, tokens and cost for every question&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>No rows appear</strong>: check the database address, and the warning in the log (the store never raises, so a failure is only a warning). Check that the route starts with <code>/api/</code>.</li><li><strong>Every refused row has tokens</strong>: only a refusal <em>after</em> the writer was called has tokens; one before it has 0.</li><li><strong>The average is far from the median</strong>: one very slow request (usually the first). Look at the median and the maximum.</li><li><strong>The cost is 0 everywhere</strong>: the tokens are 0 (no model call) or NULL (not measured). Cost needs both tokens and a price.</li></ul><details><summary>Solution: Step 2</summary><p>A refused question that never reached the writer uses 0 tokens and costs 0.000000: the gate saved the call. The first request after a start is much slower than the rest (here 3584 ms against 8 ms), because the Python service loads its model and builds its keyword index when the first request arrives.</p></details><details><summary>Solution: Step 3</summary><p>Yes: the user gets the answer, because the store catches the error. The row is lost, and the only trace is a warning line in the application log (&ldquo;could not store the metrics of ...&rdquo;) with the request id. If you must not lose rows, write them to a local file as well, and load them later: a decision for when the numbers become important.</p></details><details><summary>Solution: Step 4 (the query)</summary><pre><code>SELECT request_id, route, round(latency_ms::numeric) AS ms, outcome
+FROM requests
+ORDER BY latency_ms DESC
+LIMIT 5;</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Which three numbers do you store for every request, and what else?</li><li>What is the difference between NULL and 0 for the tokens?</li><li>Why must storing the metrics never raise an error?</li></ol><details><summary>Answers</summary><ol><li>Latency, tokens (input and output) and cost, plus how the request ended (answered, refused, error) and its request id.</li><li>NULL means not measured; 0 means measured and zero (for example no model call). Mixing them makes the averages lie.</li><li>The metrics are a by-product; if the database is down the row is lost, but the user&rsquo;s request must not fail because of it.</li></ol></details></section>
+<section id="game-day130" class="game"><h2><span class="n">+</span> &middot; Game: Tokens and Cost <span class="t">5 min</span></h2>
+<p><p>You read the metrics table. Read the row, pick what it means, then see the real output. (Tokens are estimates, prices are examples, no real model.)</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day130-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day130-play">Start the game</button></div>
+<div id="day130-round" hidden><div class="gtop"><span id="day130-num">Round 1</span><span id="day130-score">Score 0</span></div>
+<pre hidden><code id="day130-code"></code></pre><div class="q" id="day130-q"></div><div class="choices" id="day130-opts"></div>
+<div class="fb" id="day130-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day130-next" hidden>Next round</button></p></div>
+<div id="day130-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day130",[{"c": "240 tokens in, 14 out; example prices 1.00 and 5.00 per million", "q": "What is the cost?", "o": ["0.000310 USD", "0.31 USD", "0.00003 USD"], "a": 0, "out": "(240 x 1.00 + 14 x 5.00) / 1,000,000 = 0.000310 USD", "why": "Tokens times price, divided by a million."}, {"c": "g-q05 Where can I buy a coffee?  (refused before the model)", "q": "What are its tokens and cost?", "o": ["0 and 0.000000: the model was never called", "NULL", "240 and 0.000310"], "a": 0, "out": "g-q05   refused   8 ms   0   0   0.000000", "why": "The gate saved the call."}, {"c": "bad-role  (a 422)", "q": "What are its tokens?", "o": ["NULL: not measured", "0", "240"], "a": 0, "out": "bad-role   422   error   1 ms   NULL   NULL   NULL", "why": "NULL is not measured; 0 is measured and zero. Never mix them."}, {"c": "avg 187 ms, median 8 ms, max 3584 ms", "q": "Why is the average so far from the median?", "o": ["One cold start pulls it up", "Most requests are slow", "The median is wrong"], "a": 0, "out": "first request (cold): demo-123, 3584 ms   without it: median 8, p95 10", "why": "Always show the median and the worst case."}, {"c": "The tokens in the table", "q": "How were they made here?", "o": ["Estimated with tiktoken, not billed", "Read from the model's usage", "Guessed"], "a": 0, "out": "(a real model returns its own usage: store that)", "why": "A model counts with its own tokenizer."}, {"c": "The database of the metrics is down", "q": "What happens to a user's request?", "o": ["It still works; the row is lost and a warning is logged", "It fails", "It waits forever"], "a": 0, "out": "(test: a broken metrics store never breaks the caller)", "why": "Recording must never break the thing it records."}],["Cost rookie", "Cost regular", "Metrics keeper"],"Store latency, tokens and cost per request; NULL means not measured and 0 means zero; say that tokens are estimates and prices are examples; and never let recording break a request.");</script>
+<p><small>Tick &ldquo;Play the Tokens and Cost game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a table with one row per request (latency, tokens, cost and outcome, with the request id), a cost formula with example prices, a clear difference between &ldquo;not measured&rdquo; and &ldquo;zero&rdquo;, and a first look at a cold start that an average would hide.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 130 checklist.</li><li>Share one line in the comments: what did your first request cost in time?</li><li><strong>Next:</strong> Thursday is mixed practice: you add the request id to the .NET gateway and pass it on to Python, from a blank file.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

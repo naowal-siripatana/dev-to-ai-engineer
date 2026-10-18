@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 133 - Project Lab 19: the trace and metrics table</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 133 &middot; LEVEL 12: LLMOPS &middot; PROJECT LAB</div><h1>Project Lab 19: the trace and metrics table</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to follow any request by its id and read the five numbers of a dashboard from a table, with what each one hides.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the first thing to check at 2 a.m.?</li><li>Why show the median next to the average latency?</li></ol><details><summary>Answers</summary><ol><li>Whether it is up and whether anything is failing: the cheapest checks that tell you whether users are hurt.</li><li>One very slow request (a cold start) pulls the average up and hides what a normal request looks like.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p>This is the first half of <strong>Module 12</strong>. The dashboard comes next week; today you build what it stands on. By the end:</p><ul><li>Every request has a <strong>request id</strong> across the .NET gateway and the Python service (Monday and Thursday).</li><li>A PostgreSQL table <strong><code>requests</code></strong> with <strong>one row per request</strong>: latency, input and output tokens, cost and how it ended.</li><li>A <strong>query</strong> (<code>dashboard.sql</code>) that gives the five numbers: question count, success rate, average time, total cost and failed queries.</li><li>You can say, for each number, <strong>what it means and what it hides</strong>.</li></ul><div class="box cap"><strong>Capstone:</strong> the Module 12 checkpoint is a dashboard of these five numbers, with a screenshot in the README. Today&rsquo;s table is its data.</div><div class="box"><strong>What is real, and what is not.</strong> No real model was called: the writer is a stand-in, so the latency has no model call in it, the tokens are <strong>estimates</strong> (tiktoken), and the prices are <strong>example</strong> values. The 20 requests are a rehearsal, not production. The table, the queries and the habit of reading them are the real part.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Cut the work in small pieces, and commit after each one:</p><ol><li><strong>The id</strong> (Python: Monday; .NET: Thursday), checked on both sides.</li><li><strong>The table and the store</strong> (<code>metrics.py</code>), with a fake for tests.</li><li><strong>The token estimate</strong> in the pipeline: 0 for a refusal before the writer, NULL when not measured.</li><li><strong>The middleware</strong> that writes one row per <code>/api/</code> request and never fails the request.</li><li><strong>Fill it</strong>: about 20 requests through the gateway, including a refusal and a failure.</li><li><strong>The five numbers</strong> as one query, defined before they are shown.</li><li><strong>README</strong> and push.</li></ol></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2><h3>Step 1: the id and the middleware (Monday and Thursday)</h3><p>Python: <code>observability.py</code> and the middleware in <code>api.py</code>. .NET: <code>RequestIds.cs</code> and the middleware. If you did them, check that one request shows the same id in <em>both</em> logs.</p><pre><code>import contextvars
+import logging
+import re
+import uuid
+
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(&quot;request_id&quot;, default=&quot;-&quot;)
+
+# What a request id may look like when it comes from outside. Anything else is replaced: a header is user input, and a newline in it
+# would let a caller forge extra lines in your log.
+VALID_REQUEST_ID = re.compile(r&quot;[A-Za-z0-9._-]{1,64}&quot;)
+
+
+def clean_request_id(value: str | None) -&gt; str:
+    &quot;&quot;&quot;Use the id the caller sent if it is safe, otherwise make a new one.&quot;&quot;&quot;
+    if value is not None and VALID_REQUEST_ID.fullmatch(value):
+        return value
+    return uuid.uuid4().hex
+
+
+class RequestIdFilter(logging.Filter):
+    &quot;&quot;&quot;Puts the id of the current request on every log record, so that one grep follows a request through the whole system.&quot;&quot;&quot;
+
+    def filter(self, record: logging.LogRecord) -&gt; bool:
+        record.request_id = request_id_var.get()
+        return True
+
+
+LOG_FORMAT = &quot;%(asctime)s %(levelname)s %(name)s rid=%(request_id)s %(message)s&quot;
+
+
+def setup_logging() -&gt; None:
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(RequestIdFilter())</code></pre><h3>Step 2: the table and the store</h3><p><code>src/my_ai_project/metrics.py</code>:</p><pre><code>import logging
+import os
+from dataclasses import dataclass
+from typing import Protocol
+
+import psycopg
+
+logger = logging.getLogger(&quot;metrics&quot;)
+
+# EXAMPLE prices in US dollars per million tokens. They are placeholders: put the real prices of YOUR model here, from its price list.
+PRICES_PER_MILLION = {&quot;input&quot;: 1.00, &quot;output&quot;: 5.00}
+
+
+def cost_usd(input_tokens: int | None, output_tokens: int | None, prices: dict[str, float] | None = None) -&gt; float | None:
+    &quot;&quot;&quot;None means &#x27;not measured&#x27;. 0.0 means &#x27;measured, and it was free&#x27; (for example: no model was called).&quot;&quot;&quot;
+    if input_tokens is None or output_tokens is None:
+        return None
+    price = prices or PRICES_PER_MILLION
+    return (input_tokens * price[&quot;input&quot;] + output_tokens * price[&quot;output&quot;]) / 1_000_000
+
+
+@dataclass
+class RequestMetrics:
+    request_id: str
+    route: str
+    role: str
+    status_code: int
+    latency_ms: float
+    outcome: str                 # answered, refused, error
+    model: str
+    input_tokens: int | None     # None = not measured
+    output_tokens: int | None
+
+
+class Metrics(Protocol):
+    def record(self, row: RequestMetrics) -&gt; None: ...
+
+
+SCHEMA = &quot;&quot;&quot;
+CREATE TABLE IF NOT EXISTS requests (
+    id bigserial PRIMARY KEY,
+    time timestamptz NOT NULL DEFAULT now(),
+    request_id text NOT NULL,
+    route text NOT NULL,
+    role text NOT NULL,
+    status_code int NOT NULL,
+    latency_ms real NOT NULL,
+    outcome text NOT NULL,
+    model text NOT NULL,
+    input_tokens int,
+    output_tokens int,
+    cost_usd numeric(12, 6)
+);
+CREATE INDEX IF NOT EXISTS requests_time_idx ON requests (time);
+CREATE INDEX IF NOT EXISTS requests_request_id_idx ON requests (request_id);
+&quot;&quot;&quot;
+
+
+class MetricsStore:
+    &quot;&quot;&quot;One row per request in PostgreSQL: how long it took, what it cost, how it ended.&quot;&quot;&quot;
+
+    def __init__(self, dsn: str) -&gt; None:
+        self.dsn = dsn
+        self.ready = False
+
+    def record(self, row: RequestMetrics) -&gt; None:
+        &quot;&quot;&quot;Never raises: if the database is down, the metrics are lost, but the user&#x27;s request must not be.&quot;&quot;&quot;
+        try:
+            with psycopg.connect(self.dsn) as conn:
+                if not self.ready:
+                    conn.execute(SCHEMA)
+                    self.ready = True
+                conn.execute(
+                    &quot;INSERT INTO requests (request_id, route, role, status_code, latency_ms, outcome, model, input_tokens, output_tokens, cost_usd) &quot;
+                    &quot;VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)&quot;,
+                    (row.request_id, row.route, row.role, row.status_code, row.latency_ms, row.outcome, row.model,
+                     row.input_tokens, row.output_tokens, cost_usd(row.input_tokens, row.output_tokens)),
+                )
+        except psycopg.Error as err:
+            logger.warning(&quot;could not store the metrics of %s: %s&quot;, row.request_id, err)
+
+
+def default_store() -&gt; MetricsStore:
+    &quot;&quot;&quot;The metrics go to the same database, unless METRICS_DATABASE_URL says otherwise.&quot;&quot;&quot;
+    return MetricsStore(os.environ.get(&quot;METRICS_DATABASE_URL&quot;) or os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))</code></pre><h3>Step 3: the token estimate and the row</h3><p>The pipeline reports the tokens it spent (Wednesday), and the middleware writes one row at the end of every <code>/api/</code> request. Put an in-memory fake in <code>tests/conftest.py</code> so that no test needs a database, and run <code>pytest</code> and <code>mypy</code>.</p><h3>Step 4: fill it</h3><p>Start the database, the Python service and the gateway. Send about 20 requests <em>through the gateway</em> (for example your golden questions as staff, in a loop with <code>curl</code>), plus one request that fails (an unknown role). Give them ids like <code>g-q01</code>, so that you can find them again.</p><h3>Step 5: the five numbers</h3><p>One query. <strong>Define each number before you show it</strong>:</p><pre><code>DEFINE EVERY NUMBER BEFORE YOU SHOW IT
+success rate   (answered + refused) / all requests.   A refusal is a result, not an error; an error is a failure to give a result.
+failed         outcome = &#x27;error&#x27; (status 4xx or 5xx). Split 4xx (the caller) from 5xx (you) when it matters.
+average time   with the median beside it, and the worst case. Say whether the cold start is included.
+total cost     the sum of the estimated cost, with the source of the tokens and the date of the prices written next to it.</code></pre><pre><code>-- The five numbers of the Module 12 dashboard, from the requests table. Only /api/ask rows.
+SELECT
+    count(*)                                                                    AS questions,
+    round(100.0 * count(*) FILTER (WHERE outcome IN (&#x27;answered&#x27;, &#x27;refused&#x27;)) / count(*), 1) AS success_percent,
+    round(avg(latency_ms)::numeric, 0)                                          AS avg_ms,
+    round((percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms))::numeric, 0) AS median_ms,
+    round(coalesce(sum(cost_usd), 0), 6)                                        AS total_cost_usd,
+    count(*) FILTER (WHERE outcome = &#x27;error&#x27;)                                   AS failed
+FROM requests
+WHERE route = &#x27;/api/ask&#x27;;</code></pre><p>And a small script to run it, <code>run_dashboard.py</code>:</p><pre><code>import os
+from pathlib import Path
+
+import psycopg
+
+with psycopg.connect(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)) as conn:
+    cursor = conn.execute(Path(&quot;dashboard.sql&quot;).read_text(encoding=&quot;utf-8&quot;))
+    names = [column.name for column in cursor.description or []]
+    for name, value in zip(names, cursor.fetchone() or []):
+        print(f&quot;{name:&lt;16}{value}&quot;)</code></pre><div class="out"><b>You should see</b><br>questions&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 20<br>success_percent 95.0<br>avg_ms&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;187<br>median_ms&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 8<br>total_cost_usd&nbsp;&nbsp;0.004984<br>failed&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1</div><p>Now read each number, and say what it hides:</p><pre><code>number            value     how to read it
+questions         20        all /api/ask requests that reached the Python service (the empty question was stopped by the gateway: no row)
+success_percent   95.0      answered or refused, not failed: 19 of 20. A refusal is a correct result, not a failure.
+avg_ms            187       a lie: it is pulled up by ONE request (the cold start, 3584 ms)
+median_ms         8         what a normal request looks like. Show this, and the worst case, next to the average.
+total_cost_usd    0.004984  at EXAMPLE prices, with a stand-in writer: a real model will change it a lot
+failed            1         the 422 of a bad role (a user&#x27;s mistake, not an incident)</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The ids differ between the logs</strong>: the gateway must send the id (check the client), and the Python middleware must read the header <code>x-request-id</code>.</li><li><strong>The table is empty</strong>: look for the warning &ldquo;could not store the metrics&rdquo; in the Python log: the database address may be wrong.</li><li><strong>The success rate is 100% and you know something failed</strong>: a refusal is not an error, but a 4xx must be an <code>error</code> row. Check the outcome logic in the middleware.</li><li><strong>The cost is NULL</strong>: tokens are not measured for that route (the tool loop does not report tokens yet).</li><li><strong>A request that the gateway rejects (400) has no row</strong>: it never reached Python. If you want it, record in the gateway too.</li></ul></section>
+<section><h2><span class="n">6</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Add the README section, run the checklist, and push both projects.</p><pre><code>## Operating the assistant
+
+    Every request has an id (X-Request-Id: the caller&#x27;s if it is safe, else a new one). The gateway and the Python service write it on every log line,
+    the audit log has it, and so does the metrics table.
+    Find one request:   grep &lt;id&gt; gateway.log python.log audit.jsonl
+    The table `requests` (PostgreSQL): one row per /api request: time, request_id, route, role, status, latency_ms, outcome (answered/refused/error),
+    model, input_tokens, output_tokens, cost_usd. NULL = not measured. Tokens are estimates (tiktoken); prices are examples (metrics.py).
+    The five numbers:  uv run python run_dashboard.py     (dashboard.sql)
+    METRICS_DATABASE_URL points the metrics somewhere else; if it is down, rows are lost and a warning is logged, but requests do not fail.</code></pre><pre><code>[ ] every request has an id: set at the gateway, on the response, on every log line, in the audit log, in the metrics row
+[ ] the table requests has one row per /api request, with latency, tokens, cost and outcome; NULL for &#x27;not measured&#x27;
+[ ] recording never breaks a request (test with a database that is down)
+[ ] tests use an in-memory fake and need no database; no test writes into the repository; mypy is clean; the golden table is not worse
+[ ] I ran about 20 real requests through the gateway and looked at the rows
+[ ] dashboard.sql gives the five numbers, and I can say what each one means and what it hides
+[ ] README explains how to find one request and what is an estimate; committed and pushed</code></pre><p><code>git add .</code>, <code>git commit -m &quot;Add request ids and a metrics table&quot;</code>, <code>git push</code>.</p></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does the average latency of 187 ms hide the truth?</li><li>Why is a refusal counted as a success in the success rate?</li><li>Why write &ldquo;estimate&rdquo; and &ldquo;example prices&rdquo; next to the cost?</li></ol><details><summary>Answers</summary><ol><li>One request (the cold start, 3584 ms) pulls it up; the median is 8 ms. Show the median and the worst case too.</li><li>A refusal is a correct result (the assistant answered that it does not know). A failure is when no result is given at all.</li><li>The tokens were estimated with a tokenizer that is not the model&rsquo;s own, and the prices are placeholders. A cost number without its source can mislead.</li></ol></details></section>
+<section id="game-day133" class="game"><h2><span class="n">+</span> &middot; Game: Five Numbers <span class="t">5 min</span></h2>
+<p><p>You read the dashboard numbers. Read the number, pick what it hides, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day133-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day133-play">Start the game</button></div>
+<div id="day133-round" hidden><div class="gtop"><span id="day133-num">Round 1</span><span id="day133-score">Score 0</span></div>
+<pre hidden><code id="day133-code"></code></pre><div class="q" id="day133-q"></div><div class="choices" id="day133-opts"></div>
+<div class="fb" id="day133-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day133-next" hidden>Next round</button></p></div>
+<div id="day133-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day133",[{"c": "questions 20", "q": "Which requests are counted?", "o": ["Those that reached the Python service (the empty question was stopped by the gateway)", "Every click of every user", "Only the answered ones"], "a": 0, "out": "questions       20", "why": "Say what is counted."}, {"c": "success_percent 95.0", "q": "What is a success here?", "o": ["Answered or refused: 19 of 20", "Only answered", "Only status 200"], "a": 0, "out": "success_percent 95.0", "why": "A refusal is a correct result, not a failure."}, {"c": "avg_ms 187   median_ms 8", "q": "Which one tells you what a normal request is like?", "o": ["The median", "The average", "Neither"], "a": 0, "out": "avg_ms          187\nmedian_ms       8", "why": "The average is pulled up by one cold start."}, {"c": "total_cost_usd 0.004984", "q": "What must be written next to it?", "o": ["Tokens are estimates, prices are examples, the writer is a stand-in", "Nothing", "A smiley"], "a": 0, "out": "total_cost_usd  0.004984", "why": "A cost without its source can mislead."}, {"c": "failed 1", "q": "What was it?", "o": ["A 422 for an unknown role: a user's mistake", "A 500 from the database", "A crash"], "a": 0, "out": "failed          1", "why": "Split 4xx from 5xx when it matters."}, {"c": "The empty question: {\"question\": \"\"}", "q": "Why is there no row for it?", "o": ["The gateway stopped it with a 400: it never reached Python", "A bug", "Empty questions are not logged"], "a": 0, "out": "(if you want it, record in the gateway too)", "why": "A row is written where the request ends."}],["Numbers rookie", "Numbers regular", "Dashboard reader"],"Define each number before you show it, and say what it hides: the average hides a cold start, a success includes refusals, a cost has estimated tokens and example prices.");</script>
+<p><small>Tick &ldquo;Play the Five Numbers game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a request id across both services, a table with one row per request (latency, tokens, cost and outcome), a query for the five numbers with every number defined and its limits stated, and a README that tells a stranger how to find one request. Next week these numbers become a dashboard.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 133 checklist.</li><li>Share one line in the comments: which of the five numbers surprised you?</li><li><strong>Next:</strong> Sunday is the review: a self-test on operations words, and the plan for next week: reliability, feedback and the dashboard.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
