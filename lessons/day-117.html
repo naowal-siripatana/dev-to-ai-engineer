@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 117 - Mixed practice: classify 5 use cases and defend each choice</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 117 &middot; LEVEL 10: DESIGN &middot; MIXED PRACTICE</div><h1>Mixed practice: classify 5 use cases and defend each choice</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to encode a decision framework in code, with tests for each rung and for the order, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Name the five rungs of the ladder.</li><li>Why can a knowledge base of 862 tokens make RAG the wrong choice?</li></ol><details><summary>Answers</summary><ol><li>A rule or lookup, one model call, RAG, an agent, a person.</li><li>It fits in a prompt, so you could send every page with no vector database.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The contract <span class="t">5 min</span></h2><p>Today there is <strong>no code to copy</strong>. You turn the five questions of Wednesday into code: a small function that chooses an approach, with tests. You get a contract, and you write the module yourself, from a blank file.</p><pre><code>framework.py
+  UseCase  (a frozen dataclass): name, and six yes/no answers:
+             exact_rule_exists, needs_language_understanding, needs_own_documents,
+             knowledge_changes_often, steps_depend_on_results, wrong_answer_is_costly
+  Choice   (a frozen dataclass): approach, why
+  choose(case) -&gt; Choice      the FIRST question that fits decides, in this order:
+     1  an exact rule exists and no language understanding is needed        -&gt; &#x27;rules&#x27;
+     2  a wrong answer is costly and no exact rule exists                   -&gt; &#x27;human decides&#x27;
+     3  the next step depends on the last result                            -&gt; &#x27;agent&#x27;
+     4  the answer must come from your own documents                        -&gt; &#x27;RAG&#x27;  (the &#x27;why&#x27; says so if they change often)
+     5  otherwise                                                           -&gt; &#x27;plain LLM&#x27;
+
+framework_demo.py classifies these five and prints the approach and the reason:
+  What does error E104 mean?                          Answer a customer&#x27;s question about the manuals
+  Summarise a support email in one sentence           Find which of several incidents is the most severe
+  Decide the refund amount for a customer</code></pre><p><strong>Predict first</strong>, before you run anything: what will the function choose for each of the five? Would you have chosen the same by hand? Write your hand choice first.</p></section>
+<section><h2><span class="n">3</span> &middot; Do it <span class="t">25 min</span></h2><ol><li>Write <code>framework.py</code> and <code>framework_demo.py</code> in <code>my-ai-project</code>. Do not open the solution until you have tried for 15 minutes.</li><li>Run it. Compare the five lines with your hand choices, and <strong>defend each choice</strong> in one sentence (the <code>why</code> text is the sentence).</li><li>Write the tests: one for each rung, and tests for the <strong>order</strong> (a rule beats RAG; a costly mistake beats an agent).</li><li>Run <code>uv run pytest</code> and <code>uv run mypy src tests</code>. Commit: <code>git add .</code> and <code>git commit -m &quot;Encode the approach framework as code&quot;</code>.</li></ol><details><summary>Hint: where to start</summary><p>Two frozen dataclasses. In <code>choose</code>, a chain of <code>if</code> statements in the order of the contract, each returning a <code>Choice</code> at once. The order <em>is</em> the framework: write a test for every place where two rungs could both fit.</p></details><details><summary>Solution</summary><pre><code>from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class UseCase:
+    &quot;&quot;&quot;A job you might give to AI, described with six yes or no questions.&quot;&quot;&quot;
+
+    name: str
+    exact_rule_exists: bool                 # could a rule, a lookup or a formula give the exact answer?
+    needs_language_understanding: bool      # must it read or write free text?
+    needs_own_documents: bool               # must the answer come from your own documents?
+    knowledge_changes_often: bool           # do those documents change often?
+    steps_depend_on_results: bool           # does the next step depend on what the last one found?
+    wrong_answer_is_costly: bool            # does a wrong answer cost money, safety or trust?
+
+
+@dataclass(frozen=True)
+class Choice:
+    approach: str       # rules, human decides, agent, RAG, plain LLM
+    why: str
+
+
+def choose(case: UseCase) -&gt; Choice:
+    &quot;&quot;&quot;The first question that fits decides. The order is the framework: the cheapest, most exact tool wins.&quot;&quot;&quot;
+    if case.exact_rule_exists and not case.needs_language_understanding:
+        return Choice(&quot;rules&quot;, &quot;an exact rule or lookup is free, instant and testable: do not use a model&quot;)
+    if case.wrong_answer_is_costly and not case.exact_rule_exists:
+        return Choice(&quot;human decides&quot;, &quot;a wrong answer is costly and no rule exists: a model may prepare, a person decides&quot;)
+    if case.steps_depend_on_results:
+        return Choice(&quot;agent&quot;, &quot;the next step depends on the last result: use a loop, with a step limit and approval for risky tools&quot;)
+    if case.needs_own_documents:
+        why = &quot;the answer must come from your own documents&quot;
+        return Choice(&quot;RAG&quot;, why + (&quot;, and they change often: update the data, not the model&quot; if case.knowledge_changes_often else &quot;&quot;))
+    return Choice(&quot;plain LLM&quot;, &quot;a language task that needs no private knowledge: one model call, checked by a golden set&quot;)</code></pre><p><code>framework_demo.py</code>:</p><pre><code>from my_ai_project.framework import UseCase, choose
+
+CASES = [
+    UseCase(&quot;What does error E104 mean?&quot;, True, False, False, False, False, False),
+    UseCase(&quot;Answer a customer&#x27;s question about the manuals&quot;, False, True, True, True, False, False),
+    UseCase(&quot;Summarise a support email in one sentence&quot;, False, True, False, False, False, False),
+    UseCase(&quot;Find which of several incidents is the most severe&quot;, False, False, True, False, True, False),
+    UseCase(&quot;Decide the refund amount for a customer&quot;, False, True, False, False, False, True),
+]
+for case in CASES:
+    choice = choose(case)
+    print(f&quot;{case.name:&lt;52}{choice.approach:&lt;14}{choice.why}&quot;)</code></pre><div class="out"><b>You should see</b><br>What does error E104 mean?&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rules&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; an exact rule or lookup is free, instant and testable: do not use a model<br>Answer a customer's question about the manuals&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RAG&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; the answer must come from your own documents, and they change often: update the data, not the model<br>Summarise a support email in one sentence&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; plain LLM&nbsp;&nbsp;&nbsp;&nbsp; a language task that needs no private knowledge: one model call, checked by a golden set<br>Find which of several incidents is the most severe&nbsp;&nbsp;agent&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; the next step depends on the last result: use a loop, with a step limit and approval for risky tools<br>Decide the refund amount for a customer&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; human decides a wrong answer is costly and no rule exists: a model may prepare, a person decides</div></details><details><summary>Read the five results</summary><p>They match the discussion of Wednesday. The error code is a <strong>rule</strong>. The manuals question needs your own documents, and they change often, so the reason says: update the data, not the model. The email summary is plain language with no private knowledge: one model call. Comparing incidents depends on each result: an agent, with limits. The refund is costly with no rule, so a person decides, and the model only prepares.</p><p>Notice that the framework <em>cannot</em> say &ldquo;a workflow&rdquo;. A fixed daily check (Wednesday&rsquo;s fourth case) would come out as an agent if you answered yes to &ldquo;the next step depends on the result&rdquo;. That is a sign that the question needs to be sharper, or that a workflow rung is missing.</p></details><details><summary>If you disagree with the code</summary><pre><code>If the code and your hand classification disagree, one of three things is true:
+  1. you answered a yes/no question wrongly (is there really an exact rule?)         -&gt; fix the answers
+  2. the ORDER of the questions is wrong for this case                              -&gt; fix the framework
+  3. the framework is missing a question (volume? latency? privacy of the data?)    -&gt; add it, and add a test</code></pre></details><details><summary>Template: tests</summary><pre><code>from my_ai_project.framework import UseCase, choose
+
+
+def case(**answers: bool) -&gt; UseCase:
+    base = dict(exact_rule_exists=False, needs_language_understanding=False, needs_own_documents=False,
+                knowledge_changes_often=False, steps_depend_on_results=False, wrong_answer_is_costly=False)
+    return UseCase(name=&quot;x&quot;, **{**base, **answers})
+
+
+def test_an_exact_rule_beats_everything() -&gt; None:
+    assert choose(case(exact_rule_exists=True, needs_own_documents=True, steps_depend_on_results=True)).approach == &quot;rules&quot;
+
+
+def test_a_rule_that_still_needs_language_is_not_enough() -&gt; None:
+    assert choose(case(exact_rule_exists=True, needs_language_understanding=True, needs_own_documents=True)).approach == &quot;RAG&quot;
+
+
+def test_a_costly_mistake_without_a_rule_goes_to_a_person() -&gt; None:
+    assert choose(case(wrong_answer_is_costly=True, steps_depend_on_results=True)).approach == &quot;human decides&quot;
+
+
+def test_steps_that_depend_on_results_make_an_agent() -&gt; None:
+    assert choose(case(steps_depend_on_results=True, needs_own_documents=True)).approach == &quot;agent&quot;
+
+
+def test_own_documents_make_rag_and_changing_ones_say_so() -&gt; None:
+    assert choose(case(needs_own_documents=True)).approach == &quot;RAG&quot;
+    assert &quot;update the data, not the model&quot; in choose(case(needs_own_documents=True, knowledge_changes_often=True)).why
+
+
+def test_the_default_is_a_plain_model_call() -&gt; None:
+    assert choose(case(needs_language_understanding=True)).approach == &quot;plain LLM&quot;</code></pre></details></section>
+<section><h2><span class="n">4</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does the order of the questions matter?</li><li>Why test the order, and not only each rung?</li><li>What is missing from this framework?</li></ol><details><summary>Answers</summary><ol><li>The first question that fits decides, so the order says which concern wins: an exact rule beats everything, and a costly mistake beats a clever loop.</li><li>The dangerous cases are the ones where two rungs could both fit; only a test of the order tells you which wins, and keeps it that way when someone edits the function.</li><li>For example a workflow (fixed steps with a model inside), volume and cost, and latency. A framework is a draft that you improve when a case disagrees with it.</li></ol></details></section>
+<section id="game-day117" class="game"><h2><span class="n">+</span> &middot; Game: Framework Check <span class="t">5 min</span></h2>
+<p><p>You encoded a decision framework. Read the case, pick what choose() returns, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day117-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day117-play">Start the game</button></div>
+<div id="day117-round" hidden><div class="gtop"><span id="day117-num">Round 1</span><span id="day117-score">Score 0</span></div>
+<pre hidden><code id="day117-code"></code></pre><div class="q" id="day117-q"></div><div class="choices" id="day117-opts"></div>
+<div class="fb" id="day117-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day117-next" hidden>Next round</button></p></div>
+<div id="day117-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day117",[{"c": "UseCase('What does error E104 mean?', exact_rule_exists=True, needs_language_understanding=False, ...)", "q": "What does choose() return?", "o": ["rules", "RAG", "agent"], "a": 0, "out": "What does error E104 mean?   rules   an exact rule or lookup is free, instant and testable: do not use a model", "why": "The first question that fits decides."}, {"c": "Answer a customer's question about the manuals (own documents, they change often)", "q": "What does choose() return?", "o": ["RAG, with 'update the data, not the model' in the reason", "plain LLM", "agent"], "a": 0, "out": "RAG   the answer must come from your own documents, and they change often: update the data, not the model", "why": "Own documents decide; 'changes often' only adds to the reason."}, {"c": "Find which of several incidents is the most severe (steps depend on results)", "q": "What does choose() return?", "o": ["agent, with a step limit and approval for risky tools", "rules", "RAG"], "a": 0, "out": "agent   the next step depends on the last result: use a loop, with a step limit and approval for risky tools", "why": "The next step depends on the last result."}, {"c": "Decide the refund amount (costly, no rule)", "q": "What does choose() return?", "o": ["human decides", "agent", "plain LLM"], "a": 0, "out": "human decides   a wrong answer is costly and no rule exists: a model may prepare, a person decides", "why": "Costly beats clever."}, {"c": "A case with an exact rule AND steps that depend on results", "q": "Which question wins?", "o": ["The rule: the order puts it first", "The agent", "Neither"], "a": 0, "out": "(test: test_an_exact_rule_beats_everything)", "why": "Test the order, not only each rung."}, {"c": "A fixed daily check with known steps", "q": "What does this framework give?", "o": ["Possibly 'agent': it cannot say 'workflow', so a rung or a question is missing", "workflow", "rules"], "a": 0, "out": "(the framework is a draft: add what is missing, with a test)", "why": "A framework you never disagree with has not been tested."}],["Framework rookie", "Framework regular", "Decision coder"],"A decision framework is an ordered chain of questions where the first fit decides; test each rung and the order; and improve it when a case disagrees.");</script>
+<p><small>Tick &ldquo;Play the Framework Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">5</span> &middot; Your win, and what&rsquo;s next <span class="t">2 min</span></h2><p><strong>You made:</strong> a decision framework as code, with tests for each rung and for the order, five use cases classified and defended, and a list of what the framework is still missing.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 117 checklist.</li><li>Share one line in the comments: which use case did the code classify differently from you?</li><li><strong>Next:</strong> Friday is a teach-back: you explain RAG versus fine-tuning.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 114 - Problem framing and requirements for AI</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 114 &middot; LEVEL 10: DESIGN</div><h1>Problem framing and requirements for AI</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to frame a problem, write three testable requirements and one success criterion with numbers, and measure where you are today.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the first thing to do when you review code from an agent?</li><li>Why does the instructions file have a &ldquo;done means&rdquo; part?</li></ol><details><summary>Answers</summary><ol><li>Read the diff before the summary, and run the feature with wrong input.</li><li>It sets the standard the agent holds itself to: tests, types, the score table, the diff and what was not tested.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Someone says: &ldquo;We need an AI chatbot for support.&rdquo; Before you write any code, what four things must you find out, and why is &ldquo;smart and fast&rdquo; not a requirement?</strong></p><details><summary>Guess first, then open</summary><p>Who is it for, what <em>job</em> does it do, what hurts today, and what is <em>not</em> its job. And a requirement must be <strong>testable</strong>: someone must be able to run a check and say &ldquo;yes, done&rdquo; or &ldquo;no, not yet&rdquo;. &ldquo;Smart&rdquo; and &ldquo;fast&rdquo; cannot be checked, so they cannot be built or finished.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: frame the problem before the solution</h3>
+<p>Write down <strong>who</strong> has the problem, the <strong>job</strong> they want done, the <strong>pain</strong> today, and what is <strong>not</strong> your job (non-goals). Non-goals matter as much as goals: they protect you from building a refund bot when you set out to build a manual finder. Notice that nothing here says &ldquo;AI&rdquo;. AI is one possible answer to the job, chosen later (Wednesday).</p>
+<h3>Piece 2: requirements you can test</h3>
+<p>A good requirement says <strong>one thing</strong> and says <strong>how to check it</strong>: a yes or no, or a number. Write the check next to the requirement. If you cannot say how to check it, rewrite it until you can. For an AI system there are usually requirements about the <em>answers</em> (cited, refused when unknown), about <em>who may see what</em>, and about <em>speed and cost</em>. Your golden set (Module 8) is the tool that checks the first kind.</p>
+<h3>Piece 3: one success criterion, with numbers</h3>
+<p>Besides the requirements, write <strong>one sentence</strong> that says when the project is a success, with numbers, on a set you will actually run. Then write <strong>where you are today</strong>. The gap between the two is your plan. A criterion that you cannot measure today (for example &ldquo;with the real model&rdquo; before you have run one) is fine, as long as you <em>say</em> that it is not measured yet.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> requirements with a check are acceptance criteria in a user story, and the golden set is your acceptance test suite. &ldquo;Non-goals&rdquo; is the &ldquo;out of scope&rdquo; line of a good ticket, and the success criterion is the definition of done for the whole feature.</div>
+<div class="box cap"><strong>Capstone:</strong> Module 10 ends with an ADR for <code>ai-knowledge-assistant</code>. A decision record is only as good as the problem it solves, so this week starts here.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>A vague request, and why it fails:</p><pre><code>&#x27;A chatbot for support that is smart and fast and answers everything.&#x27;
+   smart?  fast?  everything?  Nobody can test this, so nobody can say it is done.</code></pre><p>Turning a vague sentence into a testable one:</p><pre><code>vague                                     testable
+&#x27;answers should be accurate&#x27;              &#x27;every answered golden question cites an expected page&#x27;
+&#x27;it should be fast&#x27;                       &#x27;retrieval p95 under 50 ms (model call not included)&#x27;
+&#x27;it should be secure&#x27;                     &#x27;a customer sees 0 staff-only pages in 18 questions&#x27;
+&#x27;it should not make things up&#x27;            &#x27;every should_refuse question is refused&#x27;</code></pre><p>The framing of the PumpGuard assistant, as a real <code>docs/problem.md</code>. The numbers in it come from real runs, shown below:</p><pre><code>docs/problem.md
+
+WHO        Customers of the PumpGuard monitor, and the support staff who help them.
+JOB        Find the answer to &#x27;what does this mean / how do I do this&#x27; in the manuals, FAQs and error pages,
+           without waiting for a person.
+PAIN       Support staff answer the same 20 questions every week, and customers read long manuals.
+NOT        Not a replacement for support staff. Not for refunds, prices or anything not in the pages.
+           Not available in languages other than English (for now).
+
+REQUIREMENTS (each one can be tested)
+R1  Answers come from the knowledge base and cite their sources.
+      check: every answered golden question cites an expected page            (citation_ok in run_golden.py)
+R2  When the knowledge base has no answer, the assistant says so and does not guess.
+      check: every golden question marked should_refuse is refused            (refusal accuracy)
+R3  A customer never receives content from staff-only pages.
+      check: 0 staff-only pages seen in 18 questions asked as a customer      (leak_check.py)
+R4  Retrieval is fast enough not to matter next to the model call.
+      check: retrieval p95 under 50 ms on this knowledge base                 (measure_latency.py)
+
+SUCCESS CRITERION (one sentence, with numbers, on the golden set, with the real model)
+  &#x27;On the 18 golden questions, pass rate at least 85%, hit@3 at least 95%, and no question that should be refused is answered;
+   and R3 holds.&#x27;
+TODAY   pass 11/18 (61%) with the stand-in writer, hit@3 100%, refusals 89%, R3 holds, retrieval p95 7.6 ms.
+        The gap to the criterion is the work. It is not measured with a real model yet.</code></pre><p>Two of the four checks are new scripts. The speed check, <code>measure_latency.py</code> (it times each stage of the retrieval for the 18 golden questions, three runs each, after the model has loaded; <strong>no model call and no writer are included</strong>):</p><pre><code>import os
+import statistics
+import time
+from pathlib import Path
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.golden import load_golden
+from my_ai_project.hybrid import KeywordIndex, reciprocal_rank_fusion
+from my_ai_project.store import ChunkStore
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+chunks = store.all_chunks()
+items = load_golden(Path(&quot;data/golden.jsonl&quot;), {chunk.doc_id for chunk in chunks})
+embedder, keywords = FastEmbedder(), KeywordIndex(chunks)
+kinds = allowed_kinds(&quot;staff&quot;)
+embedder.embed([&quot;warm up&quot;])   # the first call loads the model: do not count it
+
+stages: dict[str, list[float]] = {&quot;embed the question&quot;: [], &quot;vector search (pgvector)&quot;: [], &quot;keyword search (BM25)&quot;: [], &quot;fusion&quot;: [], &quot;retrieval in all&quot;: []}
+for _ in range(3):
+    for item in items:
+        t0 = time.perf_counter()
+        vector = embedder.embed([item.question])[0]
+        t1 = time.perf_counter()
+        by_meaning = store.search(vector, top_k=10, allowed_kinds=kinds)
+        t2 = time.perf_counter()
+        by_words = keywords.search(item.question, top_k=10, allowed_kinds=kinds)
+        t3 = time.perf_counter()
+        reciprocal_rank_fusion([by_meaning, by_words])
+        t4 = time.perf_counter()
+        for name, start, end in zip(stages, (t0, t1, t2, t3, t0), (t1, t2, t3, t4, t4)):
+            stages[name].append((end - start) * 1000)
+
+print(f&quot;{len(items)} questions x 3 runs, {len(chunks)} chunks   (milliseconds)&quot;)
+print(f&quot;{&#x27;stage&#x27;:&lt;28}{&#x27;median&#x27;:&gt;8}{&#x27;p95&#x27;:&gt;8}{&#x27;max&#x27;:&gt;8}&quot;)
+for name, values in stages.items():
+    ordered = sorted(values)
+    p95 = ordered[int(0.95 * (len(ordered) - 1))]
+    print(f&quot;{name:&lt;28}{statistics.median(values):&gt;8.1f}{p95:&gt;8.1f}{max(values):&gt;8.1f}&quot;)</code></pre><div class="out"><b>You should see</b><br>18 questions x 3 runs, 26 chunks&nbsp;&nbsp; (milliseconds)<br>stage&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; median&nbsp;&nbsp;&nbsp;&nbsp; p95&nbsp;&nbsp;&nbsp;&nbsp; max<br>embed the question&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 2.9&nbsp;&nbsp;&nbsp;&nbsp; 3.8&nbsp;&nbsp;&nbsp;&nbsp; 4.0<br>vector search (pgvector)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 3.5&nbsp;&nbsp;&nbsp;&nbsp; 4.2&nbsp;&nbsp;&nbsp;&nbsp;17.7<br>keyword search (BM25)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.0&nbsp;&nbsp;&nbsp;&nbsp; 0.1&nbsp;&nbsp;&nbsp;&nbsp; 0.1<br>fusion&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0.0&nbsp;&nbsp;&nbsp;&nbsp; 0.0&nbsp;&nbsp;&nbsp;&nbsp; 0.0<br>retrieval in all&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 6.5&nbsp;&nbsp;&nbsp;&nbsp; 7.6&nbsp;&nbsp;&nbsp;&nbsp;21.0</div><p>Most of the 6.5 ms is embedding the question and the database round trip; the keyword search and the fusion cost almost nothing. A real model call takes far longer, so retrieval is not the thing to optimise. That is a result you could not have known without measuring. The permission check, <code>leak_check.py</code> (it asks every golden question as a <em>customer</em> and counts the staff-only pages that were retrieved or cited):</p><pre><code>import os
+from pathlib import Path
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.golden import load_golden
+from my_ai_project.hybrid import KeywordIndex, hybrid_search
+from my_ai_project.rag import answer_question
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkStore
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+chunks = store.all_chunks()
+items = load_golden(Path(&quot;data/golden.jsonl&quot;), {chunk.doc_id for chunk in chunks})
+embedder, keywords, writer = FastEmbedder(), KeywordIndex(chunks), SimulatedWriter()   # the writer is a stand-in
+
+staff_only = {chunk.doc_id for chunk in chunks if chunk.kind == &quot;error&quot;}
+leaks = 0
+for item in items:
+    found = hybrid_search(item.question, embedder, store, keywords, top_k=10, allowed_kinds=allowed_kinds(&quot;customer&quot;))
+    answer = answer_question(item.question, embedder, store, keywords, writer, allowed_kinds=allowed_kinds(&quot;customer&quot;))
+    seen = {f.doc_id for f in found} | {s.doc_id for s in answer.sources}
+    leaks += len(seen &amp; staff_only)
+print(f&quot;{len(items)} questions asked as a customer, {len(staff_only)} staff-only pages: staff pages seen = {leaks}&quot;)</code></pre><div class="out"><b>You should see</b><br>18 questions asked as a customer, 7 staff-only pages: staff pages seen = 0</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c docs/problem</code>).</p>
+<h3><span class="step">Step 1</span> Frame the problem</h3>
+<p>Write <code>docs/problem.md</code> with <strong>who, job, pain and non-goals</strong> for <em>your</em> assistant. Keep each to one or two lines. Write at least two non-goals.</p>
+<h3><span class="step">Step 2</span> Three requirements and their checks</h3>
+<p>Write <strong>three</strong> requirements. Next to each, write the check: the script or the number. If a requirement has no check, rewrite it with the table &ldquo;vague / testable&rdquo; as a guide.</p>
+<h3><span class="step">Step 3</span> Measure where you are</h3>
+<p>Run the checks you can run today: <code>run_golden.py</code>, and the two scripts above (add <code>measure_latency.py</code> and <code>leak_check.py</code>). <strong>Predict first:</strong> will your retrieval p95 be under 50 ms? Will your customer see 0 staff pages? Write the numbers in the file.</p>
+<h3><span class="step">Step 4</span> The success criterion</h3>
+<p>Write <strong>one sentence</strong> with numbers, and then a line &ldquo;Today: ...&rdquo; with your real numbers. Say which of them are not measured yet. Then answer: which one gap would you close first, and why?</p>
+<p>Commit: <code>git add docs/problem.md</code> and <code>git commit -m &quot;Frame the problem: requirements and a success criterion&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>You cannot think of a check</strong>: ask &ldquo;what would I run to prove it is wrong?&rdquo; If nothing, the requirement is too vague. Split it.</li><li><strong>Too many requirements</strong>: keep the three that would hurt most to break. Others can wait.</li><li><strong>Your numbers are far from the criterion</strong>: good. That is the plan. Do not lower the criterion to match the numbers.</li><li><strong>You have no real model yet</strong>: say so in the file. A number from a stand-in is a real number about the stand-in.</li></ul><details><summary>Solution: Step 3 (what to expect)</summary><p>The retrieval time is a few milliseconds on a small knowledge base, so the requirement is easy to meet today and worth keeping only as a <em>guard</em> that tells you if a change makes it slow. The golden pass rate is the number that is far from the criterion. And the permission check should be exactly 0: any other number is a bug to fix first.</p></details><details><summary>Solution: Step 4 (the gap)</summary><p>In the example, the gap is between 61% and 85% on the golden set. The failures behind it were: five that belong to the stand-in writer (it writes only the first sentence), one wrong answer to the price question, and one refusal of the waterproof question. Only a real model can show how much of the gap is the writer. So the first step of the plan is to run the golden set with a real model, not to tune the retrieval, which is already at 100% hit@3.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What four things belong in the framing of a problem?</li><li>What makes a requirement testable?</li><li>Why write &ldquo;where you are today&rdquo; next to the success criterion?</li></ol><details><summary>Answers</summary><ol><li>Who has the problem, the job, the pain today, and the non-goals (what it is not for).</li><li>It says one thing, and it comes with a check: a yes or no, or a number, and the script that gives it.</li><li>The gap between the two is the plan, and it keeps the criterion honest: it should not be lowered to match the numbers.</li></ol></details></section>
+<section id="game-day114" class="game"><h2><span class="n">+</span> &middot; Game: Testable Requirement <span class="t">5 min</span></h2>
+<p><p>You frame a problem. Pick the best answer, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day114-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day114-play">Start the game</button></div>
+<div id="day114-round" hidden><div class="gtop"><span id="day114-num">Round 1</span><span id="day114-score">Score 0</span></div>
+<pre hidden><code id="day114-code"></code></pre><div class="q" id="day114-q"></div><div class="choices" id="day114-opts"></div>
+<div class="fb" id="day114-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day114-next" hidden>Next round</button></p></div>
+<div id="day114-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day114",[{"c": "'The assistant should be fast.'", "q": "How do you make it testable?", "o": ["Retrieval p95 under 50 ms (model call not included), checked by measure_latency.py", "Make it faster", "Ask users if it feels fast"], "a": 0, "out": "retrieval in all    median 6.5   p95 7.6   max 21.0   (milliseconds)", "why": "One thing, a number, and the script that gives it."}, {"c": "R3: A customer never receives content from staff-only pages.", "q": "What is the check?", "o": ["Ask every golden question as a customer and count staff-only pages seen: it must be 0", "Read the code", "Ask a customer"], "a": 0, "out": "18 questions asked as a customer, 7 staff-only pages: staff pages seen = 0", "why": "A yes or no with a script."}, {"c": "A success criterion: pass rate at least 85% on the 18 golden questions", "q": "What must you write next to it?", "o": ["Where you are today: pass 11/18 (61%) with the stand-in writer", "Nothing", "A lower number"], "a": 0, "out": "passed 11/18 (61%)   hit@3 100%   MRR 0.97   refusal accuracy 89%", "why": "The gap is the plan. Do not lower the criterion to match."}, {"c": "Non-goals: not a replacement for support staff; not for refunds or prices", "q": "What are they for?", "o": ["They protect you from building the wrong thing", "They make the project smaller on paper", "They are decoration"], "a": 0, "out": "(see docs/problem.md)", "why": "Non-goals matter as much as goals."}, {"c": "Where does the retrieval time go?", "q": "Which stages dominate the 6.5 ms?", "o": ["Embedding the question and the database round trip", "The keyword search", "The fusion"], "a": 0, "out": "embed 2.9   vector search 3.5   keyword 0.0   fusion 0.0", "why": "The model call is far slower: retrieval is not the thing to optimise."}, {"c": "Your success criterion needs a real model, and you have not run one", "q": "What do you do?", "o": ["Write the criterion, and say that it is not measured yet", "Drop the criterion", "Pretend the stand-in is real"], "a": 0, "out": "(a judgement, no output)", "why": "A number from a stand-in is a real number about the stand-in."}],["Framing rookie", "Framing regular", "Requirement writer"],"Frame who, job, pain and non-goals; write requirements that say one thing and carry a check; and one success criterion with numbers next to where you are today.");</script>
+<p><small>Tick &ldquo;Play the Testable Requirement game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a one-page framing of your problem with non-goals, three testable requirements, a success criterion with numbers, and the real numbers of where you are today.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 114 checklist.</li><li>Share one line in the comments: which non-goal did you write?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you learn when <em>not</em> to use AI, and choose between rules, a model, RAG and an agent for five use cases.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

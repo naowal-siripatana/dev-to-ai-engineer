@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 116 - When NOT to use AI, and decision frameworks</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 116 &middot; LEVEL 10: DESIGN</div><h1>When NOT to use AI, and decision frameworks</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to choose between a rule, one model call, RAG, an agent and a person for a use case, and defend the simplest choice with evidence.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What makes a requirement testable?</li><li>Why write &ldquo;where you are today&rdquo; next to a success criterion?</li></ol><details><summary>Answers</summary><ol><li>It says one thing and comes with a check: a yes or no, or a number, and the script that gives it.</li><li>The gap between the two is the plan, and it keeps the criterion honest.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A teammate says: &ldquo;Let&rsquo;s use AI for the error code lookup too.&rdquo; Your vector search failed to find the E104 page for the question about E104. What is a better tool for that job?</strong></p><details><summary>Guess first, then open</summary><p>A <strong>dictionary</strong>: the code is the key, the answer is the value. It is exact, instant, free and always right. The best use of AI is knowing <em>where not to use it</em>: when a rule gives the exact answer, a model can only be slower and less sure.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: a ladder, and you start at the top</h3>
+<p>There are five ways to solve a problem, from the simplest to the most complex: a <strong>rule</strong>, one <strong>model call</strong>, <strong>RAG</strong>, an <strong>agent</strong>, or a <strong>person</strong>. Each step down costs more, is slower, is less predictable and is harder to test. So you start at the top, and you move down only when the step above <em>cannot</em> do the job. Most beginners start at the bottom, because it is more exciting.</p>
+<h3>Piece 2: five questions decide it</h3>
+<p>Ask them in order, and the first &ldquo;yes&rdquo; decides: Is there an exact rule? Is a wrong answer costly, with no rule? Does the next step depend on the last result? Must the answer come from your documents? If none fits, one model call is enough. Cost of failure comes <em>early</em> in the list: if a mistake is expensive, no clever design replaces a person.</p>
+<h3>Piece 3: &ldquo;do not use it&rdquo; is a design decision</h3>
+<p>Not using AI is not a failure of ambition. It is a decision to write down. A rule is cheaper to run, to test and to explain. A small knowledge base may fit in the prompt. A fixed process is a workflow, not an agent. Keep AI for the part that is really about language, and write down the other parts as rules around it.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> it is the same instinct as &ldquo;do not reach for a distributed system when a method call will do&rdquo;. You already know to pick the simplest thing that meets the requirement, and to be able to explain why you did not pick the fancy one.</div>
+<div class="box cap"><strong>Capstone:</strong> your assistant already uses three rungs: a lookup tool for error codes, RAG for the manuals, and a person (the approval step) for risky actions. On Saturday you write down <em>why</em>.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>The ladder:</p><pre><code>1. RULES / A LOOKUP     exact, free, instant, testable.                      &#x27;What does error E104 mean?&#x27;
+2. ONE MODEL CALL      understands and writes free text; knows nothing of yours.   &#x27;Translate this reply into Thai.&#x27;
+3. RAG                 a model call + your documents, found at question time.      &#x27;Answer from the manuals.&#x27;
+4. AN AGENT            a loop: the next step depends on the last result.           &#x27;Check these incidents and rank them.&#x27;
+5. A PERSON            when a wrong answer is costly and no rule exists.           &#x27;Approve this refund.&#x27;
+Move DOWN the ladder only when the step above cannot do the job. Each step costs more, is slower, and is harder to test.</code></pre><p>The five questions, as a decision order:</p><pre><code>1  Could a rule, a lookup or a formula give the exact answer?         yes -&gt; rules (unless it must read or write free text)
+2  Is a wrong answer costly (money, safety, trust) and there is no rule?  yes -&gt; a person decides; the model prepares
+3  Does the next step depend on what the last one found?                  yes -&gt; an agent (or a workflow, if you can write the steps down)
+4  Must the answer come from YOUR documents?                              yes -&gt; RAG (or put them all in the prompt, if they are tiny)
+5  Otherwise                                                              one model call, checked by a golden set</code></pre><p>Two real measurements make the point. First, the error code lookup done with a rule, against a vector search for the same question. <code>rule_vs_rag.py</code>:</p><pre><code>import os
+import statistics
+import time
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.incident import lookup_error
+from my_ai_project.store import ChunkStore
+
+question = &quot;What does error E104 mean?&quot;
+timings = []
+for _ in range(2000):
+    start = time.perf_counter()
+    lookup_error(&quot;E104&quot;)
+    timings.append((time.perf_counter() - start) * 1_000_000)
+print(f&quot;rule: lookup_error(&#x27;E104&#x27;) = {lookup_error(&#x27;E104&#x27;).name}, {statistics.median(timings):.1f} microseconds (median of 2000)&quot;)
+
+store = ChunkStore(os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;))
+embedder = FastEmbedder()
+vector = embedder.embed([question])[0]
+rag = []
+for _ in range(20):
+    start = time.perf_counter()
+    found = store.search(embedder.embed([question])[0], top_k=3, allowed_kinds=allowed_kinds(&quot;staff&quot;))
+    rag.append((time.perf_counter() - start) * 1000)
+print(f&quot;vector search alone: {statistics.median(rag):.1f} ms (median of 20), top 3 = {[f.doc_id for f in found]}&quot;)
+print(&quot;the E104 page is in the top 3:&quot;, any(f.doc_id == &quot;error-e104&quot; for f in found))</code></pre><div class="out"><b>You should see</b><br>rule: lookup_error('E104') = Disk full, 0.1 microseconds (median of 2000)<br>vector search alone: 6.5 ms (median of 20), top 3 = ['error-e101', 'error-e102', 'error-e101']<br>the E104 page is in the top 3: False</div><p>The rule is exact and tens of thousands of times faster (a dictionary lookup against an embedding and a database query), and the vector search alone did not even have the right page in its top 3. For this job, a model is the <em>wrong</em> tool. (Your pipeline still gets E104 right, because the keyword search of Day 74 brings the page back: that is extra machinery to make AI do what a dictionary does.)</p><p>Second, how big is the knowledge base? Count the tokens of all 20 pages:</p><div class="out"><b>You should see</b><br>20 pages, 862 tokens in all</div><p>All 20 pages together are <strong>862 tokens</strong>: less than one page of text. You could put every page in every prompt, with no vector database at all. RAG earns its place when the knowledge base is too big, too costly or too noisy to send whole, or when you need to filter it per user. At this size it is not needed for the sake of fitting; keep that in mind for Saturday.</p><p>Five use cases, and a choice for each:</p><pre><code>use case                                                             my choice        why
+1 Show the serial number of device X from the inventory             rules (a query)  it is a field in a database: exact and instant
+2 Answer questions about the warranty text                          RAG, or all in    one page: it may fit in the prompt; RAG when there are many
+                                                                    the prompt
+3 Translate a support reply into Thai                               one model call   language task, no private knowledge needed
+4 Each morning, check all devices for alarms and open tickets       a workflow       the steps are known in advance: rules to find alarms, a
+  for the urgent ones                                                                model only to write the summary. An agent is not needed
+5 Approve a refund                                                  a person         costly, no rule: the model may prepare, a person decides</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>This is a paper exercise, with two measurements. Work in your notebook or in <code>docs/design-notes.md</code>.</p>
+<h3><span class="step">Step 1</span> Choose for five use cases</h3>
+<p>Write <strong>five use cases</strong> for <em>your</em> project (or take the five of the example, and replace two). For each, choose rules, one model call, RAG, an agent or a person, using the five questions in order. Write one line of <em>why</em>.</p>
+<h3><span class="step">Step 2</span> Defend the boring one</h3>
+<p>For the use case where you chose <strong>rules</strong> or <strong>a person</strong>, write what you would answer to a teammate who says &ldquo;but AI can do this&rdquo;. Use a number if you have one.</p>
+<h3><span class="step">Step 3</span> Measure two things</h3>
+<p>Run <code>rule_vs_rag.py</code> on your project (or time a lookup against a retrieval of your own). And count the tokens of <strong>all</strong> your knowledge base pages with your <code>count_tokens</code>. <strong>Predict first:</strong> will your knowledge base fit in one prompt?</p>
+<h3><span class="step">Step 4</span> Break the framework</h3>
+<p>Find a use case where the five questions give an answer that you <strong>disagree with</strong>. Which question is missing? Write it down: your framework is a draft, and tomorrow you encode it in code.</p>
+<p>Commit if you wrote a file: <code>git add docs/design-notes.md</code> and <code>git commit -m &quot;Choose an approach for five use cases&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>Every use case looks like &ldquo;RAG&rdquo;</strong>: ask question 1 again, honestly. Many &ldquo;questions about documents&rdquo; are really lookups in a table.</li><li><strong>You cannot decide between a workflow and an agent</strong>: can you write the steps down in advance? If yes, a workflow.</li><li><strong>A use case has several parts</strong>: split it. Most real features are a rule plus a model call plus a person.</li></ul><details><summary>Solution: Step 3 (your numbers)</summary><p>For a small knowledge base, the whole text is often under a few thousand tokens, and the honest answer to &ldquo;do I need RAG?&rdquo; is &ldquo;not yet&rdquo;. That does not mean the design is wrong; it means you must write the <em>reason</em> for RAG down (growth, per-user filtering, citations), and not &ldquo;because it is the standard&rdquo;.</p></details><details><summary>Solution: Step 4 (a missing question)</summary><p>A common missing question is <em>volume and cost</em>: a task that is done a million times a day needs a different answer from one that is done ten times. Another is <em>latency</em>: a decision that must come in 50 ms cannot wait for a model. Add what you find to the list.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Name the five rungs of the ladder, from the simplest.</li><li>Why does &ldquo;a wrong answer is costly&rdquo; come before &ldquo;needs an agent&rdquo;?</li><li>Why might RAG be the wrong choice for a knowledge base of 862 tokens?</li></ol><details><summary>Answers</summary><ol><li>A rule or lookup, one model call, RAG, an agent, a person.</li><li>If a mistake is expensive, no loop or clever design replaces a person: the model may prepare, and a person decides.</li><li>It fits in a prompt, so you could send every page, with no vector database. RAG is justified by growth, per-user filtering or citations, and that reason should be written down.</li></ol></details></section>
+<section id="game-day116" class="game"><h2><span class="n">+</span> &middot; Game: Rules or AI <span class="t">5 min</span></h2>
+<p><p>You choose the simplest tool that works. Read the case, pick the approach, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day116-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day116-play">Start the game</button></div>
+<div id="day116-round" hidden><div class="gtop"><span id="day116-num">Round 1</span><span id="day116-score">Score 0</span></div>
+<pre hidden><code id="day116-code"></code></pre><div class="q" id="day116-q"></div><div class="choices" id="day116-opts"></div>
+<div class="fb" id="day116-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day116-next" hidden>Next round</button></p></div>
+<div id="day116-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day116",[{"c": "What does error E104 mean?   (a fixed table of codes)", "q": "Which tool?", "o": ["A rule: a dictionary lookup", "RAG", "An agent"], "a": 0, "out": "rule: lookup_error('E104') = Disk full, 0.1 microseconds (median of 2000)", "why": "Exact, instant, free and always right."}, {"c": "Vector search alone for 'What does error E104 mean?'", "q": "Is the E104 page in the top 3?", "o": ["No: error-e101, error-e102, error-e101", "Yes, first", "Yes, third"], "a": 0, "out": "vector search alone: 6.5 ms (median of 20), top 3 = ['error-e101', 'error-e102', 'error-e101']\nthe E104 page is in the top 3: False", "why": "For this job a model is the wrong tool."}, {"c": "All 20 knowledge base pages together", "q": "How many tokens?", "o": ["862: they fit in a prompt", "About 50,000", "About 5,000"], "a": 0, "out": "20 pages, 862 tokens in all", "why": "RAG is not needed to make them fit. It is justified by growth, per-user filtering and citations."}, {"c": "Approve a refund. A wrong answer costs money and there is no rule.", "q": "Who decides?", "o": ["A person; the model may prepare", "An agent", "RAG"], "a": 0, "out": "human decides: a wrong answer is costly and no rule exists", "why": "Cost of failure comes early in the list."}, {"c": "Each morning, check all devices for alarms and open tickets for the urgent ones", "q": "Which design?", "o": ["A workflow: the steps are known in advance", "An agent", "A person"], "a": 0, "out": "(rules to find alarms, a model only to write the summary)", "why": "If you can write the steps down in advance, it is a workflow."}, {"c": "Translate a support reply into Thai", "q": "Which approach?", "o": ["One model call", "RAG", "A rule"], "a": 0, "out": "plain LLM: a language task that needs no private knowledge", "why": "No private knowledge needed, so no retrieval."}],["Ladder rookie", "Ladder regular", "Simplest tool"],"Start at the top of the ladder: a rule, one model call, RAG, an agent, a person; move down only when the step above cannot do the job; and not using AI is a design decision.");</script>
+<p><small>Tick &ldquo;Play the Rules or AI game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a choice of approach for five use cases with a reason for each, a defence of the boring option with a real number, two measurements of your own project, and a missing question for the framework.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 116 checklist.</li><li>Share one line in the comments: which of your use cases should not use AI?</li><li><strong>Next:</strong> Thursday is mixed practice: you encode your framework in code, from a blank file, and test it against five use cases.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 119 - Project Lab 17: the ADR</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 119 &middot; LEVEL 10: DESIGN &middot; PROJECT LAB</div><h1>Project Lab 17: the ADR</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write an architecture decision record with evidence for every reason, a fair alternative, and one thing you chose not to build.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Where does the knowledge live in RAG, and where in fine-tuning?</li><li>Name two things RAG can do that fine-tuning cannot.</li></ol><details><summary>Answers</summary><ol><li>RAG: in your documents, found at question time. Fine-tuning: in the model&rsquo;s weights.</li><li>Cite the source of a fact, and filter what each user may see. (Also: update a fact in milliseconds, without training.)</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p>This is the <strong>Module 10 checkpoint</strong>: one <strong>ADR</strong> (architecture decision record) in your repository. An ADR is a short document that records <em>one decision</em>: the situation, what you decided, why, what else you considered, and what you did not build. By the end:</p><ul><li><code>docs/adr/0001-rag-with-pgvector.md</code>, with <strong>three</strong> decisions answered: why RAG and not fine-tuning, why pgvector and not a separate vector database, and <strong>one thing you chose not to build</strong>.</li><li>Every reason backed by <strong>evidence</strong> from your own runs, not by opinion.</li><li>The tempting alternative argued <em>fairly</em>, and a clear line about what you did not try.</li></ul><div class="box cap"><strong>Capstone:</strong> an ADR is what a reviewer reads to see how you think. It is also the best answer to the interview question &ldquo;why did you build it this way?&rdquo;.</div><div class="box"><strong>What is real, and what is not.</strong> The numbers in the example ADR come from real runs of this project, listed below. The answers in the demo come from a stand-in writer, not a real model, and the ADR says so. Fine-tuning and a separate vector database were <strong>not</strong> tried, and the ADR says so too: an ADR that claims numbers it does not have is worse than none.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Cut the work in small pieces:</p><ol><li><strong>Collect evidence</strong>: run the scripts and write down every number and where it came from.</li><li><strong>Draft</strong> the context and the decision, in a few sentences.</li><li><strong>Write the reasons</strong>, each with its evidence.</li><li><strong>The alternatives</strong>, including the tempting one.</li><li><strong>The thing you did not build</strong>, and when to revisit.</li><li><strong>Read it as a stranger</strong>, cut, and commit.</li></ol><pre><code># ADR NNNN: &lt;the decision, as a short sentence&gt;
+
+Status: proposed | accepted | superseded by ADR NNNN
+Date: YYYY-MM-DD
+
+## Context          the situation and the forces: what is true, what is needed, what limits you
+## Decision         what you will do, in a few sentences
+## Why ...          the reasons, each with EVIDENCE (a number, a run, a test), not an opinion
+## Alternatives considered   what else you could do, and why not (include the one that is tempting)
+## One thing I chose not to build   and why, and when you would revisit
+## Consequences     what gets easier, what gets harder, what is still unknown</code></pre><pre><code>A good ADR
+  - is short (a page or two) and says WHY more than WHAT
+  - gives evidence for every reason: a number, a run, a test, a link
+  - includes the best alternative, argued fairly (even if it would win in some conditions)
+  - says what is NOT known or NOT tried
+  - says when to revisit the decision
+  - is never rewritten: a new decision is a new ADR that &#x27;supersedes&#x27; the old one</code></pre></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2><h3>Step 1: collect the evidence</h3><p>Gather the numbers from the earlier modules, and add the one that is new today: how long it takes to change one page of knowledge, and whether the next answer uses it. <code>adr_evidence.py</code> uses a scratch table, so your real data is not touched:</p><pre><code>import os
+import time
+from dataclasses import replace
+from pathlib import Path
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.chunking import chunk_documents
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.hybrid import KeywordIndex
+from my_ai_project.knowledge_base import load_knowledge_base
+from my_ai_project.rag import answer_question
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkRecord, ChunkStore
+
+DSN = os.environ.get(&quot;DATABASE_URL&quot;, &quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)
+store = ChunkStore(DSN, table=&quot;chunks_adr&quot;)   # a scratch table: the real one is not touched
+store.drop()
+store.init_schema()
+embedder, writer = FastEmbedder(), SimulatedWriter()   # the writer is a stand-in, NOT a real model
+
+documents = load_knowledge_base(Path(&quot;data/kb&quot;))
+by_id = {d.doc_id: d for d in documents}
+records = [ChunkRecord(c.doc_id, c.index, by_id[c.doc_id].title, by_id[c.doc_id].kind, c.text, c.tokens) for c in chunk_documents(documents, max_tokens=40)]
+store.add_chunks(records, embedder.embed([f&quot;{r.title}. {r.text}&quot; for r in records]))
+
+
+def ask(question: str) -&gt; str:
+    keywords = KeywordIndex(store.all_chunks())   # rebuilt, because the keyword index is built once from the stored chunks
+    result = answer_question(question, embedder, store, keywords, writer, allowed_kinds=allowed_kinds(&quot;customer&quot;))
+    return f&quot;{result.text}   sources: {&#x27;, &#x27;.join(s.citation for s in result.sources) or &#x27;none&#x27;}&quot;
+
+
+QUESTION = &quot;Which Wi-Fi band does the monitor support?&quot;
+print(&quot;before:&quot;, ask(QUESTION))
+
+# The product changes: the monitor now supports 5 GHz too. Change ONE page, and nothing else.
+page = next(r for r in records if r.doc_id == &quot;faq-wifi&quot;)
+changed = replace(page, text=&quot;The monitor supports 2.4 GHz and 5 GHz networks. Move it closer to the router and restart the monitor.&quot;)
+start = time.perf_counter()
+store.add_chunks([changed], embedder.embed([f&quot;{changed.title}. {changed.text}&quot;]))
+elapsed = (time.perf_counter() - start) * 1000
+print(f&quot;update: re-embedded and stored 1 chunk in {elapsed:.0f} ms (no training, no new model)&quot;)
+print(&quot;after: &quot;, ask(QUESTION))
+store.drop()</code></pre><div class="out"><b>You should see</b><br>before: The monitor supports 2.4 GHz networks only [faq-wifi#0].&nbsp;&nbsp; sources: [faq-wifi#0]<br>update: re-embedded and stored 1 chunk in 13 ms (no training, no new model)<br>after:&nbsp;&nbsp;The monitor supports 2.4 GHz and 5 GHz networks [faq-wifi#0].&nbsp;&nbsp; sources: [faq-wifi#0]</div><p>Keep a table of where every number comes from. If you cannot repeat a run, do not use its number:</p><pre><code>claim in the ADR                                         where the number comes from
+changing one page: 13 ms, the next answer uses it         adr_evidence.py (today)
+18 questions as a customer: 0 of 7 staff pages seen       leak_check.py (Day 114)
+hit@3 100%, pass 61% (stand-in writer)                    run_golden.py (Day 105)
+retrieval 6.5 ms median                                   measure_latency.py (Day 114)
+50,000 vectors: exact 8.6 ms, HNSW 0.6 ms, recall 95%     the experiment of Day 62
+all 20 pages = 862 tokens                                 count_tokens over data/kb (Day 116)
+the vector search alone missed E104; the lookup is exact  rule_vs_rag.py (Day 116)</code></pre><h3>Step 2: write the ADR</h3><p>This is the real ADR for <code>my-ai-project</code>. Read it as a model of the form. <strong>Do not copy it</strong>: your numbers, your context and your &ldquo;one thing I did not build&rdquo; are different, and an ADR with borrowed reasons is worthless:</p><pre><code># ADR 0001: Answer from the knowledge base with RAG on PostgreSQL and pgvector
+
+Status: accepted
+Date: 2027-01-30
+
+## Context
+The assistant answers questions about a fictional pump monitor from 20 pages (manuals, FAQs, error pages). The pages change.
+Error pages are for staff only. Every answer must say where it came from. One person builds and runs it. Tests must run with
+no model and no key.
+
+## Decision
+Chunk the pages, embed them with a small local model, store them in PostgreSQL with pgvector, retrieve with a vector search
+plus a keyword search, and give the best chunks to the model as numbered sources. The answer cites them. The user&#x27;s role
+filters what can be retrieved. Fine-tuning is not used, and no separate vector database is run.
+
+## Why RAG, and not fine-tuning
+- Updating knowledge: changing one page took 13 ms (re-embed and store one chunk) and the next answer used it
+  (&quot;2.4 GHz networks only&quot; became &quot;2.4 GHz and 5 GHz networks&quot;). No training, no new model.
+- Sources: every answer carries `[doc_id#chunk]`. A fine-tuned model cannot point to where a fact came from.
+- Permissions: the role filter is in the query. Asked as a customer, 18 golden questions touched 0 of the 7 staff-only pages.
+  Facts baked into a model&#x27;s weights cannot be filtered per user.
+- Measurement: retrieval and writing are scored apart (hit@3 100% while the whole pass rate is 61% with the stand-in writer),
+  so I know which part to fix.
+- Fine-tuning is good for style, format and special behaviour. That is not the problem here. I have not tried it and have
+  not measured its cost, so I do not claim numbers for it.
+
+## Why pgvector, and not a separate vector database
+- PostgreSQL is already needed. One system to run, back up and secure. The role filter, the metadata and the vectors are in one query.
+- Size: 26 chunks today; retrieval takes 6.5 ms (median), most of it embedding the question. In a test with 50,000 synthetic
+  vectors, an exact search took 8.6 ms and an HNSW index 0.6 ms with 95% recall. There is room to grow.
+- Revisit if the data reaches millions of vectors, if writes become heavy, or if a feature is missing.
+
+## Alternatives considered
+- Put all pages in every prompt. All 20 pages are 862 tokens. This works today and is simpler. Cost and noise grow with every
+  page, and a prompt cannot hold a real knowledge base. I keep RAG for growth, roles and citations. If the pages stay this small,
+  this alternative wins and RAG is the wrong choice.
+- A fixed lookup for error codes (see `incident.py`). It is exact and instant (about 0.1 microseconds), and the vector search alone
+  missed the page for &quot;What does error E104 mean?&quot;. It is used as a tool, next to RAG.
+
+## One thing I chose not to build
+Multi-agent orchestration. One tool and one loop answer the questions, and the steps are predictable. The golden set is not
+at its target yet (11 of 18 with the stand-in writer), so a more complex design would hide the real problems. Revisit if the
+golden set contains tasks that one loop cannot do.
+
+## Consequences
+- Easy to update, cite and restrict. Easy to test.
+- Retrieval quality is my job: the keyword search was needed for exact codes, and the golden set found a real miss (q14).
+- Chunk size and the keyword index matter. The keyword index is built once and must be rebuilt after an update.
+- Answer quality with a real model is not measured yet. All answer-level numbers here use a stand-in writer.</code></pre><h3>Step 3: read it as a stranger</h3><p>Check it against the rules. Notice what the example does that many ADRs do not: it argues the alternative that <em>would win</em> in some conditions (put all pages in the prompt, 862 tokens), it says which things were not tried, and it gives a &ldquo;revisit&rdquo; condition for each choice.</p><h3>Step 4: tell the agents</h3><p>Add one line to <code>AGENTS.md</code> so that every session knows where decisions live:</p><pre><code>- Decisions live in `docs/adr/`. Read them before changing the stack. A new decision is a new ADR; do not rewrite an old one.</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>You have no evidence for a reason</strong>: either run something to get it, or take the reason out. Say &ldquo;not measured&rdquo; where that is true.</li><li><strong>It reads like an advertisement</strong>: you only argued for your choice. Add the best alternative and a case where it wins.</li><li><strong>It is three pages</strong>: cut. A reader gives an ADR five minutes.</li><li><strong>You are afraid the decision is wrong</strong>: that is what &ldquo;revisit when&rdquo; is for. A decision with a stated way out is stronger than one without.</li><li><strong>Your &ldquo;thing I did not build&rdquo;</strong>: pick something that you were tempted by and could defend, such as a reranker, multi-agent orchestration, or a fine-tuned model. Say what would make you build it.</li></ul><details><summary>Questions a reviewer may ask about the example</summary><p>&ldquo;Your knowledge base is 862 tokens. Why not put it all in the prompt?&rdquo; (The ADR answers: it works today and would win if the pages stay small; RAG is kept for growth, roles and citations.) &ldquo;Why 13 ms and not training time?&rdquo; (It measures a re-embed of one chunk, not model training: the comparison is in kind, and the ADR does not claim a fine-tuning number.) &ldquo;Does it work with a real model?&rdquo; (Not measured: the ADR says so.)</p></details></section>
+<section><h2><span class="n">6</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Run the checklist, and push.</p><pre><code>[ ] docs/adr/0001-....md exists, with status, date, context, decision, reasons with evidence, alternatives, one thing not built, consequences
+[ ] &#x27;why RAG and not fine-tuning&#x27;, &#x27;why pgvector&#x27;, and &#x27;one thing I chose not to build&#x27; are each answered
+[ ] every number in it comes from a run I can repeat (the table of sources is in my notes)
+[ ] the most tempting alternative is argued fairly, and the ADR says what was not tried
+[ ] there is a &#x27;revisit when&#x27; for each decision
+[ ] AGENTS.md says where the ADRs live
+[ ] committed and pushed</code></pre><p><code>git add docs/adr AGENTS.md</code>, <code>git commit -m &quot;Add ADR 0001: RAG with pgvector, and what I did not build&quot;</code>, <code>git push</code>.</p></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What are the parts of an ADR?</li><li>Why include the alternative that would win in some conditions?</li><li>Why is a &ldquo;revisit when&rdquo; line useful?</li></ol><details><summary>Answers</summary><ol><li>Status and date, context, decision, the reasons with evidence, alternatives considered, one thing not built, and consequences.</li><li>It shows that you weighed the options honestly, and it tells the reader when your decision stops being right.</li><li>A decision is right for some conditions. Naming them gives a clear signal to change course, and makes the decision safe to take.</li></ol></details></section>
+<section id="game-day119" class="game"><h2><span class="n">+</span> &middot; Game: ADR Review <span class="t">5 min</span></h2>
+<p><p>You review an ADR. Read the line, pick the verdict.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day119-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day119-play">Start the game</button></div>
+<div id="day119-round" hidden><div class="gtop"><span id="day119-num">Round 1</span><span id="day119-score">Score 0</span></div>
+<pre hidden><code id="day119-code"></code></pre><div class="q" id="day119-q"></div><div class="choices" id="day119-opts"></div>
+<div class="fb" id="day119-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day119-next" hidden>Next round</button></p></div>
+<div id="day119-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day119",[{"c": "'We use pgvector because it is the standard.'", "q": "What is missing?", "o": ["Evidence: a number, a run or a test", "A longer sentence", "A logo"], "a": 0, "out": "(see: retrieval 6.5 ms median; 50,000 vectors: exact 8.6 ms, HNSW 0.6 ms, 95% recall)", "why": "Every reason needs evidence, not an opinion."}, {"c": "'All 20 pages are 862 tokens. Put them all in every prompt.'", "q": "What is this in the ADR?", "o": ["The alternative that would win in some conditions, argued fairly", "A mistake", "A reason to delete the ADR"], "a": 0, "out": "If the pages stay this small, this alternative wins and RAG is the wrong choice.", "why": "A fair ADR shows when you would be wrong."}, {"c": "'Fine-tuning would cost three times more.'", "q": "Is it allowed, if fine-tuning was never tried?", "o": ["No: it is a number you do not have", "Yes", "Only in the title"], "a": 0, "out": "I have not tried it and have not measured its cost, so I do not claim numbers for it.", "why": "Say what you did not try."}, {"c": "One thing I chose not to build: multi-agent orchestration", "q": "What must follow?", "o": ["Why not, and when you would revisit", "A promise to build it", "Nothing"], "a": 0, "out": "Revisit if the golden set contains tasks that one loop cannot do.", "why": "A decision with a stated way out is stronger."}, {"c": "The ADR says changing one page took 13 ms", "q": "Where does the number come from?", "o": ["adr_evidence.py, which you can run again", "Memory", "A blog post"], "a": 0, "out": "update: re-embedded and stored 1 chunk in 13 ms (no training, no new model)", "why": "If you cannot repeat a run, do not use its number."}, {"c": "Months later the decision changes", "q": "What do you do with the old ADR?", "o": ["Leave it, and write a new ADR that supersedes it", "Rewrite it", "Delete it"], "a": 0, "out": "Status: superseded by ADR 0002", "why": "ADRs are a history, not a wiki."}],["ADR rookie", "ADR regular", "ADR author"],"An ADR is short, gives evidence for every reason, argues the best alternative fairly, says what was not tried and what was not built, and says when to revisit.");</script>
+<p><small>Tick &ldquo;Play the ADR Review game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> an ADR with three decisions, each backed by numbers from your own runs, an honest alternative that would win in some conditions, a list of what you did not try, and a line in <code>AGENTS.md</code>. That is the Module 10 checkpoint.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 119 checklist.</li><li>Share one line in the comments: what is the one thing you chose not to build?</li><li><strong>Next:</strong> Sunday is the review: a self-test on design trade-offs, and the plan for Module 11, security.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
