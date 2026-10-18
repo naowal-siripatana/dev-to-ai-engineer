@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 149 - Configuration and secrets</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 149 &middot; LEVEL 13: DEPLOYMENT</div><h1>Configuration and secrets</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to read all your settings in one place, keep secrets out of printouts and out of Git, and find a leaked password in a history.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does only the <code>web</code> service publish a port in your Compose file?</li><li>Where does the database password live in your Compose project, and what is committed instead?</li></ol><details><summary>Answers</summary><ol><li>Everything else is reached by name on the private network. Fewer open doors.</li><li>In <code>.env</code>, which Git ignores. An <code>.env.example</code> with a fake value is committed.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your code has the line <code>os.environ.get(&quot;ANTHROPIC_API_KEY&quot;)</code> in three places, and each copy checks the key in its own way. What happens when you add a fourth place and forget the check? And what happens if someone prints the settings in a log?</strong></p><details><summary>Guess first, then open</summary><p>The fourth place may run with no key and fail late, deep inside a request. A printed settings object can put the key into a log file that many people can read. The cure is one place that reads, checks and wraps all the settings, so the rest of the code only asks it.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: three kinds of setting</h3>
+<p>A <strong>default</strong> that is safe for everyone (<code>LLM_MODE=fake</code>) lives in the code. A setting that <strong>changes by place</strong> (a database address) comes from the environment. A <strong>secret</strong> (a key, a password) also comes from the environment, and also must never be written in a file that Git tracks.</p><pre><code>code (safe defaults)        LLM_MODE=fake, the local database address with a throwaway password   committed
+.env (this machine)          POSTGRES_PASSWORD, and your own key if you test the real model          NOT committed
+the place it runs            set in the settings of the host or of the CI service                   never in the repository</code></pre>
+<h3>Piece 2: read once, check early, fail loudly</h3>
+<p>One class reads every setting, checks it and gives it a type. A wrong value (<code>LLM_MODE=reall</code>) or a missing key in real mode stops with a message that names the setting. The rest of the code receives a <code>Settings</code> object and never touches <code>os.environ</code>. In tests you pass a plain dictionary, so no test needs to change the real environment.</p>
+<h3>Piece 3: wrap the secret, and remember that Git remembers</h3>
+<p>A secret in a <code>SecretStr</code> prints as stars, so a log, a crash report or a debug <code>print</code> does not copy it; you must ask for the real value on purpose. And a password that was committed once is <strong>in the history for good</strong>: removing it in the next commit hides it from the files, not from <code>git log</code>. The only real fix is to treat it as public: replace the secret at its source (a new key, a new password) and then clean up.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>Settings</code> is an options class bound from configuration (<code>IOptions&lt;T&gt;</code>), with validation at start. <code>SecretStr</code> plays the part of a <code>SecureString</code>-like wrapper that hides the value in a printout, and <code>.env</code> is <code>dotnet user-secrets</code>: a per-machine place outside the repository.</div>
+<div class="box cap"><strong>Capstone:</strong> the Compose project reads the password from <code>.env</code>. Today the Python service reads everything through one class, and a finder checks the repository. Wednesday the CI pipeline runs both.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. <code>src/my_ai_project/settings.py</code>: a frozen model, <code>SecretStr</code> for the two secrets (the database address has a password in it), and <code>from_env</code> that takes a dictionary:</p><pre><code>from collections.abc import Mapping
+import os
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, SecretStr
+
+
+class ConfigError(Exception):
+    &quot;&quot;&quot;A setting is missing or wrong. The message says which one and what to do.&quot;&quot;&quot;
+
+
+class Settings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    llm_mode: Literal[&quot;fake&quot;, &quot;real&quot;] = &quot;fake&quot;
+    anthropic_api_key: SecretStr | None = None   # SecretStr: printing it shows ********
+    llm_model: str = &quot;claude-haiku-4-5-20251001&quot;
+    llm_fallback_model: str | None = None
+    database_url: SecretStr = SecretStr(&quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)   # has a password in it
+    audit_log: str = &quot;logs/audit.jsonl&quot;
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None) -&gt; &quot;Settings&quot;:
+        env = os.environ if environ is None else environ
+        mode = env.get(&quot;LLM_MODE&quot;, &quot;fake&quot;)
+        if mode not in (&quot;fake&quot;, &quot;real&quot;):
+            raise ConfigError(f&quot;LLM_MODE is {mode!r}: use &#x27;fake&#x27; or &#x27;real&#x27;&quot;)
+        key = env.get(&quot;ANTHROPIC_API_KEY&quot;) or None   # an empty string counts as not set
+        if mode == &quot;real&quot; and key is None:
+            raise ConfigError(&quot;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&quot;)
+        values: dict[str, object] = {&quot;llm_mode&quot;: mode, &quot;anthropic_api_key&quot;: key}
+        for field, name in ((&quot;llm_model&quot;, &quot;LLM_MODEL&quot;), (&quot;llm_fallback_model&quot;, &quot;LLM_FALLBACK_MODEL&quot;), (&quot;database_url&quot;, &quot;DATABASE_URL&quot;), (&quot;audit_log&quot;, &quot;AUDIT_LOG&quot;)):
+            if env.get(name):
+                values[field] = env[name]
+        return cls(**values)   # type: ignore[arg-type]
+
+    def api_key(self) -&gt; str:
+        &quot;&quot;&quot;The only place where the secret leaves its wrapper.&quot;&quot;&quot;
+        if self.anthropic_api_key is None:
+            raise ConfigError(&quot;ANTHROPIC_API_KEY is not set&quot;)
+        return self.anthropic_api_key.get_secret_value()</code></pre><p>Each of the three functions in <code>deps.py</code> used to repeat the same check. Now one line asks the class. Before and after for the first one (the other two change the same way):</p><pre><code>def get_llm_client() -&gt; StreamingClient:
+    if os.environ.get(&quot;LLM_MODE&quot;, &quot;fake&quot;) == &quot;real&quot;:
+        api_key = os.environ.get(&quot;ANTHROPIC_API_KEY&quot;)
+        if not api_key:
+            raise RuntimeError(&quot;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&quot;)
+        return RetryingClient(AnthropicClient(api_key=api_key, timeout=30.0), max_attempts=3)
+    return FakeLlmClient()</code></pre><pre><code>def get_llm_client() -&gt; StreamingClient:
+    settings = Settings.from_env()
+    if settings.llm_mode == &quot;real&quot;:
+        return RetryingClient(AnthropicClient(api_key=settings.api_key(), timeout=30.0), max_attempts=3)
+    return FakeLlmClient()</code></pre><p>What a printout looks like, and what the errors say (run for real, with a made-up key):</p><pre><code>from my_ai_project.settings import Settings
+
+settings = Settings.from_env({&quot;LLM_MODE&quot;: &quot;real&quot;, &quot;ANTHROPIC_API_KEY&quot;: &quot;not-a-real-key-123&quot;, &quot;DATABASE_URL&quot;: &quot;postgresql://u:topsecret@db:5432/x&quot;})
+print(settings)
+print(settings.model_dump_json())</code></pre><div class="out"><b>You should see</b><br>llm_mode='real' anthropic_api_key=SecretStr('**********') llm_model='claude-haiku-4-5-20251001' llm_fallback_model=None database_url=SecretStr('**********') audit_log='logs/audit.jsonl'<br>{"llm_mode":"real","anthropic_api_key":"**********","llm_model":"claude-haiku-4-5-20251001","llm_fallback_model":null,"database_url":"**********","audit_log":"logs/audit.jsonl"}</div><div class="out"><b>You should see</b><br>ConfigError: LLM_MODE is real, but ANTHROPIC_API_KEY is not set<br>ConfigError: LLM_MODE is 'reall': use 'fake' or 'real'</div><p>The whole test suite after the change, with the type check:</p><div class="out"><b>You should see</b><br>216 passed in 2.43s    (7 of them are the new settings and finder tests; mypy: no issues found in 80 source files)</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch: <code>git switch -c config</code>.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Add <code>settings.py</code> and the tests of the template (in Stuck). Change the three functions of <code>deps.py</code> (and <code>ingest.py</code>) to use it, and delete the <code>import os</code> that is no longer needed. Run <code>pytest</code> and <code>mypy</code>: everything that passed before must still pass.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Add one setting of your own (for example <code>LLM_TIMEOUT</code>, a number of seconds, with a default). <strong>Predict:</strong> what must change in <code>from_env</code>, in the model and in the tests? Do it, and try a value that is not a number: what does the error say, and is the message good enough for a stranger?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Run the printout code above with your own made-up key and look at the output. Then ask for <code>settings.anthropic_api_key</code> directly and print it, and then call <code>.api_key()</code>. Which one gives the real value, and why is it good that it takes a call?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Find the secrets in your repositories. Add <code>find_secrets.py</code> (in Stuck) and run it in each project. Then, in a <strong>throwaway folder</strong> (never in your real repository), make a leak on purpose: commit a file that holds a <em>fake</em> password inside an address, run the finder, remove the password in the next commit, run the finder again, and search the history with <code>git log -p -S</code>. Write down what you learn. Commit your real work: <code>git add</code> by name, then <code>git commit -m &quot;Read all settings in one place&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>A test fails because it changed <code>os.environ</code></strong>: use <code>monkeypatch.setenv</code> (it restores the value) or pass a dictionary to <code>from_env</code>.</li><li><strong>mypy: the argument of <code>cls(**values)</code></strong>: the dictionary has mixed value types, so the call needs the comment shown. The tests are the real check.</li><li><strong>The finder reports a line that is not a secret</strong>: a fake value used on purpose. Add the marker <code>secret-scan: allow</code> to that line in a comment: it shows up in the review. (This happened for real: the finder flagged its own test until the marker was added.)</li><li><strong>The finder reports nothing, but you know there is a secret</strong>: it knows three shapes only. A quiet result is not proof.</li></ul><details><summary>Hint: Step 4</summary><p><code>git log -p -S text</code> lists the commits where the number of times <code>text</code> appears changed, with their changes. It is the same tool an attacker would use, which is the point.</p></details><details><summary>Solution: Step 4</summary><pre><code>git init
+printf &#x27;DATABASE_URL=postgresql://admin:S3cretValue9@db.example.com:5432/app\n&#x27; &gt; settings.env
+git add -A &amp;&amp; git commit -m &quot;add settings&quot;
+python find_secrets.py</code></pre><div class="out"><b>You should see</b><br>settings.env:1&nbsp;&nbsp;password inside an address<br>1 suspicious line(s) in 2 tracked files&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(exit code 1)</div><pre><code>printf &#x27;DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/app\n&#x27; &gt; settings.env
+git commit -am &quot;remove the password&quot;
+python find_secrets.py                      -&gt; 0 suspicious line(s) in 2 tracked files   (exit code 0)
+git log --oneline
+git log -p -S S3cretValue9 --oneline</code></pre><div class="out"><b>You should see</b><br>1026194 remove the password<br>ce05f5c add settings<br><br>1026194 remove the password<br>-DATABASE_URL=postgresql://admin:S3cretValue9@db.example.com:5432/app<br>ce05f5c add settings<br>+DATABASE_URL=postgresql://admin:S3cretValue9@db.example.com:5432/app</div><p>The finder looks at the files Git tracks <em>now</em>: it is green after the removal. The history still holds the password in both commits. What to do about a real leak (general advice, not run here): treat the secret as public, replace it at its source first (a new key or password, and revoke the old one), then clean the history if you want to, and check the logs for use of the old one.</p></details><details><summary>Template: the finder</summary><pre><code>&quot;&quot;&quot;List the files that Git tracks and that look like they hold a secret. Exit 1 if there is any.
+It is a net with big holes (it knows a few shapes only): a quiet result is not proof.&quot;&quot;&quot;
+import re
+import subprocess
+import sys
+
+SHAPES = {
+    &quot;private key block&quot;: re.compile(r&quot;-----BEGIN [A-Z ]*PRIVATE KEY-----&quot;),
+    &quot;password inside an address&quot;: re.compile(r&quot;[a-z+]+://[^\s:/@]+:([^\s@${}]{4,})@&quot;),
+    &quot;a key or password set to a long literal&quot;: re.compile(r&quot;&quot;&quot;(?i)\b\w*(api_?key|secret|token|password)\w*\s*[:=]\s*[&quot;&#x27;]?([A-Za-z0-9_\-]{20,})[&quot;&#x27;]?&quot;&quot;&quot;),
+}
+ALLOWED = (&quot;change-me&quot;, &quot;assistant:assistant@&quot;, &quot;postgres:@&quot;, &quot;not-a-real&quot;, &quot;secret-scan: allow&quot;)   # fake values on purpose; the last one is a marker a line can carry (it shows up in the review)
+
+
+def tracked_files() -&gt; list[str]:
+    return subprocess.run([&quot;git&quot;, &quot;ls-files&quot;], capture_output=True, text=True, check=True).stdout.splitlines()
+
+
+def scan(paths: list[str]) -&gt; list[tuple[str, int, str]]:
+    found = []
+    for path in paths:
+        try:
+            lines = open(path, encoding=&quot;utf-8&quot;).read().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue   # a binary file, or a file that is gone
+        for number, line in enumerate(lines, start=1):
+            if any(fake in line for fake in ALLOWED):
+                continue
+            for name, shape in SHAPES.items():
+                if shape.search(line):
+                    found.append((path, number, name))
+    return found
+
+
+if __name__ == &quot;__main__&quot;:
+    hits = scan(tracked_files())
+    for path, number, name in hits:
+        print(f&quot;{path}:{number}  {name}&quot;)   # the line itself is NOT printed: it would copy the secret into the log
+    print(f&quot;{len(hits)} suspicious line(s) in {len(tracked_files())} tracked files&quot;)
+    sys.exit(1 if hits else 0)</code></pre><div class="out"><b>You should see</b><br>0 suspicious line(s) in 165 tracked files</div></details><details><summary>Template: tests</summary><pre><code>import sys
+from pathlib import Path
+
+import pytest
+
+from my_ai_project.settings import ConfigError, Settings
+
+
+def test_with_nothing_set_it_runs_in_fake_mode() -&gt; None:
+    settings = Settings.from_env({})
+    assert settings.llm_mode == &quot;fake&quot;
+    assert settings.anthropic_api_key is None
+    assert settings.audit_log == &quot;logs/audit.jsonl&quot;
+
+
+def test_real_mode_without_a_key_is_an_error_that_names_the_setting() -&gt; None:
+    with pytest.raises(ConfigError, match=&quot;ANTHROPIC_API_KEY is not set&quot;):
+        Settings.from_env({&quot;LLM_MODE&quot;: &quot;real&quot;})
+
+
+def test_an_empty_key_counts_as_not_set() -&gt; None:
+    with pytest.raises(ConfigError, match=&quot;ANTHROPIC_API_KEY&quot;):
+        Settings.from_env({&quot;LLM_MODE&quot;: &quot;real&quot;, &quot;ANTHROPIC_API_KEY&quot;: &quot;&quot;})
+
+
+def test_an_unknown_mode_is_an_error() -&gt; None:
+    with pytest.raises(ConfigError, match=&quot;LLM_MODE is &#x27;reall&#x27;&quot;):
+        Settings.from_env({&quot;LLM_MODE&quot;: &quot;reall&quot;})
+
+
+def test_the_key_and_the_database_password_do_not_show_in_a_printout() -&gt; None:
+    settings = Settings.from_env({&quot;LLM_MODE&quot;: &quot;real&quot;, &quot;ANTHROPIC_API_KEY&quot;: &quot;not-a-real-key-123&quot;, &quot;DATABASE_URL&quot;: &quot;postgresql://u:topsecret@db:5432/x&quot;})
+    text = repr(settings) + str(settings) + settings.model_dump_json()
+    assert &quot;not-a-real-key-123&quot; not in text
+    assert &quot;topsecret&quot; not in text
+    assert settings.api_key() == &quot;not-a-real-key-123&quot;
+
+
+def test_the_settings_cannot_be_changed_after_they_are_read() -&gt; None:
+    settings = Settings.from_env({})
+    with pytest.raises(Exception):
+        settings.llm_mode = &quot;real&quot;   # type: ignore[misc]
+
+
+def test_the_secret_finder_sees_a_password_in_an_address(tmp_path: Path) -&gt; None:
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root))
+    from find_secrets import scan   # a script in the project folder, not in src/
+
+    leaky = tmp_path / &quot;leaky.py&quot;
+    leaky.write_text(&#x27;URL = &quot;postgresql://admin:S3cretValue9@db.example.com:5432/app&quot;\nSAFE = &quot;postgresql://${USER}:${PASSWORD}@db:5432/app&quot;\nMARKED = &quot;postgresql://admin:S3cretValue9@db:5432/app&quot;  # secret-scan: allow\n&#x27;)   # secret-scan: allow
+    assert scan([str(leaky)]) == [(str(leaky), 1, &quot;password inside an address&quot;)]</code></pre></details><details><summary>Template: .gitignore for the project</summary><pre><code>.env
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+node_modules/
+dist/
+bin/
+obj/
+.fastembed/</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does one class read all the settings?</li><li>What does <code>SecretStr</code> protect against, and what does it not?</li><li>You committed a password and removed it in the next commit. Is it safe now?</li></ol><details><summary>Answers</summary><ol><li>One place to check, to type and to document them; a wrong or missing value fails at once with a clear message; and tests pass a dictionary instead of changing the real environment.</li><li>It protects against copying the value by accident into a printout, a log or a crash report. It does not protect a value that you unwrap on purpose, or one that is also written in a file.</li><li>No. The history keeps it. Replace the secret at its source and treat the old one as public.</li></ol></details></section>
+<section id="game-day149" class="game"><h2><span class="n">+</span> &middot; Game: Settings Check <span class="t">5 min</span></h2>
+<p><p>You read a settings case. Pick the answer, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day149-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day149-play">Start the game</button></div>
+<div id="day149-round" hidden><div class="gtop"><span id="day149-num">Round 1</span><span id="day149-score">Score 0</span></div>
+<pre hidden><code id="day149-code"></code></pre><div class="q" id="day149-q"></div><div class="choices" id="day149-opts"></div>
+<div class="fb" id="day149-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day149-next" hidden>Next round</button></p></div>
+<div id="day149-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day149",[{"c": "Settings.from_env({\"LLM_MODE\": \"real\"}) with no key", "q": "What happens?", "o": ["ConfigError that names ANTHROPIC_API_KEY", "It runs with an empty key", "A crash deep inside a request"], "a": 0, "out": "ConfigError: LLM_MODE is real, but ANTHROPIC_API_KEY is not set", "why": "Fail early, with the name of the setting."}, {"c": "LLM_MODE=reall (a typo)", "q": "What does from_env do?", "o": ["Raises: use 'fake' or 'real'", "Uses fake silently", "Uses real"], "a": 0, "out": "ConfigError: LLM_MODE is 'reall': use 'fake' or 'real'", "why": "A silent fallback hides a typo."}, {"c": "print(settings) with a made-up key and a database address with a password", "q": "What shows?", "o": ["Stars: SecretStr('**********')", "The key", "The password"], "a": 0, "out": "anthropic_api_key=SecretStr('**********') ... database_url=SecretStr('**********')", "why": "A printout or a log does not copy the value."}, {"c": "No environment variables at all", "q": "Which mode runs?", "o": ["fake, with no key", "real", "It refuses to start"], "a": 0, "out": "fake None", "why": "A safe default: the project runs with no key."}, {"c": "A password committed, then removed in the next commit; the secret finder runs", "q": "What does it say after the removal?", "o": ["0 suspicious lines, but git log -p -S still finds it", "It still reports it", "The history is clean"], "a": 0, "out": "0 suspicious line(s) in 2 tracked files   (exit code 0)\n1026194 remove the password\n-DATABASE_URL=postgresql://admin:S3cretValue9@...", "why": "The finder reads the files now; Git keeps the past."}, {"c": "The finder flags a line that holds a fake value on purpose", "q": "What is the fix?", "o": ["Mark the line with secret-scan: allow, so the review sees it", "Switch the finder off", "Delete the test"], "a": 0, "out": "tests/test_settings.py:51  password inside an address", "why": "This happened for real: the finder flagged its own test."}],["Settings rookie", "Settings regular", "Settings keeper"],"Read settings once, in one place; fail early with the name of the setting; wrap secrets so a printout shows stars; and remember that Git keeps what you removed.");</script>
+<p><small>Tick &ldquo;Play the Settings Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> one class that reads, checks and wraps every setting, three duplicated checks gone, tests that need no real environment, a finder for obvious secrets in tracked files, and a real look at why a removed password is not removed.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 149 checklist.</li><li>Share one line in the comments: what did the finder find in your repositories?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you put your tests, the finder and the image build on GitHub Actions so that they run on every push.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

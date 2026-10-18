@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 152 - Mixed practice: make a failing test block the build</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 152 &middot; LEVEL 13: DEPLOYMENT &middot; MIXED PRACTICE</div><h1>Mixed practice: make a failing test block the build</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write a small workflow from a blank file where a red test stops the build, and say how a gate can be undone by mistake.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>needs:</code> do between two jobs?</li><li>Why does the CI of your project use <code>LLM_MODE=fake</code>?</li></ol><details><summary>Answers</summary><ol><li>The second job starts only when the first is green; if it fails, the second is skipped.</li><li>CI must not need a real key: a leak would cost money, and a test must not touch a real model.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Today <span class="t">2 min</span></h2><p><strong>Today you practise without the lesson open.</strong> Goal: <em>a red test stops the image build, and you can show it.</em> You write a small workflow from a blank file, then compare with the model.</p><div class="box"><strong>Be clear about what was run.</strong> The workflow was <strong>never run on GitHub</strong>. What was run for real: the linter on the file, a test that fails on purpose (with the real exit code), and the same command behind <code>&amp;&amp;</code> and behind <code>|| true</code>. How GitHub shows a skipped job is standard behaviour that was not observed.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan first <span class="t">5 min</span></h2><p>Draw two boxes and one arrow on paper: which job runs first, which must wait, and what should happen to the second when the first is red? Then open the sketch.</p><details><summary>The plan</summary><pre><code>test    -&gt; runs the tests                         red = stop
+build   -&gt; needs: test, builds the image          grey (skipped) when test is red
+(the rule: a job that must not run after a failure says needs:)</code></pre></details></section>
+<section><h2><span class="n">4</span> &middot; Do it from a blank file <span class="t">25 min</span></h2>
+<p>On the branch <code>ci</code>. Write each piece <strong>before</strong> you open the model. Run the linter after each one.</p>
+<ol>
+<li><strong>A trigger.</strong> Run on every push, and nothing more. Give the workflow a name and the least permission: only reading the code.</li>
+<li><strong>A job that tests.</strong> Check out the code, set up <code>uv</code>, install with the lock file, run the tests.</li>
+<li><strong>A job that builds an image.</strong> It must run only if the test job is green.</li>
+<li><strong>A test that fails on purpose.</strong> Add <code>tests/test_broken.py</code> (in the model). Run <code>pytest</code> on your laptop and read the last lines and the exit code (<code>echo $?</code>).</li>
+<li><strong>The gate, in the shell.</strong> Put <code>&amp;&amp;</code> between the test command and a harmless <code>echo</code> that stands for the build. Run it with the broken test and without it.</li>
+</ol>
+<p><strong>Break it on purpose:</strong> (a) misspell the name in <code>needs:</code> and read the linter. (b) Add <code>|| true</code> after the test command and run it with the broken test: what is the exit code of the line, and what would the job do on GitHub?</p></section>
+<section><h2><span class="n">5</span> &middot; Compare with the model <span class="t">10 min</span></h2><p>Open these only after your own try.</p><details><summary>Pieces 1 to 3: the workflow</summary><pre><code>name: Toy CI
+
+on: [push]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+  build:
+    needs: test   # if test fails, this job is skipped
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t toy .</code></pre><p>The linter on it, and on a copy with a misspelt <code>needs</code> (run for real):</p><div class="out"><b>You should see</b><br>actionlint .github/workflows/toy.yml        (exit code 0, no output)</div><div class="out"><b>You should see</b><br>toy2.yml:17:3: job "build" needs job "tset" which does not exist in this workflow [job-needs]</div></details><details><summary>Piece 4: the broken test, and what pytest says</summary><pre><code>from my_ai_project.settings import Settings
+
+
+def test_the_default_mode_is_real() -&gt; None:
+    assert Settings.from_env({}).llm_mode == &quot;real&quot;</code></pre><p>Remove the file when you have seen it. The real output of the run:</p><div class="out"><b>You should see</b><br>&nbsp;&nbsp;&nbsp;&nbsp;def test_the_default_mode_is_real() -> None:<br>>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; assert Settings.from_env({}).llm_mode == "real"<br>E&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; AssertionError: assert 'fake' == 'real'<br>E<br>E&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; - real<br>E&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + fake<br><br>tests/test_broken.py:5: AssertionError<br>=========================== short test summary info ============================<br>FAILED tests/test_broken.py::test_the_default_mode_is_real - AssertionError: ...<br>1 failed, 216 passed in 2.45s<br>exit code: 1</div></details><details><summary>Piece 5: the gate, and the hole</summary><pre><code>uv run pytest -q &amp;&amp; echo &quot;build the images&quot;          -&gt; prints &quot;build the images&quot; only if pytest exits with 0
+(uv run pytest -q &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo &quot;build the images&quot;) || echo &quot;tests failed: no build&quot;
+                                                       -&gt; with the broken test: tests failed: no build</code></pre><p>And the same line with <code>|| true</code> (run for real):</p><pre><code>uv run pytest -q || true ; echo &quot;exit code of the line: $?&quot;
+                                                       -&gt; the failing test is printed, and the exit code of the line is 0</code></pre><p>That is the hole: <code>|| true</code> (or <code>continue-on-error: true</code> on a step) turns a failure into a pass, so nothing is blocked and the mark is green. Tests that cannot fail are decoration. If a test is flaky, fix or remove the test; do not hide the failure.</p></details><p>One more thing the file cannot do: the mark on the commit is information, not a lock. To stop a merge while the mark is red, the repository has a setting called a <strong>branch protection rule</strong> (or a ruleset): &ldquo;require status checks to pass&rdquo;, naming the jobs. It is a setting of the repository on GitHub, not a line in the workflow, and it was not set or tested for this lesson (general knowledge, you will see it in the settings page).</p></section>
+<section><h2><span class="n">6</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What exit code does a failing <code>pytest</code> return, and why does CI care?</li><li>Why does <code>|| true</code> hide a failure?</li><li>What is the difference between a red mark and a blocked merge?</li></ol><details><summary>Answers</summary><ol><li>1 (not 0). CI treats any non-zero exit code as a failure of the step, and so of the job.</li><li>It runs <code>true</code> when the command fails, and <code>true</code> exits with 0, so the line as a whole reports success.</li><li>The red mark only tells; a branch protection rule on the repository can refuse the merge while a named check is not green.</li></ol></details></section>
+<section id="game-day152" class="game"><h2><span class="n">+</span> &middot; Game: Gate Check <span class="t">5 min</span></h2>
+<p><p>You decide what blocks what. The outputs are real runs on a laptop.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day152-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day152-play">Start the game</button></div>
+<div id="day152-round" hidden><div class="gtop"><span id="day152-num">Round 1</span><span id="day152-score">Score 0</span></div>
+<pre hidden><code id="day152-code"></code></pre><div class="q" id="day152-q"></div><div class="choices" id="day152-opts"></div>
+<div class="fb" id="day152-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day152-next" hidden>Next round</button></p></div>
+<div id="day152-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day152",[{"c": "A test fails on purpose", "q": "What is the exit code of pytest?", "o": ["1", "0", "2 only for a crash of pytest itself"], "a": 0, "out": "1 failed, 216 passed in 2.45s\nexit code: 1", "why": "Any non-zero code fails the step."}, {"c": "pytest && echo \"build the images\" with the broken test", "q": "What is printed?", "o": ["Nothing from the echo: tests failed, no build", "build the images", "An error from echo"], "a": 0, "out": "tests failed: no build", "why": "&& runs the second command only after success."}, {"c": "pytest || true with the broken test", "q": "What is the exit code of the line?", "o": ["0: the failure is hidden", "1", "It hangs"], "a": 0, "out": "exit code of the line: 0", "why": "Tests that cannot fail are decoration."}, {"c": "build: needs: test, and the test job is red", "q": "What happens to build on GitHub?", "o": ["It is skipped", "It runs anyway", "It runs half"], "a": 0, "out": "", "why": "Standard GitHub behaviour (not observed in this lesson)."}, {"c": "The commit has a red mark", "q": "Can it still be merged?", "o": ["Yes, unless a branch protection rule requires the check", "Never", "Only by the owner"], "a": 0, "out": "", "why": "The mark informs; the rule locks. It is a setting on GitHub."}, {"c": "A flaky test", "q": "What do you do?", "o": ["Fix or remove the test; do not hide the failure", "Add continue-on-error: true", "Ignore red runs"], "a": 0, "out": "", "why": "A pipeline people ignore is worse than none."}],["Gate rookie", "Gate regular", "Gate keeper"],"A non-zero exit code fails a step; needs keeps the build behind the tests; || true and continue-on-error undo the gate; and a branch protection rule turns a red mark into a lock.");</script>
+<p><small>Tick &ldquo;Play the Gate Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">7</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a small workflow where a red test stops the build, a test that fails on purpose with a real exit code, and a clear look at the one-line mistake that makes a gate useless.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 152 checklist.</li><li>Share one line in the comments: which check would you make required first?</li><li><strong>Next:</strong> Friday is a teach-back: why secrets stay out of Git.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 154 - Project Lab 22: GitHub Actions for the whole system</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 154 &middot; LEVEL 13: DEPLOYMENT &middot; PROJECT LAB</div><h1>Project Lab 22: GitHub Actions for the whole system</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to run tests and build the images on every push, with a badge and an honest README.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does CI use the fake writer and a throwaway database password?</li><li>What does <code>|| true</code> do to a failing test step?</li><li>Where do real secrets live, if a job ever needs one?</li></ol><details><summary>Answers</summary><ol><li>CI must not need a real key; a leak or a mistake would cost money or touch real data.</li><li>It turns the failure into a pass (exit code 0), so nothing is blocked.</li><li>In the secret settings of the repository or of the host, never in the workflow file or in Git.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p><strong>Done looks like:</strong> you push to GitHub, four jobs run (Python, gateway, page, images), they turn green, and a <strong>green badge</strong> sits at the top of your README. A red test makes the build job grey. The README says what CI checks, and what it does not. This is the checkpoint of Module 13: your whole system starts with one command, and a machine checks it on every push.</p><div class="box"><strong>Be clear about what was run.</strong> The workflow was <strong>never run on GitHub</strong>, and no image was ever built (the author&rsquo;s Docker engine did not respond). So this lab has no green screenshot to show. What was checked for real: the file with a workflow linter, and <strong>every command of the Python, gateway and page jobs by hand</strong> with the same settings. The image job could only be checked as far as <code>docker compose config</code>. <strong>The images job is the most likely place of your first red run</strong>: it is the first time the three Dockerfiles of Day 142 and 147 are built from a clean checkout. If it fails, that is the lesson: read the log, fix the Dockerfile, push again.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Four jobs, one workflow. Draw them: <code>python</code>, <code>gateway</code>, <code>web</code> side by side, and <code>images</code> after them with <code>needs</code>. Then list what each job needs from the outside: a database (a service container with a throwaway password), a .NET SDK, Node, the <code>POSTGRES_PASSWORD</code> that <code>compose.yaml</code> insists on. None of them needs a real secret. Three jobs of work: (1) the workflow file, (2) the first push and the first read of a log, (3) the badge and the README.</p></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2>
+<h3>Job 1: the workflow</h3>
+<p>Create <code>.github/workflows/ci.yml</code> in the repository root. Read it top to bottom before you copy it: the trigger, the least permission, the cancel of old runs, then the four jobs. Things to notice: the database is a service container and the tests read <code>TEST_DATABASE_URL</code>; the embedding model is cached between runs; the secret finder is a step of the Python job; and the images job has <code>needs</code> on the other three.</p><pre><code>name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read   # the least a job needs: it can read the code and nothing else
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true   # a newer push replaces the run of an older one
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: python-service
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: assistant
+          POSTGRES_PASSWORD: ci-only-password   # a throwaway database that lives for this job only
+          POSTGRES_DB: assistant
+        ports: [&quot;5433:5432&quot;]
+        options: &gt;-
+          --health-cmd &quot;pg_isready -U assistant -d assistant&quot;
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://assistant:ci-only-password@localhost:5433/assistant
+      DATABASE_URL: postgresql://assistant:ci-only-password@localhost:5433/assistant
+      LLM_MODE: fake   # no real model, no key: CI never needs a secret
+      FASTEMBED_CACHE_PATH: ${{ github.workspace }}/.fastembed
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - uses: actions/cache@v6
+        with:
+          path: .fastembed
+          key: fastembed-bge-small-en-v1.5
+      - run: uv sync --frozen
+      - run: uv run mypy src tests
+      - run: uv run pytest -q
+      - run: uv run python find_secrets.py
+
+  gateway:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test AskGateway.Tests
+
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web/chat-ui
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+
+  images:
+    needs: [python, gateway, web]   # only when all three test jobs are green
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      POSTGRES_PASSWORD: ci-only-password   # compose.yaml refuses to run without it
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker compose config -q
+      - run: docker compose build</code></pre>
+<p>Check it before you push (run for real, with <code>actionlint</code> 1.7.12), and then run the commands of each job by hand, in its folder (run for real on a laptop with the same settings):</p><div class="out"><b>You should see</b><br>actionlint .github/workflows/ci.yml        (exit code 0, no output)</div><div class="out"><b>You should see</b><br>python&nbsp;&nbsp; uv sync --frozen&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ok<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; uv run mypy src tests&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Success: no issues found in 78 source files<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; uv run pytest -q&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 216 passed in 5.29s<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; uv run python find_secrets.py&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0 suspicious line(s) in 170 tracked files<br>gateway&nbsp;&nbsp;dotnet test AskGateway.Tests&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Passed!&nbsp;&nbsp;- Failed: 0, Passed: 21, Skipped: 0, Total: 21<br>web&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;npm ci&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; added 28 packages<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; npm run build&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;built in 263ms<br>images&nbsp;&nbsp; docker compose config -q&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ok (no output)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; docker compose build&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; NOT RUN here: no working Docker engine</div>
+<h3>Job 2: the first push</h3>
+<p>Push to a branch, open a pull request, and open the <em>Actions</em> tab. Read the log of the <em>slowest</em> job from the top. When a job fails, open the failing step, read the <strong>first</strong> error (not the last line), fix it on your machine in the same way as in the log, and push again. Expect at least one red run; a clean first run is rare.</p>
+<h3>Job 3: the badge and the README</h3>
+<p>The badge is a picture that GitHub makes from the last run of the workflow named in the address. Add it to the top of the README, with a section for what CI checks and what it does not (the honest part), using your own owner and repository names:</p><pre><code># pumpguard
+
+[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+
+(replace OWNER and REPO with yours)
+
+## What CI checks on every push
+
+- types and tests of the Python service (against a throwaway PostgreSQL with pgvector, with the fake writer: no model, no key)
+- the .NET gateway tests
+- the page builds
+- no obvious secret in the files Git tracks
+- the three images build (only when the tests are green)
+
+## What CI does not do
+
+- it does not call a real model, and it does not push the images anywhere
+- it does not deploy
+- it has not checked quality of answers (that is the golden set, run by hand)
+
+## Run everything
+
+    cp .env.example .env      # then set your own POSTGRES_PASSWORD
+    docker compose up -d --build</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Run it, and read what you ran <span class="t">20 min</span></h2><p><strong>Make a red run on purpose, then a green one.</strong> On a branch, change one expected value in a test, push, and look at the red mark: which jobs ran, which is grey? Fix the test, push, and look at the green. Then merge the pull request and watch the badge on the main page of the repository.</p><p><strong>Check the secrets.</strong> Run <code>git grep -n -i password</code> in the repository root and read every line: only fakes and variable names should be there. Look at the log of one run: no real value should appear. (The settings object prints stars, remember Day 149.)</p><p><strong>Optionally</strong> in the settings of the repository, find the rule that requires a check to pass before a merge (a branch protection rule or a ruleset), and require <code>python</code>, <code>gateway</code> and <code>web</code>. It is a setting on GitHub, not a line in the file; this lab did not set or test it.</p><p>Write down in your notes what you actually saw: how long each job took on the first run and on the second, and which one failed first.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The <code>images</code> job fails in a Dockerfile</strong>: read the first error. The usual ones: a file the <code>COPY</code> expects is not in the repository (ignored by Git, or by <code>.dockerignore</code>), a wrong folder in <code>build:</code>, or a base image name that is wrong. Reproduce it with <code>docker compose build</code> on your laptop if you can.</li><li><strong>The Python job fails on the database</strong>: check that the port in <code>TEST_DATABASE_URL</code> is the left side of <code>ports</code>, and the password matches.</li><li><strong>The .NET job cannot find the SDK</strong>: the version in <code>dotnet-version</code> must exist. Use the one your project targets.</li><li><strong>The badge is grey or says &ldquo;no status&rdquo;</strong>: the workflow has not run on the branch the badge points at, or the owner or repository name in the address is wrong.</li><li><strong>Everything is green but you are not sure it tests anything</strong>: make one test fail on purpose (step 5 above). A check that cannot fail tells you nothing.</li></ul><details><summary>Hint: reading a log</summary><p>Start at the red step, scroll up to the first line that says <code>error</code>, and read from there. The last lines often only say that the step failed.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Merge the pull request when it is green. In the README, check that every claim is true and that the &ldquo;does not do&rdquo; list is honest. Then the 10-minute reflection: what worked, what broke, what you would change. Tag the checkpoint: <code>git tag m13-checkpoint</code>, and look at it with <code>git log --oneline --decorate</code>.</p></section>
+<section><h2><span class="n">8</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why do the three test jobs run in parallel, and the image job after them?</li><li>What does the badge show, and what does it not show?</li><li>What did you actually run, and what did you only read?</li></ol><details><summary>Answers</summary><ol><li>The test jobs do not depend on each other, so parallel is faster. Building images from code that fails its tests is waste, so <code>needs</code> keeps it behind them.</li><li>The result of the last run of the workflow on the branch. It does not show the quality of the answers, nor that the system works in production.</li><li>Your own list. If you cannot name it, the README is not honest yet.</li></ol></details></section>
+<section id="game-day154" class="game"><h2><span class="n">+</span> &middot; Game: Pipeline Check <span class="t">5 min</span></h2>
+<p><p>You read the lab. Outputs are real runs of each job's commands on a laptop; the workflow was never run on GitHub.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day154-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day154-play">Start the game</button></div>
+<div id="day154-round" hidden><div class="gtop"><span id="day154-num">Round 1</span><span id="day154-score">Score 0</span></div>
+<pre hidden><code id="day154-code"></code></pre><div class="q" id="day154-q"></div><div class="choices" id="day154-opts"></div>
+<div class="fb" id="day154-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day154-next" hidden>Next round</button></p></div>
+<div id="day154-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day154",[{"c": "The python job: uv sync --frozen, mypy, pytest, the secret finder", "q": "What did pytest say on the laptop with the throwaway database?", "o": ["216 passed", "1 failed", "skipped"], "a": 0, "out": "216 passed in 5.29s", "why": "The database is why the tests run, not skip."}, {"c": "The gateway job: dotnet test AskGateway.Tests", "q": "What did it say?", "o": ["21 passed, 0 failed", "13 passed", "Build failed"], "a": 0, "out": "Passed!  - Failed: 0, Passed: 21, Skipped: 0, Total: 21", "why": "Same tests as before, on a clean checkout in CI."}, {"c": "The images job", "q": "What was run for real in this lesson?", "o": ["docker compose config -q only: no image was built", "docker compose build", "Both"], "a": 0, "out": "docker compose config -q   (ok, no output)", "why": "Honest: the build is your first real run."}, {"c": "The images job fails in a Dockerfile", "q": "Where do you look first?", "o": ["At the first error in the log, not the last line", "At the badge", "At the last line"], "a": 0, "out": "", "why": "The last line only says that the step failed."}, {"c": "The badge is grey with 'no status'", "q": "Likely cause?", "o": ["The workflow has not run on that branch, or OWNER/REPO is wrong", "The tests are red", "GitHub is down"], "a": 0, "out": "", "why": "The badge is made from the last run of the named workflow."}, {"c": "README: 'What CI does not do'", "q": "Which line belongs there?", "o": ["It does not call a real model, push images or deploy", "It tests everything", "It checks answer quality"], "a": 0, "out": "", "why": "An honest list is part of the deliverable."}],["Pipeline rookie", "Pipeline regular", "Pipeline owner"],"Four jobs, three in parallel and one behind them; no real secret; every command checked by hand first; a badge, and a README that says what CI does and does not do.");</script>
+<p><small>Tick &ldquo;Play the Pipeline Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">9</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a pipeline that checks types, tests (with a real database), secrets and builds on every push, and builds the three images only when the tests are green, with a badge and an honest README. Module 13 has its checkpoint.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 154 checklist.</li><li>Share one line in the comments: what was your first red run?</li><li><strong>Next:</strong> Sunday is the review of Module 13 and the plan for week 23: open-weight models and serving them.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 151 - CI/CD with GitHub Actions</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 151 &middot; LEVEL 13: DEPLOYMENT</div><h1>CI/CD with GitHub Actions</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write a workflow that runs your tests, your secret check and your builds on every push, and check it before you push.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does a settings class return a <code>SecretStr</code> and not a plain string?</li><li>You committed a password and removed it in the next commit. Is it safe now?</li></ol><details><summary>Answers</summary><ol><li>A printout, a log or a crash report shows stars, not the value. You must ask for the real value on purpose.</li><li>No: the history keeps it. Replace the secret at its source.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You run the tests before every commit. Tonight you are tired and you skip it, and the push breaks the gateway. Who stops you, and who tells you before your users do?</strong></p><details><summary>Guess first, then open</summary><p>A machine that does not get tired. <strong>Continuous integration</strong> (CI) runs the same checks, in a clean place, on every push, and shows red or green next to the commit. Not &ldquo;it works on my machine&rdquo;, but &ldquo;it works on an empty machine that has only what the repository says&rdquo;.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<div class="box"><strong>Be clear about what was run.</strong> The workflow below was <strong>never run on GitHub</strong>: that needs a repository there. What was run for real: a linter for workflow files (<code>actionlint</code>) on the file, and <strong>every command of every job by hand</strong> on the author&rsquo;s laptop. The image build was not run (no working Docker engine); only <code>docker compose config</code> was. How the GitHub machines behave (starting the database, caching, skipping jobs) is standard behaviour that was not observed. The first push is the first real run: read the log, and tell us.</div>
+<h3>Piece 1: a workflow is a file in the repository</h3>
+<p>A file in <code>.github/workflows/</code> says <strong>when</strong> to run (<code>on:</code>), and <strong>what</strong> to run (<code>jobs:</code>). Each job gets a fresh machine and a list of <strong>steps</strong>. A step is either <code>uses:</code> (a ready-made action, such as &ldquo;copy the code here&rdquo;) or <code>run:</code> (a command). A command that exits with anything other than 0 fails the step, the job and the run.</p>
+<h3>Piece 2: jobs run in parallel, unless one needs another</h3>
+<p>The Python tests, the .NET tests and the page build do not depend on each other, so they run side by side and finish sooner. The image build must wait: <code>needs: [python, gateway, web]</code> means &ldquo;only when all three are green&rdquo;. If any of them fails, the build job is skipped. That one line is how a failing test blocks the build (Thursday).</p>
+<h3>Piece 3: CI must need no secrets</h3>
+<p>A test run that needs your real key is a leak waiting to happen, and costs money. So CI uses the fake writer (<code>LLM_MODE=fake</code>), a <strong>service container</strong> for the database with a throwaway password, and <code>permissions: contents: read</code> so a job can read the code and nothing more. Real secrets, when they are needed later for a deploy, live in the settings of the repository, never in the file.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> this is the same idea as an Azure DevOps or TeamCity build: a trigger, stages that run on clean agents, and a gate between the test stage and the next one. <code>needs:</code> is <code>dependsOn</code>, and a service container is the database you used to spin up on the build agent.</div>
+<div class="box cap"><strong>Capstone:</strong> the whole <code>pumpguard</code> repository gets one workflow. Saturday you finish it, push it, and put a badge in the README.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. The skeleton, with a comment for every part:</p><pre><code>name: CI                     # the name on the badge and in the list of runs
+on:                          # WHEN: a push to main, and every pull request
+  push:
+    branches: [main]
+  pull_request:
+jobs:                        # WHAT: jobs run in parallel unless one needs another
+  python:
+    runs-on: ubuntu-24.04    # a fresh, empty machine for every run
+    steps:
+      - uses: actions/checkout@v7   # uses: a ready-made step (here: copy the code onto the machine)
+      - run: uv run pytest -q       # run: one command; if it exits with a code other than 0, the job stops and fails</code></pre><p>The Python job needs a database for its tests. A <strong>service container</strong> starts one next to the job (the tests already read <code>TEST_DATABASE_URL</code>, so they need no change):</p><pre><code>    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: ci-only-password   # a throwaway database that lives for this job only
+        ports: [&quot;5433:5432&quot;]
+        options: --health-cmd &quot;pg_isready -U assistant&quot; ...</code></pre><p>The whole file, <code>.github/workflows/ci.yml</code>, is in the template in Stuck, so that you can open it now. Check it with the linter <em>before</em> you push:</p><div class="out"><b>You should see</b><br>actionlint .github/workflows/ci.yml        (exit code 0, no output)</div><p>And three mistakes the linter finds in a broken copy (run for real):</p><div class="out"><b>You should see</b><br>a job that needs a name that does not exist (gatway):<br>&nbsp;&nbsp;ci.yml:77:3: job "images" needs job "gatway" which does not exist in this workflow [job-needs]<br><br>a key that does not exist (working-dir):<br>&nbsp;&nbsp;ci.yml:55:9: unexpected key "working-dir" for "run" section. expected one of "shell", "working-directory" [syntax-check]<br><br>a typo in an expression (github.workflw):<br>&nbsp;&nbsp;ci.yml:75:23: receiver of object dereference "x" must be type of object but got "string" [expression]</div><p>Then the commands of each job, run by hand on a laptop with the same settings as the workflow:</p><div class="out"><b>You should see</b><br>job python&nbsp;&nbsp;&nbsp;&nbsp;uv sync --frozen&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uv run mypy src tests&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Success: no issues found in 78 source files<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uv run pytest -q&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;216 passed in 5.29s&nbsp;&nbsp;&nbsp;&nbsp;(with TEST_DATABASE_URL set)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uv run python find_secrets.py&nbsp;&nbsp; 0 suspicious line(s) in 170 tracked files<br>job gateway&nbsp;&nbsp; dotnet test AskGateway.Tests&nbsp;&nbsp;&nbsp;&nbsp;Passed!&nbsp;&nbsp;- Failed: 0, Passed: 21, Skipped: 0, Total: 21<br>job web&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; npm ci&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;added 28 packages<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;npm run build&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; built in 263ms<br>job images&nbsp;&nbsp;&nbsp;&nbsp;docker compose config -q&nbsp;&nbsp;&nbsp;&nbsp;(the Docker command-line tool, no engine: ok)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;docker compose build&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NOT RUN (no working Docker engine on this machine)</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in the root of the capstone repository (the folder that holds <code>python-service</code>, <code>gateway</code>, <code>web</code> and <code>compose.yaml</code>), on a branch: <code>git switch -c ci</code>. A GitHub repository is needed for steps 2 and 3. If you do not have one yet, create an empty private one and add it as <code>origin</code>; step 1 and 4 need only your laptop.</p>
+<h3><span class="step">Step 1</span> Copy and check</h3>
+<p>Create <code>.github/workflows/ci.yml</code> from the template in Stuck. Run the linter (for example <code>pipx run --spec actionlint-py actionlint .github/workflows/ci.yml</code>, or install <code>actionlint</code> any way you like): it should print nothing. Then run <strong>each command of each job by hand</strong>, in its folder, with the same variables, and write down any that fails on your machine: it will fail on GitHub too.</p>
+<h3><span class="step">Step 2</span> Push and watch</h3>
+<p>Push the branch and open a pull request. Open the <em>Actions</em> tab and watch the four jobs. <strong>Predict first:</strong> which will finish last, and which can fail for a reason that has nothing to do with your code (think of the model download and the first-time cache)? Read the log of one step.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Misspell a name in <code>needs:</code> and run the linter: read the message. Then fix it, and on the branch make one test fail on purpose (change an expected value), push, and look at the red mark next to the commit. Which jobs ran, and which did not?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Add the secret finder as a step of the Python job (it is already in the template: check that it passes), and write in the README one sentence for a new contributor: &ldquo;what must be green before I merge&rdquo;. Commit: <code>git add .github/workflows/ci.yml README.md</code> and <code>git commit -m &quot;Run the tests on every push&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The Python job fails on <code>connection refused</code></strong>: the database was not ready, or the port in <code>TEST_DATABASE_URL</code> does not match the mapping in <code>ports:</code>. The health options make the job wait until it is ready.</li><li><strong>Tests pass on your laptop and fail on GitHub</strong>: the laptop has something the repository does not (a file that is ignored by Git, a model in your cache, a variable in your shell). That is exactly what CI is for. Find the difference.</li><li><strong>The first run is slow</strong>: nothing is cached yet. The model for the embeddings (64 MB) is downloaded once, and then restored from the cache.</li><li><strong>&ldquo;Resource not accessible by integration&rdquo;</strong>: a step needs a permission that the file does not give. Add only that one permission, to that one job.</li><li><strong>An action version does not exist</strong>: the file names a version that you mistyped, or one that is gone. Check the releases of that action. (The versions in the template were the newest when written.)</li></ul><details><summary>Hint: Step 2</summary><p>The first run of every job downloads and installs things, so the Python job (packages, model, database) and the image job (the base images) are the slowest. A repeat run with caches is much faster.</p></details><details><summary>Template: ci.yml</summary><pre><code>name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read   # the least a job needs: it can read the code and nothing else
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true   # a newer push replaces the run of an older one
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: python-service
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: assistant
+          POSTGRES_PASSWORD: ci-only-password   # a throwaway database that lives for this job only
+          POSTGRES_DB: assistant
+        ports: [&quot;5433:5432&quot;]
+        options: &gt;-
+          --health-cmd &quot;pg_isready -U assistant -d assistant&quot;
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://assistant:ci-only-password@localhost:5433/assistant
+      DATABASE_URL: postgresql://assistant:ci-only-password@localhost:5433/assistant
+      LLM_MODE: fake   # no real model, no key: CI never needs a secret
+      FASTEMBED_CACHE_PATH: ${{ github.workspace }}/.fastembed
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - uses: actions/cache@v6
+        with:
+          path: .fastembed
+          key: fastembed-bge-small-en-v1.5
+      - run: uv sync --frozen
+      - run: uv run mypy src tests
+      - run: uv run pytest -q
+      - run: uv run python find_secrets.py
+
+  gateway:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test AskGateway.Tests
+
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web/chat-ui
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+
+  images:
+    needs: [python, gateway, web]   # only when all three test jobs are green
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      POSTGRES_PASSWORD: ci-only-password   # compose.yaml refuses to run without it
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker compose config -q
+      - run: docker compose build</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What is CI, in one sentence, and what does <code>runs-on</code> give each job?</li><li>What does <code>needs: [python, gateway, web]</code> do?</li><li>Why does the workflow use a fake writer and a throwaway database password?</li></ol><details><summary>Answers</summary><ol><li>A machine runs the same checks on every push in a clean place and shows red or green. <code>runs-on</code> gives the job a fresh machine with only what the repository and the steps put on it.</li><li>The job starts only when all three jobs are green; if any fails, it is skipped.</li><li>CI must not need a real key or a real password: a leak would cost money or data, and a test run should never touch production. The values are fakes that live for one run.</li></ol></details></section>
+<section id="game-day151" class="game"><h2><span class="n">+</span> &middot; Game: Workflow Check <span class="t">5 min</span></h2>
+<p><p>You read a workflow. Pick the answer. Linter messages are real; what GitHub does on its machines is standard behaviour, not observed here.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day151-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day151-play">Start the game</button></div>
+<div id="day151-round" hidden><div class="gtop"><span id="day151-num">Round 1</span><span id="day151-score">Score 0</span></div>
+<pre hidden><code id="day151-code"></code></pre><div class="q" id="day151-q"></div><div class="choices" id="day151-opts"></div>
+<div class="fb" id="day151-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day151-next" hidden>Next round</button></p></div>
+<div id="day151-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day151",[{"c": "on: push: branches: [main], and pull_request", "q": "When does it run?", "o": ["On a push to main, and on every pull request", "Only on a push", "Once a day"], "a": 0, "out": "", "why": "The trigger says when."}, {"c": "needs: [python, gateway, web] on the images job", "q": "When does images run?", "o": ["Only when all three are green", "At once, in parallel", "After the first one"], "a": 0, "out": "", "why": "needs is the gate; the three test jobs run side by side."}, {"c": "needs: [python, gatway, web]", "q": "What does the linter say?", "o": ["job \"images\" needs job \"gatway\" which does not exist", "Nothing", "A warning only"], "a": 0, "out": "ci.yml:77:3: job \"images\" needs job \"gatway\" which does not exist in this workflow [job-needs]", "why": "Lint before you push."}, {"c": "working-dir: gateway (a wrong key)", "q": "What does the linter say?", "o": ["unexpected key \"working-dir\"; expected shell or working-directory", "Nothing", "It guesses"], "a": 0, "out": "ci.yml:55:9: unexpected key \"working-dir\" for \"run\" section. expected one of \"shell\", \"working-directory\" [syntax-check]", "why": "The message even gives the right names."}, {"c": "LLM_MODE: fake and POSTGRES_PASSWORD: ci-only-password in the CI file", "q": "Why?", "o": ["CI needs no real secret: a throwaway database and a stand-in writer", "To save money only", "Because the real key is lost"], "a": 0, "out": "", "why": "A test run must not touch production."}, {"c": "permissions: contents: read", "q": "What does it do?", "o": ["Limits what the job can do to reading the code", "Reads every secret", "Nothing"], "a": 0, "out": "", "why": "Give a job the least it needs."}],["CI rookie", "CI regular", "Pipeline reader"],"A workflow says when and what; jobs run in parallel unless one needs another; CI uses fakes and throwaway values; and a linter catches the typos before a push.");</script>
+<p><small>Tick &ldquo;Play the Workflow Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a workflow that runs the type check, the Python tests with a real database, the secret finder, the .NET tests and the page build on every push, and builds the images only when all are green. Every command was checked by hand first, and the file by a linter.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 151 checklist.</li><li>Share one line in the comments: which job failed first on your machine?</li><li><strong>Next:</strong> Thursday is mixed practice: you write a small workflow from a blank file, and make a failing test block the build.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
