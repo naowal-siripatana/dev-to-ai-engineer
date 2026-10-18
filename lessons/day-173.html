@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 173 - Mixed practice: a dry run with a friend</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 173 &middot; LEVEL 15: PORTFOLIO &middot; MIXED PRACTICE</div><h1>Mixed practice: a dry run with a friend</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write a demo check from a blank file and run a dry run for one real person.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does the demo check prove, and what does it not?</li><li>What do you do in the second rehearsal that you do not do in the first?</li></ol><details><summary>Answers</summary><ol><li>That every beat works on the running system. Not that the page, the screen share or you will go well.</li><li>You do not stop, whatever happens: you say your fallback line and carry on.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Today <span class="t">2 min</span></h2><p><strong>Today you practise without the lesson open.</strong> Goal: <em>a script that tells you in a second whether your demo path works, and a dry run of your demo for one real person.</em> You write the check from a blank file, then run the dry run, then compare with the model.</p><div class="box"><strong>Be clear about what was run.</strong> The check below was run for real on one laptop (the capstone, from a fresh clone, with the stand-in writer), also with a wrong expectation and with the AI service off. <strong>The dry run with a friend was not carried out by the author</strong>: it is a procedure with sheets, and your friend&rsquo;s feedback will be your own.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan first <span class="t">5 min</span></h2><p>On paper: list the beats of your demo, one line each, and for each beat write <em>what the system must return</em> for the beat to count (an exact phrase, a status code, a number that must be at least 1). Which beats cannot be checked by a script (the page, your voice)? Those are what the friend is for. Choose the friend: someone who has not seen the project, who will tell you the truth, and who is not a developer if you can find one.</p></section>
+<section><h2><span class="n">4</span> &middot; Do it from a blank file <span class="t">25 min</span></h2>
+<ol>
+<li><strong>The helper.</strong> A function that sends one request to your system (a method, a path, a role, a body) and returns the status and the JSON, without crashing on an HTTP error.</li>
+<li><strong>One function per beat.</strong> Each calls the helper and <code>assert</code>s what the beat promises, with the actual answer in the message.</li>
+<li><strong>The runner.</strong> It runs every beat, prints its name, <code>ok</code> or <code>FAILED</code> with the reason, and the time. It exits with 1 if any failed, so that another script can use it.</li>
+<li><strong>Run it.</strong> Fix what fails. Then run the full demo once.</li>
+<li><strong>The dry run.</strong> Follow the protocol below with your friend, and fill in the sheet.</li>
+</ol>
+<p><strong>Break it on purpose:</strong> (a) change one expectation to a wrong value and read the message; (b) switch off the service behind your front door and run the check.</p><pre><code>DRY RUN WITH A FRIEND (45 minutes)
+before     run the demo check; start from the README; warm up; close what is not needed
+setup      the friend sits where the audience will; you share the screen the way you will on the day
+ground rules   you do NOT explain or defend while they watch. They write down, they do not interrupt (questions at the end)
+the run    your full 3 minutes, with a timer, as if it were real. If it breaks, say your fallback line and carry on
+after      5 minutes: they say what they understood, in their own words (this is the test)
+           then the sheet below, then the questions you are afraid of</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Compare with the model <span class="t">10 min</span></h2><p>Open these only after your own try.</p><details><summary>The demo check</summary><pre><code>&quot;&quot;&quot;The demo, as a test: run every beat of the demo script against the running system and check what comes back.
+Usage: python scripts/demo_check.py [base_url]     Exit code 1 if any beat is wrong. Run it before every demo, and before every friend sees it.&quot;&quot;&quot;
+import json
+import sys
+import time
+import urllib.error
+import urllib.request
+
+BASE = sys.argv[1] if len(sys.argv) &gt; 1 else &quot;http://localhost:5100&quot;
+
+
+def call(method: str, path: str, role: str | None = None, question: str | None = None) -&gt; tuple[int, dict[str, object]]:
+    headers = {&quot;content-type&quot;: &quot;application/json&quot;, **({&quot;x-demo-role&quot;: role} if role else {})}
+    data = json.dumps({&quot;question&quot;: question}).encode() if question is not None else None
+    request = urllib.request.Request(BASE + path, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as err:
+        return err.code, {}
+
+
+def ask(role: str, question: str) -&gt; dict[str, object]:
+    status, body = call(&quot;POST&quot;, &quot;/api/ask&quot;, role, question)
+    assert status == 200, f&quot;HTTP {status}&quot;
+    return body
+
+
+def beat_calibration() -&gt; None:
+    body = ask(&quot;customer&quot;, &quot;How often should I calibrate the sensor?&quot;)
+    assert &quot;once a month&quot; in str(body[&quot;answer&quot;]) and &quot;[manual-calibration#0]&quot; in str(body[&quot;answer&quot;]), body[&quot;answer&quot;]
+
+
+def beat_refusal() -&gt; None:
+    body = ask(&quot;customer&quot;, &quot;Where can I buy a coffee?&quot;)
+    assert body[&quot;refused&quot;] is True and body[&quot;sources&quot;] == [], body[&quot;answer&quot;]
+
+
+def beat_customer_cannot_read_errors() -&gt; None:
+    assert ask(&quot;customer&quot;, &quot;What does error E104 mean?&quot;)[&quot;refused&quot;] is True
+
+
+def beat_staff_can() -&gt; None:
+    body = ask(&quot;staff&quot;, &quot;What does error E104 mean?&quot;)
+    assert &quot;[error-e104#0]&quot; in str(body[&quot;answer&quot;]), body[&quot;answer&quot;]
+
+
+def beat_stats_are_for_staff() -&gt; None:
+    assert call(&quot;GET&quot;, &quot;/api/stats&quot;, &quot;customer&quot;)[0] == 403
+    status, body = call(&quot;GET&quot;, &quot;/api/stats&quot;, &quot;staff&quot;)
+    assert status == 200 and int(str(body[&quot;questions&quot;])) &gt;= 1, body
+
+
+def beat_ready() -&gt; None:
+    assert call(&quot;GET&quot;, &quot;/ready&quot;)[0] == 200, &quot;the gateway cannot reach the AI service&quot;
+
+
+BEATS = [beat_ready, beat_calibration, beat_refusal, beat_customer_cannot_read_errors, beat_staff_can, beat_stats_are_for_staff]
+failed = 0
+for beat in BEATS:
+    started = time.perf_counter()
+    try:
+        beat()
+        verdict = &quot;ok&quot;
+    except (AssertionError, KeyError, urllib.error.URLError) as err:
+        verdict, failed = f&quot;FAILED: {err}&quot;, failed + 1
+    print(f&quot;{beat.__name__.removeprefix(&#x27;beat_&#x27;):&lt;34} {verdict:&lt;8} {(time.perf_counter() - started) * 1000:6.0f} ms&quot;)
+print(&quot;the demo path works&quot; if failed == 0 else f&quot;{failed} beat(s) failed: fix them before the demo&quot;)
+sys.exit(1 if failed else 0)</code></pre></details><details><summary>What it printed (run for real)</summary><div class="out"><b>You should see</b><br>ready&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 40 ms<br>calibration&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 74 ms<br>refusal&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 14 ms<br>customer_cannot_read_errors&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 13 ms<br>staff_can&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 13 ms<br>stats_are_for_staff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 20 ms<br>the demo path works</div></details><details><summary>Break (a): a wrong expectation</summary><div class="out"><b>You should see</b><br>(the expectation "once a month" changed to "once a week" on purpose; run for real)<br>ready&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 15 ms<br>calibration&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: Calibrate the sensor once a month [manual-calibration#0].&nbsp;&nbsp;&nbsp;&nbsp; 36 ms<br>refusal&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 12 ms<br>customer_cannot_read_errors&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 12 ms<br>...<br>1 beat(s) failed: fix them before the demo&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(exit code 1)<br>note: the failure message shows the ACTUAL answer, so you see at once whether the system or the expectation is wrong</div></details><details><summary>Break (b): the service off</summary><p>All six beats fail with a clear reason (a 502 on every route, a 503 on readiness): see Wednesday&rsquo;s lesson for the full output. The check names the problem; it does not guess.</p></details><details><summary>The feedback sheet and the triage</summary><pre><code>FEEDBACK SHEET (the friend fills in, you do not argue)
+what I understood the project is, in one sentence:                    ...
+the moment I got lost (a time, or a word):                            ...
+the moment I was most interested:                                     ...
+a word I did not know:                                                ...
+what looked broken or slow:                                           ...
+the question I wanted to ask and did not:                             ...
+one thing I would cut:                                                ...
+one thing I would add:                                                ...</code></pre><pre><code>TRIAGE: for each line of feedback, one of three boxes
+FIX NOW     small, and it would hurt on the day (a confusing word, a slow step, a typo on the first screen)
+SAY IT      it is a real limit and you cannot fix it this week: put the honest sentence in your talk and your README
+LET GO      one person&#x27;s taste, or a new feature: it goes on the ticket list (the freeze rule)
+RULE: at most three FIX NOW items. Then run the demo check and the full demo once more.</code></pre></details></section>
+<section><h2><span class="n">6</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does the failure message of the check show the <em>actual</em> answer?</li><li>Why do you not explain or defend while your friend watches?</li><li>How many items of feedback do you fix now, and why that few?</li></ol><details><summary>Answers</summary><ol><li>So that you see at once whether the system or the expectation is wrong, without a second run.</li><li>A real audience will not let you explain. If you explain, you hide exactly the places where the demo does not speak for itself.</li><li>At most three: the day is close, every change can break something, and you must run the demo check and the whole demo once more after them.</li></ol></details></section>
+<section id="game-day173" class="game"><h2><span class="n">+</span> &middot; Game: Dry Run <span class="t">5 min</span></h2>
+<p><p>You run a dry run with a friend. Pick the answer, then see the real output of the demo check.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day173-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day173-play">Start the game</button></div>
+<div id="day173-round" hidden><div class="gtop"><span id="day173-num">Round 1</span><span id="day173-score">Score 0</span></div>
+<pre hidden><code id="day173-code"></code></pre><div class="q" id="day173-q"></div><div class="choices" id="day173-opts"></div>
+<div class="fb" id="day173-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day173-next" hidden>Next round</button></p></div>
+<div id="day173-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day173",[{"c": "You change one expectation of the demo check to a wrong value ('once a week')", "q": "What does the check say?", "o": ["FAILED, and it prints the actual answer", "ok", "A crash with no message"], "a": 0, "out": "calibration FAILED: Calibrate the sensor once a month [manual-calibration#0].   (exit code 1)", "why": "You see at once whether the system or the expectation is wrong."}, {"c": "Your friend watches the dry run", "q": "What do you do while they watch?", "o": ["Nothing: no explaining, no defending", "Explain each step", "Apologise"], "a": 0, "out": "", "why": "An audience will not let you explain."}, {"c": "After the run", "q": "What is the test of the demo?", "o": ["What the friend understood, in their own words", "How fast it was", "How many features"], "a": 0, "out": "", "why": "If they cannot say what it is, the demo did not say it."}, {"c": "Feedback: 'I would like a login page too'", "q": "Which box?", "o": ["Let go: a new feature goes on the ticket list", "Fix now", "Say it"], "a": 0, "out": "", "why": "The freeze rule."}, {"c": "Feedback: 'I did not know what E104 means'", "q": "Which box?", "o": ["Fix now: say it in the demo, it is small", "Let go", "Ignore"], "a": 0, "out": "", "why": "Small, and it would hurt on the day."}, {"c": "How many fixes after a dry run?", "q": "How many at most?", "o": ["Three, then run the check and the demo again", "As many as the friend suggested", "None"], "a": 0, "out": "", "why": "The day is close; every change can break something."}],["Dry-run rookie", "Dry-run regular", "Dry-run runner"],"Write the demo check from a blank file; let a friend watch without your explaining; judge by what they understood; sort the feedback into three boxes; fix at most three.");</script>
+<p><small>Tick &ldquo;Play the Dry Run game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">7</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a demo check written from a blank file, one honest dry run for one real person, their words in your sheet, and a triage that keeps you from changing too much three days before the workshop.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 173 checklist.</li><li>Share one line in the comments: what did your friend understand your project to be?</li><li><strong>Next:</strong> Friday is a teach-back: rest, pack, and prepare your questions.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 176 - Final workshop, Day 2, and the six-month retrospective</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 176 &middot; FINAL WORKSHOP &middot; DAY 2</div><h1>Final workshop, Day 2, and the six-month retrospective</h1>
+<div class="meta"><span>8 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to give a second demo, look back on six months with evidence, and plan the next three.</div>
+
+<section><h2><span class="n">1</span> &middot; Before you start <span class="t">10 min</span></h2><div class="box"><strong>Be clear about what this page is.</strong> The workshop is a live event: this page is a guide and a set of templates. The numbers in the example retrospective are real, from the course capstone as checked on one laptop; yours must come from <em>your</em> runs. <strong>The Docker images, the GitHub pipeline and the hosted model were never run</strong> in that checking, and the example says so.</div><p>Today&rsquo;s goal: a <strong>second demo</strong> that is better than yesterday&rsquo;s, honest <strong>feedback</strong>, and a <strong>look back</strong> at six months that ends with a plan for the next three. Same rule as yesterday: no new features.</p></section>
+<section><h2><span class="n">2</span> &middot; The plan for the day <span class="t">10 min</span></h2><p>Start with the system and the checks, then the fixes, then the demo, then the part that is only for you.</p><pre><code>DAY 2 (about 8 hours; a suggestion)
+0:00   arrive, start the system, run the preflight and the demo check            30 min
+0:30   the three fixes from yesterday&#x27;s feedback, checked again                    60 min
+1:30   demo practice: one full run                                                30 min
+2:00   break                                                                       15 min
+2:15   the final demo round (a different order from yesterday)                    90 min
+3:45   lunch                                                                       45 min
+4:30   feedback and triage, as yesterday                                          45 min
+5:15   the retrospective: look back at six months                                  90 min
+6:45   what next: three months, written down                                       45 min
+7:30   close: one line each, and the thank-yous                                    30 min</code></pre></section>
+<section><h2><span class="n">3</span> &middot; Fixes, practice and the final demo round <span class="t">180 min</span></h2><p>Run your preflight and your demo check first. Check the three fixes from yesterday, and look at your rehearsal sheet: what did you change? Run the demo once in full. Then the final round, in a different order from yesterday, with the same sheets. Notice what changed between your two demos: <strong>that difference is what the last four weeks bought you.</strong></p></section>
+<section><h2><span class="n">4</span> &middot; Six-month retrospective <span class="t">90 min</span></h2><p>Look back honestly. First, where you started and where you are, with <strong>evidence you can show</strong> for each skill (a file, a command, a number). A level without evidence is a feeling:</p><pre><code>skill                                  where I started   where I am now   the evidence I can show (a file, a command, a number)
+Python and typing                      ...               ...              ...
+a web API (FastAPI)                    ...               ...              ...
+retrieval and RAG                      ...               ...              ...
+evaluating a system (golden set)       ...               ...              ...
+security and guardrails                ...               ...              ...
+operating it (logs, metrics, SLO)      ...               ...              ...
+containers and CI                      ...               ...              ...    (say honestly whether you RAN them)
+open-weight and local models           ...               ...              ...
+explaining and demoing it              ...               ...              ...
+scale: 1 = never done, 3 = did it with help, 5 = could teach it</code></pre><p>An example of how the evidence can look (real numbers from the course capstone; write yours):</p><div class="out"><b>You should see</b><br>EXAMPLE (the numbers are real, from the course capstone on one laptop; write yours from your own runs)<br>tests&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;226 Python tests and 24 .NET tests pass; the type check is clean<br>evaluation&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 18 golden questions: a stand-in writer passes 11; a small local model passes between 5 and 17 depending on its size and precision (one run each)<br>a fresh clone&nbsp;&nbsp;&nbsp;&nbsp;found 5 gaps that no test had found, and fixed them<br>awkward input&nbsp;&nbsp;&nbsp;&nbsp;a probe of 16 requests found 3 bugs (vote stuffing, exception text, a health check that lied), each fixed with a test that failed first<br>what I did not run&nbsp;&nbsp; the Docker images, the pipeline on GitHub, a hosted model</div><p>Then the questions, with an example for each answer:</p><pre><code>LOOKING BACK (2 to 3 lines each, with an example)
+1. What did I learn that I could not have learned from reading? (a thing that broke)
+2. Which habit helped most? (the fresh clone, the test that fails first, saying what is a stand-in, the weekly plan)
+3. Which habit do I still lack? (and the one tiny experiment that starts it)
+4. What did I believe six months ago that I no longer believe?
+5. What am I proud of, that I can SHOW?
+6. What did I never run, and does it still matter to me?
+7. Who helped, and have I said thank you?</code></pre><p>And the last honest list: everything you never ran. Some of it you will run, some you will decide you do not need. Writing it down is the point:</p><pre><code>WHAT I NEVER RAN (the last honest list; keep it in your README)
+item                                       will I run it?     when / where
+the Docker images and the Compose stack     ...                ...
+the GitHub Actions workflow                 ...                ...
+a hosted model                              ...                ...
+a second machine / another operating system ...                ...
+real users                                  ...                ...</code></pre></section>
+<section><h2><span class="n">5</span> &middot; What next: three months <span class="t">45 min</span></h2><p>One page, written today, while the six months are fresh. Make it small enough to do: a goal you can check, a weekly rhythm, one improvement a month (start with the list of what you never ran), and a first Sunday of the month when you look at the log and change <strong>one</strong> thing.</p><pre><code>WHAT NEXT: THREE MONTHS (one page)
+the goal (one sentence, a result I can check):          ...
+every week:   3 to 5 applications (45 minutes each, in the log)    + one person I write to about their work
+every month:  one improvement that makes the project more real:    first from the list &quot;what I never ran&quot;
+the project:  a 10-user trial / a real login / a bigger set of questions   (pick ONE)
+learning:     one topic, one small thing built, one note explaining it
+people:       who I ask for feedback, and when
+how I check: the first Sunday of each month: the log, the project, the list; change ONE thing</code></pre><p>If you want to share the journey, here is a shape for a short public post. Only things you can show; say what is a stand-in and what you never ran.</p><pre><code>OPTIONAL: A PUBLIC POST (about 150 words; only things you can show, and say what is a stand-in)
+I spent six months learning to build AI systems, and wrote down everything I ran and everything I did not.
+The project: [one line]. What runs: [the parts]. What is a stand-in: [the writer, ...]. What I never ran: [the list].
+Three things I learned: [a bug that taught me something; a decision with its evidence; a habit].
+The code and a 3-minute demo: [links]. I am looking for: [a role / feedback / a team].</code></pre></section>
+<section><h2><span class="n">6</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What is the evidence for each skill on your list?</li><li>What is on your list of what you never ran, and which one will you run first?</li><li>What is the one thing you will change after the first month?</li></ol><details><summary>Notes</summary><p>There is no right answer here. If you cannot answer one of them, go back to the section that makes you write it down: it is the whole point of today.</p></details></section>
+<section id="game-day176" class="game"><h2><span class="n">+</span> &middot; Game: Look Back <span class="t">5 min</span></h2>
+<p><p>You look back on six months. Pick the answer. (The retrospective is a guide with templates; the example numbers are real from the capstone on one laptop.)</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day176-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day176-play">Start the game</button></div>
+<div id="day176-round" hidden><div class="gtop"><span id="day176-num">Round 1</span><span id="day176-score">Score 0</span></div>
+<pre hidden><code id="day176-code"></code></pre><div class="q" id="day176-q"></div><div class="choices" id="day176-opts"></div>
+<div class="fb" id="day176-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day176-next" hidden>Next round</button></p></div>
+<div id="day176-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day176",[{"c": "A skill level on your list, with no evidence", "q": "What is it?", "o": ["A feeling: add a file, a command or a number that shows it", "A fact", "Enough"], "a": 0, "out": "", "why": "Evidence turns a level into a claim."}, {"c": "The example evidence: tests", "q": "How many tests passed on the capstone?", "o": ["226 Python tests and 24 .NET tests", "5", "1000"], "a": 0, "out": "pytest 226 passed   dotnet test 24 passed", "why": "Real numbers from one laptop."}, {"c": "The example evidence: a small local model on the 18 golden questions", "q": "How did it do?", "o": ["Between 5 and 17 depending on size and precision (one run each)", "Always 18", "Always 0"], "a": 0, "out": "0.5B 4-bit 5 of 18   1.5B 4-bit 14   1.5B bf16 17   3B 4-bit 14", "why": "And the sample was small: say so."}, {"c": "The list of what you never ran", "q": "Why write it down?", "o": ["It is the honest end of the project and the start of the next improvements", "To feel bad", "It is required"], "a": 0, "out": "", "why": "Run the first one first."}, {"c": "Your three-month plan", "q": "What should the goal be?", "o": ["One sentence, a result you can check", "A feeling", "Everything"], "a": 0, "out": "", "why": "Small enough to do."}, {"c": "A public post about the journey", "q": "What may it contain?", "o": ["Only what you can show, with the stand-ins and the not-run list", "Claims about everything", "Nothing true"], "a": 0, "out": "", "why": "The same rule as the README."}],["Look-back rookie", "Look-back regular", "Six-month finisher"],"Back every level with evidence, keep an honest list of what you never ran, plan three small months with a goal you can check, and share only what you can show.");</script>
+<p><small>Tick &ldquo;Play the Look Back game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">7</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a capstone that a stranger can run, shown twice to a room, a retrospective with evidence for every skill, an honest list of what you never ran, and a one-page plan for the next three months. That is six months of weekly work.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 176 checklist.</li><li>Share one line in the comments: what is your goal for the next three months?</li><li><strong>Next:</strong> your own plan, from the first Sunday of next month. Thank you for learning along.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

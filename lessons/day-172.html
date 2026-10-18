@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 172 - Practice the demo</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 172 &middot; LEVEL 15: PORTFOLIO</div><h1>Practice the demo</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to check your demo path with a script, rehearse the demo twice without stopping, and say what you will do when it breaks.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>How do you rank bugs when you can fix only three?</li><li>What is the difference between <code>/health</code> and <code>/ready</code>?</li></ol><details><summary>Answers</summary><ol><li>By who is hurt, how likely it is, and the size of the fix: the worst small ones first.</li><li>Liveness (the process runs) against readiness (it can do its job, so it asks what it depends on).</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>You have read your script twenty times and it is perfect in your head. Then you stand up, the first question takes ten seconds, and you forget your first sentence. What would have saved you?</strong></p><details><summary>Guess first, then open</summary><p><strong>Doing it for real, twice, without stopping.</strong> A demo is a performance with a machine on stage: the machine and your memory both fail in ways you cannot predict from your desk. The first full run teaches you, the second without stopping builds the habit of carrying on.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: make the demo a test you can run</h3>
+<p>Your demo is six beats, and each beat has an expected result. Write them as a <strong>demo check</strong>: a script that runs every beat against the running system and says which one is wrong. Run it before every rehearsal, and the morning of the workshop. If it passes, the <em>system</em> is ready; the rest is you.</p>
+<h3>Piece 2: rehearse twice, and the second time do not stop</h3>
+<p>Run the whole demo aloud with a timer. The first run you may stop and fix. The second run you carry on whatever happens, and you say your fallback line when something breaks. What you practise is not the words: it is <strong>recovering without panic</strong>.</p>
+<h3>Piece 3: drill the failures, and remove the surprises</h3>
+<p>Switch off the service on purpose and see what the audience would see. Write one calm sentence for each failure (service down, slow first question, no network). And remove what you can: start everything <em>before</em> the audience, warm it up with a throwaway question, and keep the models and files on the laptop, not on the internet.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> the demo check is a smoke test run after a deployment: the minimum that must work before anyone is let in. The failure drill is a game day, the way a team switches a dependency off on purpose to see what happens.</div>
+<div class="box cap"><strong>Capstone:</strong> today you turn your demo script into a check, and you run the full demo twice. Tomorrow a friend watches the second run.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. <strong>What was run:</strong> everything below, for real, on one laptop with the capstone from a fresh clone (the stand-in writer; no Docker). First, how long the system takes to start from nothing, so that you know when to begin before the audience comes in:</p><div class="out"><b>You should see</b><br>cold start, from nothing running (run for real, warm disk caches, stand-in writer):<br>&nbsp;&nbsp;the Python service&nbsp;&nbsp; 7.4 s&nbsp;&nbsp; (until /health answers: it loads the embedding model)<br>&nbsp;&nbsp;the gateway&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.6 s&nbsp;&nbsp; (dotnet run, already built)<br>&nbsp;&nbsp;the database&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (not timed here)<br>&nbsp;&nbsp;total for those two&nbsp;&nbsp;11.0 s<br>&nbsp;&nbsp;the first question through the gateway afterwards: 0.13 s</div><p>The demo check. Each beat of the script has a function that asks the running system and checks what comes back (<code>scripts/demo_check.py</code>):</p><details><summary>The demo check</summary><pre><code>&quot;&quot;&quot;The demo, as a test: run every beat of the demo script against the running system and check what comes back.
+Usage: python scripts/demo_check.py [base_url]     Exit code 1 if any beat is wrong. Run it before every demo, and before every friend sees it.&quot;&quot;&quot;
+import json
+import sys
+import time
+import urllib.error
+import urllib.request
+
+BASE = sys.argv[1] if len(sys.argv) &gt; 1 else &quot;http://localhost:5100&quot;
+
+
+def call(method: str, path: str, role: str | None = None, question: str | None = None) -&gt; tuple[int, dict[str, object]]:
+    headers = {&quot;content-type&quot;: &quot;application/json&quot;, **({&quot;x-demo-role&quot;: role} if role else {})}
+    data = json.dumps({&quot;question&quot;: question}).encode() if question is not None else None
+    request = urllib.request.Request(BASE + path, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as err:
+        return err.code, {}
+
+
+def ask(role: str, question: str) -&gt; dict[str, object]:
+    status, body = call(&quot;POST&quot;, &quot;/api/ask&quot;, role, question)
+    assert status == 200, f&quot;HTTP {status}&quot;
+    return body
+
+
+def beat_calibration() -&gt; None:
+    body = ask(&quot;customer&quot;, &quot;How often should I calibrate the sensor?&quot;)
+    assert &quot;once a month&quot; in str(body[&quot;answer&quot;]) and &quot;[manual-calibration#0]&quot; in str(body[&quot;answer&quot;]), body[&quot;answer&quot;]
+
+
+def beat_refusal() -&gt; None:
+    body = ask(&quot;customer&quot;, &quot;Where can I buy a coffee?&quot;)
+    assert body[&quot;refused&quot;] is True and body[&quot;sources&quot;] == [], body[&quot;answer&quot;]
+
+
+def beat_customer_cannot_read_errors() -&gt; None:
+    assert ask(&quot;customer&quot;, &quot;What does error E104 mean?&quot;)[&quot;refused&quot;] is True
+
+
+def beat_staff_can() -&gt; None:
+    body = ask(&quot;staff&quot;, &quot;What does error E104 mean?&quot;)
+    assert &quot;[error-e104#0]&quot; in str(body[&quot;answer&quot;]), body[&quot;answer&quot;]
+
+
+def beat_stats_are_for_staff() -&gt; None:
+    assert call(&quot;GET&quot;, &quot;/api/stats&quot;, &quot;customer&quot;)[0] == 403
+    status, body = call(&quot;GET&quot;, &quot;/api/stats&quot;, &quot;staff&quot;)
+    assert status == 200 and int(str(body[&quot;questions&quot;])) &gt;= 1, body
+
+
+def beat_ready() -&gt; None:
+    assert call(&quot;GET&quot;, &quot;/ready&quot;)[0] == 200, &quot;the gateway cannot reach the AI service&quot;
+
+
+BEATS = [beat_ready, beat_calibration, beat_refusal, beat_customer_cannot_read_errors, beat_staff_can, beat_stats_are_for_staff]
+failed = 0
+for beat in BEATS:
+    started = time.perf_counter()
+    try:
+        beat()
+        verdict = &quot;ok&quot;
+    except (AssertionError, KeyError, urllib.error.URLError) as err:
+        verdict, failed = f&quot;FAILED: {err}&quot;, failed + 1
+    print(f&quot;{beat.__name__.removeprefix(&#x27;beat_&#x27;):&lt;34} {verdict:&lt;8} {(time.perf_counter() - started) * 1000:6.0f} ms&quot;)
+print(&quot;the demo path works&quot; if failed == 0 else f&quot;{failed} beat(s) failed: fix them before the demo&quot;)
+sys.exit(1 if failed else 0)</code></pre></details><p>Two runs in a row (the numbers are the system&rsquo;s speed, not yours: the spoken demo takes minutes):</p><div class="out"><b>You should see</b><br>python scripts/demo_check.py&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(run for real, twice in a row)<br>ready&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 40 ms<br>calibration&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 74 ms<br>refusal&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 14 ms<br>customer_cannot_read_errors&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 13 ms<br>staff_can&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 13 ms<br>stats_are_for_staff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ok&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 20 ms<br>the demo path works&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(whole script: 0.08 s, both runs)</div><p>The failure drill: the same check with the AI service switched off. This is what a broken stage looks like, and the gateway&rsquo;s readiness check tells the truth about it:</p><div class="out"><b>You should see</b><br>the same check with the AI service stopped (run for real):<br>GET /health&nbsp;&nbsp;->&nbsp;&nbsp;{"status":"ok"} HTTP 200<br>GET /ready&nbsp;&nbsp; ->&nbsp;&nbsp;HTTP 503<br>ready&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: the gateway cannot reach the AI service&nbsp;&nbsp;&nbsp;&nbsp; 14 ms<br>calibration&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: HTTP 502&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2 ms<br>refusal&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: HTTP 502&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1 ms<br>customer_cannot_read_errors&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: HTTP 502&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2 ms<br>staff_can&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: HTTP 502&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2 ms<br>stats_are_for_staff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 2 ms<br>6 beat(s) failed: fix them before the demo&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(exit code 1)</div><p>And the thing that would surprise you at a venue without internet:</p><div class="out"><b>You should see</b><br>HF_HUB_OFFLINE=1, the Python service started with no network access to the model hub (run for real; the model was already on disk):<br>&nbsp;&nbsp;GET /health&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{"status":"ok","version":"0.1.0"}<br>&nbsp;&nbsp;POST /api/ask&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Calibrate the sensor once a month [manual-calibration#0]&nbsp;&nbsp; (200 in 32 ms)<br>source of fastembed (read, not guessed):&nbsp;&nbsp;the cache is&nbsp;&nbsp;&lt;system temporary folder>/fastembed_cache&nbsp;&nbsp;unless FASTEMBED_CACHE_PATH is set<br>&nbsp;&nbsp;-> the system may clear a temporary folder (for example at a restart): then the next start downloads the model again, and needs internet.</div><p>The order to do things in before you go on, and the sentences for when it breaks:</p><pre><code>BEFORE YOU GO ON (do it in this order, every time)
+1. start everything from the README, from nothing running
+2. python scripts/demo_check.py   -&gt; &quot;the demo path works&quot;
+3. ask one throwaway question in the page (this warms it up: a model, a cache, the first request)
+4. open: the README with the diagram, the page, the terminal with the test command typed but not run
+5. notifications off; battery full and the charger in; the recorded demo ready to play</code></pre><pre><code>WHAT I SAY WHEN IT BREAKS (write your own, one line each; say it calmly, then move on)
+the service is down:       &quot;It cannot reach the AI service, so it says so and does not guess. Here is the recording of the same run.&quot;
+a question is slow:        &quot;The first call loads things; the next ones are quick. While it works, here is the part of the diagram it is in.&quot;
+the page does not load:    &quot;I will show it with the terminal instead.&quot; (curl a question, show the JSON, say what each field is)
+the network is down:       &quot;Everything runs on this laptop. The model files are already here.&quot;
+I forget my words:         look at the diagram: one box, one line</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work on your own capstone. Start your whole system from the README, from nothing running, and time how long each part takes to be ready.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Write your demo check: one function per beat of your script, each asking your running system and checking the result, with a pass or fail for each and a non-zero exit code if any fails (use the worked example as a shape). Run it. Fix what fails: the demo or the check, whichever is wrong.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Run your full demo <strong>aloud with a timer</strong> and the rehearsal sheet below. <strong>Predict</strong> the time before you start. Which beat took longest, and which words did you stumble on?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Switch off one dependency (the service behind your front door, or your database) and run the check, then try a real beat in the page. What does the audience see? Write your calm sentence for it, and say it aloud once. Then check your offline story: where does your system keep its model files, and what happens after a restart with no network?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Run the demo twice more: the first run you may stop, the <strong>second you do not stop</strong>, whatever happens. Fill in the sheet. Change the one thing that hurt most (a word, a step, an order), and commit your check: <code>git add scripts/demo_check.py</code> and <code>git commit -m &quot;Add a demo check&quot;</code>.</p><pre><code>REHEARSAL SHEET (fill in for each full run)
+run     start time   end time   words I stumbled on   what broke   what I said when it broke   what I changed
+1       ...          ...        ...                   ...          ...                         ...
+2       ...          ...        ...                   ...          ...                         ...
+rule: run 1 you may stop and fix. Run 2 you do NOT stop, whatever happens. That is the one that counts.</code></pre></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The demo check passes but the demo goes wrong</strong>: the check tests the system, not the page, the screen share or you. Rehearse with the real screen.</li><li><strong>The first question is slow</strong>: warm the system up with a throwaway question before you start. If a model has to load, that can take tens of seconds.</li><li><strong>You always stop at the same place</strong>: the script is too long there, or the step is awkward. Cut a sentence or move the step.</li><li><strong>You are nervous aloud</strong>: record yourself once. It is uncomfortable and it works. Practise the first two sentences until you do not think about them.</li></ul><details><summary>Hint: Step 3</summary><p>The three things most likely to go wrong in a room: the network, a service that did not start, and the first slow call. Each has a fix you can do <em>before</em> the audience arrives.</p></details><details><summary>Solution: Step 3</summary><div class="out"><b>You should see</b><br>the same check with the AI service stopped (run for real):<br>GET /health&nbsp;&nbsp;->&nbsp;&nbsp;{"status":"ok"} HTTP 200<br>GET /ready&nbsp;&nbsp; ->&nbsp;&nbsp;HTTP 503<br>ready&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: the gateway cannot reach the AI service&nbsp;&nbsp;&nbsp;&nbsp; 14 ms<br>calibration&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: HTTP 502&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2 ms<br>refusal&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: HTTP 502&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1 ms<br>customer_cannot_read_errors&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: HTTP 502&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2 ms<br>staff_can&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED: HTTP 502&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2 ms<br>stats_are_for_staff&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FAILED:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 2 ms<br>6 beat(s) failed: fix them before the demo&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(exit code 1)</div><p>With the service off, every beat fails with a clear reason (a 502 and a 503), not a blank screen. Your sentence: it tells the truth about what is down, and does not guess. Offline: the model files must be on the laptop, in a folder that survives a restart (set <code>FASTEMBED_CACHE_PATH</code>), and the service started once with internet.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What does the demo check prove, and what does it not prove?</li><li>Why is the second rehearsal the one you do not stop in?</li><li>Name two surprises you can remove before the audience arrives.</li></ol><details><summary>Answers</summary><ol><li>That every beat works on the running system. Not that the page, the screen share or you will go well.</li><li>Because on stage you cannot stop. You practise carrying on and saying your fallback line.</li><li>Start everything and warm it up first; keep the model and files on the laptop in a folder that survives a restart; have a recording ready; notifications off.</li></ol></details></section>
+<section id="game-day172" class="game"><h2><span class="n">+</span> &middot; Game: Rehearsal Check <span class="t">5 min</span></h2>
+<p><p>You rehearse the demo. Pick the answer, then see the real output (the capstone, stand-in writer, one laptop).</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day172-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day172-play">Start the game</button></div>
+<div id="day172-round" hidden><div class="gtop"><span id="day172-num">Round 1</span><span id="day172-score">Score 0</span></div>
+<pre hidden><code id="day172-code"></code></pre><div class="q" id="day172-q"></div><div class="choices" id="day172-opts"></div>
+<div class="fb" id="day172-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day172-next" hidden>Next round</button></p></div>
+<div id="day172-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day172",[{"c": "Cold start of the Python service and the gateway", "q": "About how long, in all?", "o": ["About 11 s: 7.4 s for the service, 3.6 s for the gateway", "2 s", "2 minutes"], "a": 0, "out": "the Python service 7.4 s   the gateway 3.6 s   total 11.0 s", "why": "Start before the audience comes in."}, {"c": "python scripts/demo_check.py with everything running", "q": "What does it say?", "o": ["the demo path works", "A failure", "Nothing"], "a": 0, "out": "ready ok\ncalibration ok\nrefusal ok\ncustomer_cannot_read_errors ok\nstaff_can ok\nstats_are_for_staff ok\nthe demo path works", "why": "It proves the system is ready, not that you are."}, {"c": "The same check with the AI service stopped", "q": "What does it say?", "o": ["6 beat(s) failed: fix them before the demo (exit code 1)", "the demo path works", "It hangs"], "a": 0, "out": "ready FAILED: the gateway cannot reach the AI service\ncalibration FAILED: HTTP 502\n...\n6 beat(s) failed", "why": "A clear reason, not a blank screen."}, {"c": "The second rehearsal", "q": "What is the rule?", "o": ["You do not stop, whatever happens", "You may stop", "You skip it"], "a": 0, "out": "", "why": "You practise recovering and saying your fallback line."}, {"c": "No internet at the venue; the model was downloaded yesterday into the default cache", "q": "What is the risk?", "o": ["The default cache is the system temporary folder: a restart may have cleared it", "None", "The model is too big"], "a": 0, "out": "the cache is <system temporary folder>/fastembed_cache unless FASTEMBED_CACHE_PATH is set", "why": "Read in the library's source. Set the variable to a folder you keep."}, {"c": "The first question takes ten seconds", "q": "What should you have done?", "o": ["Warmed the system up with a throwaway question first", "Said nothing", "Used a bigger laptop"], "a": 0, "out": "", "why": "The first call loads things."}],["Rehearsal rookie", "Rehearsal regular", "Demo runner"],"Start before the audience; run the demo check; drill failures; keep the model on disk; warm it up; and in the second rehearsal do not stop.");</script>
+<p><small>Tick &ldquo;Play the Rehearsal Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a demo check that tells you whether the system is ready, two full rehearsals, a rehearsal sheet, a failure drill with a calm sentence for each failure, and an offline story you tested.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 172 checklist.</li><li>Share one line in the comments: what broke in your second run?</li><li><strong>Next:</strong> Thursday is mixed practice: you write the demo check from a blank file, and run the demo for a friend.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
