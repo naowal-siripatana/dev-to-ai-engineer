@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 158 - Serving models: Ollama or vLLM, OpenAI-compatible APIs</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 158 &middot; LEVEL 14: LOCAL MODELS</div><h1>Serving models: Ollama or vLLM, OpenAI-compatible APIs</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to call a model on your own machine with the same client code you use for a hosted one.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>How do you work out the memory the weights of a model need?</li><li>What does 4-bit quantization trade?</li></ol><details><summary>Answers</summary><ol><li>Parameters times bits per weight divided by 8, plus room for the context and the program.</li><li>Precision for size and speed: smaller and faster, with a small possible loss of quality that you test.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>Your code calls a hosted model with the vendor&rsquo;s library. A local model comes with its own program and its own way to call it. Do you rewrite every call?</strong></p><details><summary>Guess first, then open</summary><p>Not if the server speaks a common language. Most local servers copy the request shape of one popular chat API (the <strong>OpenAI-compatible</strong> API): the same address path, the same JSON. Then the same client library works, and only three things change: the <strong>address</strong>, the <strong>model name</strong> and (sometimes) the <strong>key</strong>.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<div class="box"><strong>Be clear about what was run.</strong> The server in this lesson is <code>mlx_lm.server</code>, the server that comes with the mlx-lm library (Apple-silicon laptop, 16 GB), with a 1.5 billion model in 4 bits. <strong>Ollama, vLLM and llama.cpp were not run.</strong> They offer the same kind of API, but their commands and default addresses below are from their documentation, not from this lesson&rsquo;s runs. And this server prints a warning that it is not made for production: the times are a laptop demonstration.</div>
+<h3>Piece 1: a model server is a web server</h3>
+<p>A <strong>model server</strong> loads the weights once, keeps them in memory, and answers HTTP requests: &ldquo;here is a chat, write the next message&rdquo;. Your code does not load the model; it sends text to an address, like it does for any API. Tools for this: <strong>Ollama</strong> (easy to start on a laptop), <strong>vLLM</strong> (made for servers with GPUs and many users), <strong>llama.cpp</strong> and <strong>mlx-lm</strong> (laptops).</p>
+<h3>Piece 2: the same request, three things change</h3>
+<p>The <strong>OpenAI-compatible</strong> API is <code>POST /v1/chat/completions</code> with a list of messages and a model name; the reply has <code>choices[0].message.content</code> and a <code>usage</code> count of tokens. If your client takes a <code>base_url</code>, you point it at the local server. A local server usually ignores the key, but the library wants one, so you give it any string. The model name must match what the server has.</p>
+<h3>Piece 3: the first call is slow, and a small model has no knowledge of your world</h3>
+<p>The server loads the model on the first call (22 seconds below, from an external drive), so you warm it up before the user comes (like the warm-up of Day 137). And a small model without sources makes things up: asked about <code>E104</code> it invented a military code. That is why your assistant gives it sources and rules, and why you still check its citations.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> this is the <code>HttpClient</code> with a different <code>BaseAddress</code> behind an interface. The interface here is the <code>Writer</code> of your project: one method, <code>complete</code>, and one more class that implements it.</div>
+<div class="box cap"><strong>Capstone:</strong> your pipeline asks a <code>Writer</code> for the answer. Today you give it a second implementation that talks to a server on your own machine. Tomorrow&rsquo;s task is to choose between them by configuration.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. Start the server (the command was run for real), then call it with plain <code>curl</code>:</p><div class="out"><b>You should see</b><br>python -m mlx_lm server --model mlx-community/Qwen2.5-1.5B-Instruct-4bit --host 127.0.0.1 --port 8081<br>INFO - Starting httpd at 127.0.0.1 on port 8081...<br>(it also prints a warning: "mlx_lm.server is not recommended for production as it only implements basic security checks.")</div><pre><code>curl -s localhost:8081/v1/chat/completions -H &#x27;content-type: application/json&#x27; -d &#x27;{
+  &quot;model&quot;: &quot;mlx-community/Qwen2.5-1.5B-Instruct-4bit&quot;,
+  &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is a container, in one sentence?&quot;}],
+  &quot;max_tokens&quot;: 40, &quot;temperature&quot;: 0 }&#x27;</code></pre><div class="out"><b>You should see</b><br>{"object": "chat.completion", "model": "mlx-community/Qwen2.5-1.5B-Instruct-4bit",<br> "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant",<br>&nbsp;&nbsp; "content": "A container is a lightweight, portable runtime environment that encapsulates the software components of an application, allowing them to be easily deployed across different platforms."}}],<br> "usage": {"prompt_tokens": 38, "completion_tokens": 30, "total_tokens": 68}}<br>(shortened: ids and some fields left out)</div><p>The reply has the shape you know. Now the client of your project. It uses the OpenAI Python library with a <code>base_url</code>, wraps the failures in the same two kinds of error as the Anthropic client (one that may go away, one that will not), uses <code>temperature=0</code> so that two models are easy to compare, and implements the same <code>complete</code> and <code>stream</code> as the other writer. <code>src/my_ai_project/local_llm.py</code>:</p><pre><code>import logging
+import time
+from collections.abc import Iterator
+
+import openai
+from openai.types.chat import ChatCompletionChunk
+
+from my_ai_project.llm import LlmError, RetryableLlmError
+
+logger = logging.getLogger(&quot;llm&quot;)
+
+RETRYABLE_STATUS = {408, 409, 429}
+
+
+def to_llm_error(err: openai.APIError, model: str) -&gt; LlmError:
+    &quot;&quot;&quot;The same two kinds of failure as for the Anthropic client: one that may go away, and one that will not.&quot;&quot;&quot;
+    retryable = isinstance(err, openai.APIConnectionError) or (isinstance(err, openai.APIStatusError) and (err.status_code in RETRYABLE_STATUS or err.status_code &gt;= 500))
+    logger.warning(&quot;llm call failed model=%s error=%s%s&quot;, model, type(err).__name__, &quot; (can retry)&quot; if retryable else &quot;&quot;)
+    return RetryableLlmError(&quot;the model call failed&quot;) if retryable else LlmError(&quot;the model call failed&quot;)
+
+
+class OpenAICompatibleClient:
+    &quot;&quot;&quot;Talks to any server that speaks the OpenAI chat API: a local model (Ollama, vLLM, llama.cpp, mlx-lm) or a hosted one.
+    The only things that change between servers are base_url, model and (sometimes) the key.&quot;&quot;&quot;
+
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        api_key: str = &quot;not-needed&quot;,   # a local server usually ignores it, but the SDK wants a string
+        max_tokens: int = 300,
+        timeout: float = 60.0,
+        http_client: openai.DefaultHttpxClient | None = None,
+    ) -&gt; None:
+        self.client = openai.OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0, http_client=http_client)
+        self.model = model
+        self.max_tokens = max_tokens
+        self.last_output_tokens: int | None = None   # for a comparison script: how many tokens the last answer had
+
+    def _messages(self, prompt: str, system: str | None) -&gt; list[dict[str, str]]:
+        return ([{&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: system}] if system is not None else []) + [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: prompt}]
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        started = time.perf_counter()
+        try:
+            reply = self.client.chat.completions.create(
+                model=self.model,
+                messages=self._messages(prompt, system),   # type: ignore[arg-type]
+                max_tokens=self.max_tokens,
+                temperature=0,   # the same question should give the same answer: easier to compare two models
+            )
+        except openai.APIError as err:
+            raise to_llm_error(err, self.model) from err
+        text = reply.choices[0].message.content or &quot;&quot;
+        usage = reply.usage
+        self.last_output_tokens = usage.completion_tokens if usage else None
+        logger.info(
+            &quot;llm call ok model=%s prompt_chars=%d reply_chars=%d input_tokens=%s output_tokens=%s ms=%d&quot;,
+            self.model, len(prompt), len(text), usage.prompt_tokens if usage else &quot;?&quot;, usage.completion_tokens if usage else &quot;?&quot;,
+            round((time.perf_counter() - started) * 1000),
+        )
+        return text
+
+    def stream(self, prompt: str, system: str | None = None) -&gt; Iterator[str]:
+        try:
+            chunks: Iterator[ChatCompletionChunk] = self.client.chat.completions.create(   # type: ignore[assignment]
+                model=self.model, messages=self._messages(prompt, system), max_tokens=self.max_tokens, temperature=0, stream=True,   # type: ignore[arg-type]
+            )
+            for chunk in chunks:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except openai.APIError as err:
+            raise to_llm_error(err, self.model) from err</code></pre><p>The settings that choose it (the next lesson adds the code that reads them):</p><pre><code>LLM_MODE=real
+LLM_PROVIDER=openai_compatible
+LLM_BASE_URL=http://127.0.0.1:8081/v1
+LLM_MODEL=mlx-community/Qwen2.5-1.5B-Instruct-4bit</code></pre><p>A script that asks one question through that client (<code>ask_local.py</code>), and its output for three questions. The first call includes loading the model; the question about <code>E104</code> has no sources, so the model invents (run for real, 1.5 billion model, 4-bit):</p><pre><code>&quot;&quot;&quot;Ask one question through the same client, whichever server is behind it. The server is chosen by the environment only.&quot;&quot;&quot;
+import sys
+import time
+
+from my_ai_project.deps import make_client
+from my_ai_project.settings import Settings
+
+settings = Settings.from_env()
+client = make_client(settings, settings.llm_model)
+question = &quot; &quot;.join(sys.argv[1:]) or &quot;What is a container, in one sentence?&quot;
+started = time.perf_counter()
+print(client.complete(question, &quot;Answer in one short sentence.&quot;))
+print(f&quot;({settings.llm_provider} at {settings.llm_base_url}, model {settings.llm_model}, {(time.perf_counter() - started) * 1000:.0f} ms)&quot;)</code></pre><div class="out"><b>You should see</b><br>A container is a receptacle for holding or transporting goods.<br>(openai_compatible at http://127.0.0.1:8081/v1, model mlx-community/Qwen2.5-1.5B-Instruct-4bit, 22946 ms)<br><br>python ask_local.py "What is a container in Docker, in one sentence?"<br>A container in Docker is a lightweight, isolated runtime environment for running applications.<br>(openai_compatible at http://127.0.0.1:8081/v1, model mlx-community/Qwen2.5-1.5B-Instruct-4bit, 355 ms)<br><br>python ask_local.py "What does E104 mean?"<br>E104 is a code used by the U.S. military to identify specific locations or personnel.<br>(openai_compatible at http://127.0.0.1:8081/v1, model mlx-community/Qwen2.5-1.5B-Instruct-4bit, 419 ms)</div><p>Streaming works through the same client; the pieces arrive about 14 ms apart:</p><pre><code>import time
+
+from my_ai_project.deps import make_client
+from my_ai_project.settings import Settings
+
+settings = Settings.from_env()
+client = make_client(settings, settings.llm_model)
+started = time.perf_counter()
+for number, piece in enumerate(client.stream(&quot;Count from one to five in words.&quot;, &quot;Answer in one short line.&quot;), start=1):
+    print(f&quot;{(time.perf_counter() - started) * 1000:6.0f} ms  piece {number}: {piece!r}&quot;)</code></pre><div class="out"><b>You should see</b><br>&nbsp;&nbsp; 216 ms&nbsp;&nbsp;piece 1: 'One'<br>&nbsp;&nbsp; 226 ms&nbsp;&nbsp;piece 2: ','<br>&nbsp;&nbsp; 240 ms&nbsp;&nbsp;piece 3: ' two'<br>&nbsp;&nbsp; 254 ms&nbsp;&nbsp;piece 4: ','<br>&nbsp;&nbsp; 268 ms&nbsp;&nbsp;piece 5: ' three'<br>&nbsp;&nbsp; ...<br>&nbsp;&nbsp; 336 ms&nbsp;&nbsp;piece 10: '.'</div><p>And two failures, with what the code raises (the log line has the cause):</p><div class="out"><b>You should see</b><br>server not running (port 9):<br>&nbsp;&nbsp;WARNING llm: llm call failed model=mlx-community/Qwen2.5-1.5B-Instruct-4bit error=APIConnectionError (can retry)<br>&nbsp;&nbsp;RetryableLlmError: the model call failed<br><br>a model name the server does not have:<br>&nbsp;&nbsp;INFO httpx2: HTTP Request: POST http://127.0.0.1:8081/v1/chat/completions "HTTP/1.0 404 Not Found"<br>&nbsp;&nbsp;WARNING llm: llm call failed model=no-such-model error=NotFoundError<br>&nbsp;&nbsp;LlmError: the model call failed</div><p>From the documentation of the other servers (not run here):</p><div class="out"><b>You should see</b><br>server&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;default address (from its documentation, NOT run for this lesson)&nbsp;&nbsp;&nbsp;&nbsp;model name<br>Ollama&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;http://localhost:11434/v1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the tag you pulled, for example qwen2.5:1.5b<br>vLLM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;http://localhost:8000/v1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; the Hugging Face name you started it with<br>the lesson&nbsp;&nbsp;http://127.0.0.1:8081/v1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; mlx-community/Qwen2.5-1.5B-Instruct-4bit<br>(check the current documentation of each: defaults and flags change)</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch: <code>git switch -c local-model</code>. You need a model server. Use Ollama (<code>ollama pull</code> a small model, and it listens on its default address) or any other OpenAI-compatible server; on an Apple-silicon laptop <code>mlx_lm server</code> works. Add the OpenAI library: <code>uv add openai</code>.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Call your server with <code>curl</code> and see the JSON reply. Then add <code>local_llm.py</code> and <code>ask_local.py</code>, set the four variables for <em>your</em> server (the model name must be one it has), and run the script. Match the shape of the output.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Ask the same question twice. <strong>Predict:</strong> which call is slower, and by how much? Then ask about something your knowledge base answers (<code>What does E104 mean?</code>) and read what the model says <em>without</em> your sources.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Point the address at a port where nothing runs, then ask for a model name that does not exist. For each, read the line in the log and the error type that the code raised. Which of the two would your retry wrapper try again, and which not, and why?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Make the streaming script print how long the <em>first</em> piece took and how many pieces came per second. Write down what the first-piece time means for a person waiting at a chat page. Commit: <code>git add src/my_ai_project/local_llm.py ask_local.py pyproject.toml uv.lock</code> and <code>git commit -m &quot;Add a client for OpenAI-compatible servers&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>Connection refused</strong>: the server is not running, or it listens on another port. Check the address in the server&rsquo;s start line.</li><li><strong>404 on the model</strong>: the model name does not match. Ask the server for its list (<code>GET /v1/models</code>) and copy the name exactly.</li><li><strong>The first call takes half a minute</strong>: the model is loading. Warm the server up with a throwaway call, and give the client a long timeout.</li><li><strong>The answer is nonsense or in the wrong language</strong>: small models are weak without sources. Test with the pipeline, not with bare questions.</li><li><strong>A key error from a local server</strong>: some servers want any non-empty key. The client sends <code>not-needed</code> by default.</li></ul><details><summary>Hint: Step 3</summary><p>A server that is not running is a failure that may go away (start it, try again): retryable. A wrong name will never work by waiting: not retryable.</p></details><details><summary>Solution: Step 3</summary><div class="out"><b>You should see</b><br>server not running (port 9):<br>&nbsp;&nbsp;WARNING llm: llm call failed model=mlx-community/Qwen2.5-1.5B-Instruct-4bit error=APIConnectionError (can retry)<br>&nbsp;&nbsp;RetryableLlmError: the model call failed<br><br>a model name the server does not have:<br>&nbsp;&nbsp;INFO httpx2: HTTP Request: POST http://127.0.0.1:8081/v1/chat/completions "HTTP/1.0 404 Not Found"<br>&nbsp;&nbsp;WARNING llm: llm call failed model=no-such-model error=NotFoundError<br>&nbsp;&nbsp;LlmError: the model call failed</div><p>The connection error is retryable (the retry wrapper tries again, waits, and may succeed when the server is back). The 404 is a mistake in the configuration: the same request fails every time, so retrying only wastes time.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What are the three things that change when you move from one OpenAI-compatible server to another?</li><li>Why is the first call to a model server slow, and what do you do about it?</li><li>Why did the model invent a meaning for <code>E104</code>?</li></ol><details><summary>Answers</summary><ol><li>The address (<code>base_url</code>), the model name, and sometimes the key.</li><li>The server loads the model into memory on the first call. Warm it up with a throwaway call before real users come, and use a long enough timeout.</li><li>It had no sources and no knowledge of your product, so it guessed from what it saw in training. That is why the pipeline gives it sources and a rule to refuse.</li></ol></details></section>
+<section id="game-day158" class="game"><h2><span class="n">+</span> &middot; Game: Server Check <span class="t">5 min</span></h2>
+<p><p>You call a model server. Pick the answer, then see the real output (mlx_lm.server on a laptop; Ollama and vLLM were not run).</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day158-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day158-play">Start the game</button></div>
+<div id="day158-round" hidden><div class="gtop"><span id="day158-num">Round 1</span><span id="day158-score">Score 0</span></div>
+<pre hidden><code id="day158-code"></code></pre><div class="q" id="day158-q"></div><div class="choices" id="day158-opts"></div>
+<div class="fb" id="day158-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day158-next" hidden>Next round</button></p></div>
+<div id="day158-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day158",[{"c": "You move from one OpenAI-compatible server to another", "q": "What changes?", "o": ["The address, the model name, sometimes the key", "The whole client library", "The prompt format"], "a": 0, "out": "", "why": "That is the point of the common API."}, {"c": "The first call to the server", "q": "How long did it take compared with the next?", "o": ["22946 ms against 355 ms: the model was loading", "The same", "Faster the first time"], "a": 0, "out": "(... 22946 ms)\n(... 355 ms)", "why": "Warm the server up."}, {"c": "'What does E104 mean?' with no sources, to a 1.5 billion model", "q": "What did it say?", "o": ["It invented: a code of the U.S. military", "It refused", "The right meaning"], "a": 0, "out": "E104 is a code used by the U.S. military to identify specific locations or personnel.", "why": "No sources, no knowledge of your product: it guessed."}, {"c": "The server is not running", "q": "What error does the client raise?", "o": ["RetryableLlmError: it may go away", "LlmError: it will not", "Nothing"], "a": 0, "out": "WARNING llm: llm call failed ... error=APIConnectionError (can retry)\nRetryableLlmError: the model call failed", "why": "Start the server and the retry works."}, {"c": "A model name the server does not have", "q": "Retryable?", "o": ["No: a 404 every time (LlmError)", "Yes", "Only twice"], "a": 0, "out": "POST .../v1/chat/completions \"HTTP/1.0 404 Not Found\"\nLlmError: the model call failed", "why": "Retrying a mistake wastes time."}, {"c": "The server prints 'not recommended for production'", "q": "What do you do?", "o": ["Keep it on the loopback address, behind a reverse proxy", "Open it to the internet", "Ignore it"], "a": 0, "out": "", "why": "Take the warning seriously."}],["Server rookie", "Server regular", "Server caller"],"A model server is a web server with a common API; three things change between servers; warm it up; a small model with no sources guesses; and keep it off the open internet.");</script>
+<p><small>Tick &ldquo;Play the Server Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a client that talks to any OpenAI-compatible server, a script that asks one question through it, and a look at three things: the slow first call, streaming, and what a small model does without sources.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 158 checklist.</li><li>Share one line in the comments: how long did your first call take?</li><li><strong>Next:</strong> Thursday is mixed practice: you choose between the hosted model and the local one by configuration only, from a blank file.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

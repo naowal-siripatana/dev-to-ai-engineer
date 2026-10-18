@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 161 - Project Lab 23: a local model and a comparison</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 161 &middot; LEVEL 14: LOCAL MODELS &middot; PROJECT LAB</div><h1>Project Lab 23: a local model and a comparison</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to run a local model through the same API, compare it with another on your own questions, and say how small your evidence is.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>How much memory do the weights of a 7 billion model need in 16 bits, and in 4 bits?</li><li>Where in the code is the choice of provider made?</li><li>Why can one run of 18 questions not decide between two models?</li></ol><details><summary>Answers</summary><ol><li>About 14 GB and about 4 GB (parameters times bits divided by 8; 4.5 bits with the extras gives about 3.9 GB).</li><li>In one function that takes the settings and returns the client.</li><li>The sample is small and one run each: a question or two flipping changes the order. It is a hint; more questions and repeated runs say more.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p><strong>Done looks like:</strong> your assistant answers through a model on your own machine, chosen only by configuration; a table shows your five questions on <strong>two models</strong> (and the stand-in as a baseline) with pass or fail, time and cost; a short decision says which writer you would use for what; and notes explain what you must add before such a model faces the internet (HTTPS and a reverse proxy). This is the checkpoint of Module 14.</p><div class="box"><strong>Be clear about what was run.</strong> Everything with numbers below was run for real on one Apple-silicon laptop with 16 GB of shared memory, with <code>mlx_lm.server</code> and Qwen2.5 Instruct models in 4-bit (0.5, 1.5 and 3 billion) and 16-bit (1.5 billion): <strong>one run per model, 5 or 18 questions, temperature 0</strong>. That is a hint, not a benchmark. <strong>Not run:</strong> Ollama, vLLM, a hosted model, and any reverse proxy or HTTPS: those notes are general knowledge. No key was used. The cost line uses the example price list of Day 130, not a vendor&rsquo;s price.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Three jobs: (1) the server and the settings, so that the API can run with either writer; (2) the comparison: one script, one pipeline, one list of questions, different models; (3) the decision and the notes. Draw the table you want <em>before</em> you run anything: its rows (the five questions) and its columns (pass, time, cost, memory). Decide how you will call a result a pass (the scoring of Day 105: the right page cited, the required words present, a refusal when it should refuse).</p></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2>
+<h3>Job 1: the server and the settings</h3>
+<p>Start your model server with one 4-bit model, and set the four variables of Day 159. Warm it up (one throwaway call) so that the first real question does not pay for loading. Start the API and ask one question, then check the <code>requests</code> table: the model column should name your model and the cost should be 0.</p>
+<p>A fact about the server of this lesson: when it starts it says <em>&ldquo;mlx_lm.server is not recommended for production as it only implements basic security checks.&rdquo;</em> Take that seriously (see Job 3).</p>
+<h3>Job 2: the comparison</h3>
+<p>One script runs the golden questions through <strong>the same retrieval and the same prompt</strong> and only swaps the writer, so that any difference is the model. It times the writer, counts the tokens, and scores each answer with the scoring you built on Day 105. <code>compare_models.py</code>:</p><pre><code>import argparse
+import os
+import time
+from pathlib import Path
+
+from my_ai_project.access import allowed_kinds
+from my_ai_project.embedder import FastEmbedder
+from my_ai_project.golden import load_golden
+from my_ai_project.grounding import Writer
+from my_ai_project.hybrid import KeywordIndex, hybrid_search
+from my_ai_project.local_llm import OpenAICompatibleClient
+from my_ai_project.rag import answer_question
+from my_ai_project.scoring import Outcome, score_one
+from my_ai_project.settings import Settings
+from my_ai_project.simulated import SimulatedWriter
+from my_ai_project.store import ChunkStore
+
+parser = argparse.ArgumentParser(description=&quot;Run the golden questions through the same pipeline with different models and compare.&quot;)
+parser.add_argument(&quot;--golden&quot;, default=&quot;data/golden-5.jsonl&quot;)
+parser.add_argument(&quot;--base-url&quot;, default=os.environ.get(&quot;LLM_BASE_URL&quot;, &quot;http://localhost:8081/v1&quot;))
+parser.add_argument(&quot;--model&quot;, action=&quot;append&quot;, default=[], help=&quot;a model name on the server; repeat it for more models&quot;)
+parser.add_argument(&quot;--stand-in&quot;, action=&quot;store_true&quot;, help=&quot;also run the stand-in writer (NOT a model) as a baseline&quot;)
+parser.add_argument(&quot;--warm-up&quot;, action=&quot;store_true&quot;, help=&quot;make one throwaway call first and report its time (the model is loaded on the first call)&quot;)
+parser.add_argument(&quot;--show&quot;, action=&quot;store_true&quot;, help=&quot;print each answer&quot;)
+args = parser.parse_args()
+
+
+class Timed:
+    &quot;&quot;&quot;Wraps a writer and remembers how long it took and how many tokens it made.&quot;&quot;&quot;
+
+    def __init__(self, inner: Writer) -&gt; None:
+        self.inner = inner
+        self.ms = 0.0
+        self.tokens: int | None = None
+
+    def complete(self, prompt: str, system: str | None = None) -&gt; str:
+        started = time.perf_counter()
+        text = self.inner.complete(prompt, system)
+        self.ms = (time.perf_counter() - started) * 1000
+        self.tokens = getattr(self.inner, &quot;last_output_tokens&quot;, None)
+        return text
+
+
+store = ChunkStore(Settings.from_env().database_url.get_secret_value())
+chunks = store.all_chunks()
+embedder, keywords = FastEmbedder(), KeywordIndex(chunks)
+items = load_golden(Path(args.golden), {chunk.doc_id for chunk in chunks})
+kinds = allowed_kinds(&quot;staff&quot;)
+
+writers: list[tuple[str, Writer]] = [(name, OpenAICompatibleClient(args.base_url, name, max_tokens=120, timeout=120.0)) for name in args.model]
+if args.stand_in:
+    writers.append((&quot;stand-in (not a model)&quot;, SimulatedWriter()))
+
+for name, inner in writers:
+    timed = Timed(inner)
+    print(f&quot;\n== {name}&quot;)
+    if args.warm_up and not isinstance(inner, SimulatedWriter):
+        started = time.perf_counter()
+        inner.complete(&quot;Say OK.&quot;)
+        print(f&quot;first call (loads the model): {(time.perf_counter() - started) * 1000:.0f} ms&quot;)
+    print(f&quot;{&#x27;id&#x27;:&lt;5}{&#x27;result&#x27;:&lt;8}{&#x27;ms&#x27;:&gt;6}{&#x27;tokens&#x27;:&gt;8}  why / answer&quot;)
+    passed, total_ms, total_tokens = 0, 0.0, 0
+    for item in items:
+        timed.ms, timed.tokens = 0.0, None   # a question refused before the model: no model time
+        found = hybrid_search(item.question, embedder, store, keywords, top_k=3, allowed_kinds=kinds)
+        answer = answer_question(item.question, embedder, store, keywords, timed, top_k=3, allowed_kinds=kinds)
+        outcome = Outcome(item, list(dict.fromkeys(f.doc_id for f in found)), answer.text, answer.refused, list(dict.fromkeys(s.doc_id for s in answer.sources)))
+        result = score_one(outcome)
+        ok = result.passed
+        passed += ok
+        total_ms += timed.ms
+        total_tokens += timed.tokens or 0
+        print(f&quot;{item.id:&lt;5}{&#x27;pass&#x27; if ok else &#x27;FAIL&#x27;:&lt;8}{timed.ms:&gt;6.0f}{(timed.tokens if timed.tokens is not None else &#x27;-&#x27;)!s:&gt;8}  {&#x27;&#x27; if ok else (result.why or &#x27;see answer&#x27;)} {answer.text[:100].replace(chr(10), &#x27; &#x27;) if args.show or not ok else &#x27;&#x27;}&quot;)
+    print(f&quot;passed {passed}/{len(items)}   writer time {total_ms / len(items):.0f} ms per question   {total_tokens} tokens in all&quot;)</code></pre>
+<p>Run it on the five-question set with two models and the stand-in (run for real). The first call of each model loads it and is reported separately; a refused question costs no model time:</p><div class="out"><b>You should see</b><br>== 1.5 billion, 4-bit&nbsp;&nbsp; (first call, which loads the model: 22265 ms)<br>id&nbsp;&nbsp; result&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ms&nbsp;&nbsp;tokens&nbsp;&nbsp;answer<br>q01&nbsp;&nbsp;pass&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 697&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;23&nbsp;&nbsp;You should calibrate the sensor once a month according to the calibration guide. [manual-calibration#0]<br>q02&nbsp;&nbsp;pass&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 559&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;21&nbsp;&nbsp;The monitor supports the 2.4 GHz Wi-Fi band. [faq-wifi#0]<br>q03&nbsp;&nbsp;pass&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 639&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;27&nbsp;&nbsp;Error E104 indicates that the storage is above 95 percent full. [error-e104#0]<br>q04&nbsp;&nbsp;pass&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 615&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;30&nbsp;&nbsp;To silence the alarm, go to Open Settings, choose Sound, and set the alarm to Silent. [faq-alarm-sou...<br>q05&nbsp;&nbsp;pass&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; -&nbsp;&nbsp;I could not find that in the knowledge base.<br>passed 5/5&nbsp;&nbsp; 502 ms per question<br><br>== 3 billion, 4-bit&nbsp;&nbsp; (first call: 36462 ms)<br>q01&nbsp;&nbsp;pass&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 927&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;18&nbsp;&nbsp;You should calibrate the sensor once a month. [manual-calibration#0]<br>q02&nbsp;&nbsp;FAIL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1090&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;21&nbsp;&nbsp;cited a page that is not expected: error-e105&nbsp;&nbsp; The monitor supports 2.4 GHz networks only. [error-e105#0]<br>q03&nbsp;&nbsp;pass&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1281&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;29&nbsp;&nbsp;E104 means the storage is above 95 percent and the disk is full. [error-e104#0]<br>q04&nbsp;&nbsp;FAIL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1052&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;26&nbsp;&nbsp;the answer lacks 'Silent'&nbsp;&nbsp; Silencing the alarm is not recommended as it can lead to unattended issues. [faq-alarm-sound#0]<br>q05&nbsp;&nbsp;pass&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; -&nbsp;&nbsp;I could not find that in the knowledge base.<br>passed 3/5&nbsp;&nbsp; 870 ms per question<br><br>== stand-in (NOT a model)<br>q01..q05&nbsp;&nbsp;pass&nbsp;&nbsp;&nbsp;&nbsp; 0 ms&nbsp;&nbsp;&nbsp;&nbsp; passed 5/5</div>
+<p>The table for your README, in your own words (the cells are from the run above):</p><pre><code>| id | question | stand-in (not a model) | 1.5B 4-bit | 3B 4-bit |
+|----|----------|------------------------|------------|----------|
+| q01 | calibrate how often | pass | pass, 697 ms | pass, 927 ms |
+| q02 | Wi-Fi band | pass | pass, 559 ms | FAIL: wrong page cited |
+| q03 | what is E104 | pass | pass, 639 ms | pass, 1281 ms |
+| q04 | silence the alarm | pass | pass, 615 ms | FAIL: lacks &#x27;Silent&#x27; |
+| q05 | buy a coffee (must refuse) | pass | pass | pass |
+| total | | 5 of 5 | 5 of 5 | 3 of 5 |</code></pre>
+<p>Five questions are too few to rank two models, as Day 65 taught. So run the 18 golden questions as well, and add the sizes and the speeds (run for real, one run each):</p><div class="out"><b>You should see</b><br>model&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;passes&nbsp;&nbsp;&nbsp;&nbsp;writer time per question&nbsp;&nbsp; first call (load)&nbsp;&nbsp; weights in memory<br>stand-in (NOT a model)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 11 of 18&nbsp;&nbsp; 0 ms&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; -&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; -<br>0.5 billion, 4-bit&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;5 of 18&nbsp;&nbsp; 170 ms&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 7.9 s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0.28 GB<br>1.5 billion, 4-bit&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 14 of 18&nbsp;&nbsp; 561 ms&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 22.3 s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.87 GB<br>1.5 billion, bf16 (16 bits)&nbsp;&nbsp;&nbsp;&nbsp;17 of 18&nbsp;&nbsp; 1436 ms&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;77.4 s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.09 GB<br>3 billion, 4-bit&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 14 of 18&nbsp;&nbsp; 911 ms&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 44.2 s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1.74 GB<br>(one run each, temperature 0; the 11 of 18 of the stand-in is the score of Day 105; q18 fails for every writer)</div><div class="out"><b>You should see</b><br>0.5 billion, 4-bit&nbsp;&nbsp;&nbsp;&nbsp;refused 11 questions that can be answered (one of them q18), one wrong citation (q04), one missing word (q11): too small to follow the rules<br>1.5 billion, 4-bit&nbsp;&nbsp;&nbsp;&nbsp;q07 and q08 cited a wrong page; q13 refused an answerable question; q18 refused<br>1.5 billion, bf16&nbsp;&nbsp;&nbsp;&nbsp; only q18<br>3 billion, 4-bit&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;q02 cited a wrong page; q04 and q09 lacked the required word; q18 refused</div>
+<h3>Job 3: the cost, the decision and the notes</h3>
+<p>Cost per question, from two real rows of your metrics table:</p><div class="out"><b>You should see</b><br>per question, from two real rows of the requests table:&nbsp;&nbsp;about 240 input tokens and 20 to 22 output tokens<br>example price list of Day 130 (NOT a vendor price):&nbsp;&nbsp;1.00 and 5.00 US dollars per million tokens<br>&nbsp;&nbsp;one question&nbsp;&nbsp; 240 x 1.00 / 1,000,000 + 21 x 5.00 / 1,000,000 = 0.00035 dollars<br>&nbsp;&nbsp;1000 questions&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; = 0.35 dollars<br>local model:&nbsp;&nbsp;0 dollars per token (the settings default), but the laptop, the electricity and the time to run it are not 0 (not measured here)</div>
+<p>Now write the decision in a few lines. A model of the shape found here would say, for example: <em>the stand-in is a test double and never a product; the 0.5 billion model is too small for these rules; of the rest, the 16-bit 1.5 billion model was best on these questions (17 of 18) but it needs 3 GB, loads for over a minute and is three times slower than the 4-bit one; the 4-bit forms trade a few questions for a third of the size</em>. Write <strong>your</strong> numbers, and say what you would test next (more questions, repeated runs, a bigger model).</p>
+<p><strong>Notes: before a model faces the internet</strong> (general knowledge, <strong>not run</strong> in this lab). The model server is not made to be public: the one in this lesson says so itself. Keep it and the API on the loopback address, and put a <strong>reverse proxy</strong> in front: it is the only thing that listens on a public address, it ends the <strong>HTTPS</strong> connection with a certificate, and it can refuse requests without a key or login and limit how fast one caller can send them. Compare Day 147, where the nginx in front of the gateway was the only open door.</p><pre><code>browser --HTTPS--&gt; reverse proxy (port 443) --plain HTTP--&gt; your API (127.0.0.1:8000) --HTTP--&gt; model server (127.0.0.1:8081)
+                          |                                         only the proxy listens on a public address
+                          certificate, redirect from 80 to 443, a limit on the request rate, a key or login check</code></pre>
+<p>Also write down: who may call the model (the demo role header is not a login, Day 140), what is logged (questions can hold personal data), and how the model is updated (a new file is a new model: re-run the table).</p></section>
+<section><h2><span class="n">5</span> &middot; Run it, and write the README <span class="t">20 min</span></h2><p>Run it once more from the top on a clean start: server, warm-up, API, five questions through the API, the comparison script. Put into <code>docs/model-comparison.md</code>: the table, the 18-question summary, the cost lines, the decision, the proxy notes, and a short <strong>what I did not run</strong> list. Check every number in it against your own output, not against this page.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>Every question is refused by the small model</strong>: it is too weak for the rules (the 0.5 billion model refused 11 answerable questions). Try a bigger one before you change the prompt.</li><li><strong>The scores change between runs</strong>: the server may not be deterministic across versions or settings; run it again and report the range, not one number.</li><li><strong>The first question takes half a minute</strong>: the model is loading. Warm it up and report that time separately.</li><li><strong>Out of memory</strong>: a smaller or more compressed model; close other programs; two models at once may not fit (this server loads a model when it is asked for and keeps it).</li><li><strong>The cost column shows money for a local model</strong>: check that the metrics store gets its prices from the settings (Day 159).</li></ul><details><summary>Hint: reading a table of 5</summary><p>Look at <em>which</em> questions failed and why, not only how many. A wrong citation, a missing word and a wrong refusal are three different problems with three different fixes.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Commit the client, the settings, the script and the document by name: <code>git add src/my_ai_project/local_llm.py src/my_ai_project/settings.py compare_models.py docs/model-comparison.md</code>, <code>git status</code>, then <code>git commit -m &quot;Add a local model writer and compare it with the stand-in&quot;</code>. Then the 10-minute reflection: what worked, what broke, what you would change. Tag the checkpoint: <code>git tag m14-checkpoint</code>.</p></section>
+<section><h2><span class="n">8</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does the comparison keep retrieval and prompt the same for every model?</li><li>What does a cost of 0 per token mean, and what does it not mean?</li><li>Why must the model server stay behind a reverse proxy?</li></ol><details><summary>Answers</summary><ol><li>So that any difference in the results comes from the model and not from something else you changed.</li><li>No fee per token. It does not mean free: the machine, its electricity and your time cost something, and a slower model costs the user&rsquo;s time.</li><li>The server only has basic security and is made for a trusted network; the proxy is the one public door that ends HTTPS, checks who calls and limits the rate.</li></ol></details></section>
+<section id="game-day161" class="game"><h2><span class="n">+</span> &middot; Game: Model Comparison <span class="t">5 min</span></h2>
+<p><p>You read the lab. Outputs are real runs on one laptop: one run per model, temperature 0.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day161-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day161-play">Start the game</button></div>
+<div id="day161-round" hidden><div class="gtop"><span id="day161-num">Round 1</span><span id="day161-score">Score 0</span></div>
+<pre hidden><code id="day161-code"></code></pre><div class="q" id="day161-q"></div><div class="choices" id="day161-opts"></div>
+<div class="fb" id="day161-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day161-next" hidden>Next round</button></p></div>
+<div id="day161-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day161",[{"c": "Five questions: 1.5B 4-bit passed 5 of 5, 3B 4-bit passed 3 of 5", "q": "Is the 1.5B model better?", "o": ["On these five, yes; on 18 they tied at 14. Five is too few", "Yes, always", "No, the 3B is better"], "a": 0, "out": "1.5B 4-bit: 14 of 18     3B 4-bit: 14 of 18", "why": "A bigger model is not automatically better on your task."}, {"c": "The 0.5 billion 4-bit model on the 18 questions", "q": "How many passed?", "o": ["5 of 18: it refused 11 answerable questions", "17", "All"], "a": 0, "out": "passed 5/18   writer time 170 ms per question", "why": "Too small to follow the rules."}, {"c": "The 1.5 billion model in 16 bits", "q": "What did it cost against the 4-bit one?", "o": ["Three times the memory and speed cost: 3.09 GB, 1436 ms; but 17 of 18", "Nothing", "It was faster"], "a": 0, "out": "bf16: 17 of 18, 1436 ms, 3.09 GB    4-bit: 14 of 18, 561 ms, 0.87 GB", "why": "Quality, speed and memory trade against each other."}, {"c": "The stand-in writer scores 5 of 5 on the five questions", "q": "What is it?", "o": ["A test double, not a model: it never replaces one", "A tiny model", "The best model"], "a": 0, "out": "stand-in (NOT a model)   passed 5/5   11 of 18", "why": "It is rigid: 11 of 18, below the 16-bit 1.5B model."}, {"c": "Cost: 240 input and 21 output tokens at 1.00 and 5.00 dollars per million (example prices)", "q": "About how much for 1000 questions?", "o": ["About 0.35 dollars", "35 dollars", "0 dollars"], "a": 0, "out": "240 x 1.00 / 1,000,000 + 21 x 5.00 / 1,000,000 = 0.00035 per question", "why": "Example prices, not a vendor's."}, {"c": "Making the model server public", "q": "What goes in front?", "o": ["A reverse proxy that ends HTTPS, checks who calls and limits the rate", "Nothing", "A bigger model"], "a": 0, "out": "", "why": "General practice; not run in this lab."}],["Comparison rookie", "Comparison regular", "Model comparer"],"Same retrieval and prompt for every model; read which questions failed and why; weigh quality, speed, memory and cost; say how small the sample was; and keep the server behind a proxy.");</script>
+<p><small>Tick &ldquo;Play the Model Comparison game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">9</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a local-model writer chosen by configuration, a fair comparison on your own questions with time, memory and cost, an honest decision based on small numbers, and notes on what a public deployment needs. Module 14 has its checkpoint.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 161 checklist.</li><li>Share one line in the comments: which model would you use, and for what?</li><li><strong>Next:</strong> Sunday is the review of Module 14 and the plan for week 24: the README, the demo and the project pitch.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

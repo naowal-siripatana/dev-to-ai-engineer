@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 159 - Mixed practice: switch the provider to a local model by configuration</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 159 &middot; LEVEL 14: LOCAL MODELS &middot; MIXED PRACTICE</div><h1>Mixed practice: switch the provider to a local model by configuration</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to switch your assistant between a stand-in and a local model by configuration only, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What three things change when you move from one OpenAI-compatible server to another?</li><li>Why is the first call to a model server slow?</li></ol><details><summary>Answers</summary><ol><li>The address, the model name, and sometimes the key.</li><li>The server loads the model into memory on the first call. Warm it up.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Today <span class="t">2 min</span></h2><p><strong>Today you practise without the lesson open.</strong> Goal: <em>the same API answers through the stand-in or through a model on your own machine, chosen by environment variables only, and the metrics say who answered.</em> You write the pieces from a blank file, then compare with the model below.</p><div class="box"><strong>Be clear about what was run.</strong> Everything below ran for real on one laptop: the project&rsquo;s own API, once with the stand-in writer and once with a 1.5 billion model (4-bit) behind <code>mlx_lm.server</code>. No hosted model and no key was used. Ollama and vLLM were not run.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan first <span class="t">5 min</span></h2><p>On paper: which setting says <em>who</em> answers? Which settings does a local provider need that the hosted one does not (and which does it not need)? Where in the code should the choice be made, so that the rest of it never asks &ldquo;which provider?&rdquo; Then open the sketch.</p><details><summary>The plan</summary><p>One new setting for the provider, one for the address, and the model name (it differs between servers). The hosted provider needs a key; the local one needs an address and a name, and a key only if the server asks. The choice is made in <strong>one function</strong> that returns the client; every caller just receives a writer.</p></details></section>
+<section><h2><span class="n">4</span> &middot; Do it from a blank file <span class="t">25 min</span></h2>
+<p>On the branch <code>local-model</code>. Write each piece <strong>before</strong> you open the model. Run <code>pytest</code> and <code>mypy</code> after each one.</p>
+<ol>
+<li><strong>The settings.</strong> Add a provider (two allowed values), an address and the model. Add the rules to <code>from_env</code>: a wrong provider, a missing address, a missing model name, each with a message that names the setting.</li>
+<li><strong>One function that picks the client.</strong> It takes the settings and a model name and returns the client, wrapped in the retry. Use it in <code>get_writer</code>.</li>
+<li><strong>Tests with no server.</strong> A fake transport answers the HTTP call. Check: the request has the system prompt, the model name and a temperature of 0; a busy server (503) is a retryable error and a bad request (400) is not; a server that is down is retryable; the provider is chosen by configuration only; the config errors.</li>
+<li><strong>Run it for real.</strong> Start your server, then your API twice (two terminals, two ports): once with <code>LLM_MODE=fake</code> and once with the four local variables. Ask the same question and a question that should be refused.</li>
+<li><strong>Look at the metrics.</strong> Query the <code>requests</code> table for the model column and the cost column. Is the number in the cost column correct for a model on your laptop?</li>
+</ol>
+<p><strong>Break it on purpose:</strong> start the API with <code>LLM_PROVIDER=openai_compatible</code> and no address, then with <code>LLM_PROVIDER=ollama</code>. Read each message.</p></section>
+<section><h2><span class="n">5</span> &middot; Compare with the model <span class="t">10 min</span></h2><p>Open these only after your own try.</p><details><summary>Piece 1: the settings</summary><pre><code>from collections.abc import Mapping
+import os
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, SecretStr
+
+
+class ConfigError(Exception):
+    &quot;&quot;&quot;A setting is missing or wrong. The message says which one and what to do.&quot;&quot;&quot;
+
+
+class Settings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    llm_mode: Literal[&quot;fake&quot;, &quot;real&quot;] = &quot;fake&quot;
+    anthropic_api_key: SecretStr | None = None   # SecretStr: printing it shows ********
+    llm_provider: Literal[&quot;anthropic&quot;, &quot;openai_compatible&quot;] = &quot;anthropic&quot;   # who answers when LLM_MODE is real
+    llm_base_url: str | None = None   # only for openai_compatible: the address of the server, for example http://localhost:8081/v1
+    llm_model: str = &quot;claude-haiku-4-5-20251001&quot;
+    llm_fallback_model: str | None = None
+    database_url: SecretStr = SecretStr(&quot;postgresql://assistant:assistant@localhost:5433/assistant&quot;)   # has a password in it
+    audit_log: str = &quot;logs/audit.jsonl&quot;
+    price_input_per_million: float | None = None   # US dollars; None = use the default for the provider
+    price_output_per_million: float | None = None
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None) -&gt; &quot;Settings&quot;:
+        env = os.environ if environ is None else environ
+        mode = env.get(&quot;LLM_MODE&quot;, &quot;fake&quot;)
+        if mode not in (&quot;fake&quot;, &quot;real&quot;):
+            raise ConfigError(f&quot;LLM_MODE is {mode!r}: use &#x27;fake&#x27; or &#x27;real&#x27;&quot;)
+        provider = env.get(&quot;LLM_PROVIDER&quot;, &quot;anthropic&quot;)
+        if provider not in (&quot;anthropic&quot;, &quot;openai_compatible&quot;):
+            raise ConfigError(f&quot;LLM_PROVIDER is {provider!r}: use &#x27;anthropic&#x27; or &#x27;openai_compatible&#x27;&quot;)
+        key = env.get(&quot;ANTHROPIC_API_KEY&quot;) or None   # an empty string counts as not set
+        if mode == &quot;real&quot; and provider == &quot;anthropic&quot; and key is None:
+            raise ConfigError(&quot;LLM_MODE is real, but ANTHROPIC_API_KEY is not set&quot;)
+        if mode == &quot;real&quot; and provider == &quot;openai_compatible&quot; and not env.get(&quot;LLM_BASE_URL&quot;):
+            raise ConfigError(&quot;LLM_PROVIDER is openai_compatible, but LLM_BASE_URL is not set&quot;)
+        if mode == &quot;real&quot; and provider == &quot;openai_compatible&quot; and not env.get(&quot;LLM_MODEL&quot;):
+            raise ConfigError(&quot;LLM_PROVIDER is openai_compatible, but LLM_MODEL is not set (the name differs between servers)&quot;)
+        values: dict[str, object] = {&quot;llm_mode&quot;: mode, &quot;llm_provider&quot;: provider, &quot;anthropic_api_key&quot;: key}
+        for field, name in ((&quot;llm_base_url&quot;, &quot;LLM_BASE_URL&quot;), (&quot;llm_model&quot;, &quot;LLM_MODEL&quot;), (&quot;llm_fallback_model&quot;, &quot;LLM_FALLBACK_MODEL&quot;), (&quot;database_url&quot;, &quot;DATABASE_URL&quot;), (&quot;audit_log&quot;, &quot;AUDIT_LOG&quot;), (&quot;price_input_per_million&quot;, &quot;LLM_PRICE_INPUT&quot;), (&quot;price_output_per_million&quot;, &quot;LLM_PRICE_OUTPUT&quot;)):
+            if env.get(name):
+                values[field] = env[name]
+        return cls(**values)   # type: ignore[arg-type]
+
+    def prices(self) -&gt; dict[str, float]:
+        &quot;&quot;&quot;Dollars per million tokens for the cost column. A model on your own machine has no per-token fee, so it is 0 by default
+        (that is NOT the same as free: hardware and electricity cost something). Set LLM_PRICE_INPUT and LLM_PRICE_OUTPUT to override.&quot;&quot;&quot;
+        if self.price_input_per_million is not None and self.price_output_per_million is not None:
+            return {&quot;input&quot;: self.price_input_per_million, &quot;output&quot;: self.price_output_per_million}
+        if self.llm_provider == &quot;openai_compatible&quot;:
+            return {&quot;input&quot;: 0.0, &quot;output&quot;: 0.0}
+        return {&quot;input&quot;: 1.00, &quot;output&quot;: 5.00}   # the EXAMPLE prices of Day 130: put the real ones of your model here
+
+    def api_key(self) -&gt; str:
+        &quot;&quot;&quot;The only place where the secret leaves its wrapper.&quot;&quot;&quot;
+        if self.anthropic_api_key is None:
+            raise ConfigError(&quot;ANTHROPIC_API_KEY is not set&quot;)
+        return self.anthropic_api_key.get_secret_value()</code></pre></details><details><summary>Piece 2: one function picks the client</summary><pre><code>def make_client(settings: Settings, model: str) -&gt; StreamingClient:
+    &quot;&quot;&quot;The one place that decides who answers: the settings choose the provider, the rest of the code does not know.&quot;&quot;&quot;
+    if settings.llm_provider == &quot;openai_compatible&quot;:
+        assert settings.llm_base_url is not None   # from_env has checked it
+        key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else &quot;not-needed&quot;
+        return RetryingClient(OpenAICompatibleClient(base_url=settings.llm_base_url, model=model, api_key=key, timeout=60.0), max_attempts=2)
+    return RetryingClient(AnthropicClient(api_key=settings.api_key(), model=model, timeout=30.0), max_attempts=2)</code></pre><p>The two sets of variables that choose the writer:</p><pre><code># 1. the stand-in (no model at all)
+LLM_MODE=fake
+
+# 2. a model on your own machine
+LLM_MODE=real
+LLM_PROVIDER=openai_compatible
+LLM_BASE_URL=http://127.0.0.1:8081/v1
+LLM_MODEL=mlx-community/Qwen2.5-1.5B-Instruct-4bit</code></pre></details><details><summary>Piece 3: the tests</summary><pre><code>import json
+from typing import Any
+
+import httpx2
+import pytest
+
+from my_ai_project.deps import make_client, get_writer
+from my_ai_project.llm import LlmError, RetryableLlmError
+from my_ai_project.local_llm import OpenAICompatibleClient
+from my_ai_project.reliability import FallbackWriter
+from my_ai_project.settings import ConfigError, Settings
+
+
+def make(handler: Any) -&gt; OpenAICompatibleClient:
+    return OpenAICompatibleClient(&quot;http://local.test/v1&quot;, &quot;tiny-model&quot;, http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+
+
+def reply(text: str) -&gt; dict[str, Any]:
+    return {
+        &quot;id&quot;: &quot;x&quot;, &quot;object&quot;: &quot;chat.completion&quot;, &quot;created&quot;: 1, &quot;model&quot;: &quot;tiny-model&quot;,
+        &quot;choices&quot;: [{&quot;index&quot;: 0, &quot;finish_reason&quot;: &quot;stop&quot;, &quot;message&quot;: {&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: text}}],
+        &quot;usage&quot;: {&quot;prompt_tokens&quot;: 12, &quot;completion_tokens&quot;: 5, &quot;total_tokens&quot;: 17},
+    }
+
+
+def test_the_request_has_the_system_prompt_the_model_name_and_temperature_zero() -&gt; None:
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx2.Request) -&gt; httpx2.Response:
+        seen[&quot;url&quot;] = str(request.url)
+        seen[&quot;body&quot;] = json.loads(request.content)
+        return httpx2.Response(200, json=reply(&quot;E101 means a sensor timeout.&quot;))
+
+    assert make(handler).complete(&quot;What is E101?&quot;, &quot;Be brief.&quot;) == &quot;E101 means a sensor timeout.&quot;
+    assert seen[&quot;url&quot;] == &quot;http://local.test/v1/chat/completions&quot;
+    assert seen[&quot;body&quot;][&quot;model&quot;] == &quot;tiny-model&quot;
+    assert seen[&quot;body&quot;][&quot;temperature&quot;] == 0
+    assert seen[&quot;body&quot;][&quot;messages&quot;] == [{&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;Be brief.&quot;}, {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is E101?&quot;}]
+
+
+def test_a_busy_server_is_a_retryable_error_and_a_bad_request_is_not() -&gt; None:
+    with pytest.raises(RetryableLlmError):
+        make(lambda request: httpx2.Response(503, json={&quot;error&quot;: {&quot;message&quot;: &quot;busy&quot;}})).complete(&quot;hi&quot;)
+    with pytest.raises(LlmError) as err:
+        make(lambda request: httpx2.Response(400, json={&quot;error&quot;: {&quot;message&quot;: &quot;bad&quot;}})).complete(&quot;hi&quot;)
+    assert not isinstance(err.value, RetryableLlmError)
+
+
+def test_a_server_that_is_not_running_is_a_retryable_error() -&gt; None:
+    def handler(request: httpx2.Request) -&gt; httpx2.Response:
+        raise httpx2.ConnectError(&quot;connection refused&quot;)
+
+    with pytest.raises(RetryableLlmError):
+        make(handler).complete(&quot;hi&quot;)
+
+
+def test_the_provider_is_chosen_by_configuration_only() -&gt; None:
+    local = Settings.from_env({&quot;LLM_MODE&quot;: &quot;real&quot;, &quot;LLM_PROVIDER&quot;: &quot;openai_compatible&quot;, &quot;LLM_BASE_URL&quot;: &quot;http://localhost:8081/v1&quot;, &quot;LLM_MODEL&quot;: &quot;tiny&quot;})
+    assert type(make_client(local, &quot;tiny&quot;).inner).__name__ == &quot;OpenAICompatibleClient&quot;   # type: ignore[attr-defined]
+    hosted = Settings.from_env({&quot;LLM_MODE&quot;: &quot;real&quot;, &quot;ANTHROPIC_API_KEY&quot;: &quot;not-a-real-key&quot;})
+    assert type(make_client(hosted, &quot;m&quot;).inner).__name__ == &quot;AnthropicClient&quot;   # type: ignore[attr-defined]
+
+
+def test_the_local_provider_needs_an_address_and_a_model_name_but_no_key() -&gt; None:
+    with pytest.raises(ConfigError, match=&quot;LLM_BASE_URL is not set&quot;):
+        Settings.from_env({&quot;LLM_MODE&quot;: &quot;real&quot;, &quot;LLM_PROVIDER&quot;: &quot;openai_compatible&quot;, &quot;LLM_MODEL&quot;: &quot;tiny&quot;})
+    with pytest.raises(ConfigError, match=&quot;LLM_MODEL is not set&quot;):
+        Settings.from_env({&quot;LLM_MODE&quot;: &quot;real&quot;, &quot;LLM_PROVIDER&quot;: &quot;openai_compatible&quot;, &quot;LLM_BASE_URL&quot;: &quot;http://x/v1&quot;})
+    with pytest.raises(ConfigError, match=&quot;LLM_PROVIDER is &#x27;ollama&#x27;&quot;):
+        Settings.from_env({&quot;LLM_PROVIDER&quot;: &quot;ollama&quot;})
+    Settings.from_env({&quot;LLM_MODE&quot;: &quot;real&quot;, &quot;LLM_PROVIDER&quot;: &quot;openai_compatible&quot;, &quot;LLM_BASE_URL&quot;: &quot;http://x/v1&quot;, &quot;LLM_MODEL&quot;: &quot;tiny&quot;})
+
+
+def test_get_writer_builds_a_fallback_writer_for_the_local_provider(monkeypatch: pytest.MonkeyPatch) -&gt; None:
+    for name, value in {&quot;LLM_MODE&quot;: &quot;real&quot;, &quot;LLM_PROVIDER&quot;: &quot;openai_compatible&quot;, &quot;LLM_BASE_URL&quot;: &quot;http://localhost:8081/v1&quot;, &quot;LLM_MODEL&quot;: &quot;tiny&quot;}.items():
+        monkeypatch.setenv(name, value)
+    assert isinstance(get_writer(), FallbackWriter)
+
+
+def test_a_local_model_has_no_per_token_price_unless_you_set_one() -&gt; None:
+    assert Settings.from_env({}).prices() == {&quot;input&quot;: 1.0, &quot;output&quot;: 5.0}   # the examples of Day 130
+    local = {&quot;LLM_MODE&quot;: &quot;real&quot;, &quot;LLM_PROVIDER&quot;: &quot;openai_compatible&quot;, &quot;LLM_BASE_URL&quot;: &quot;http://x/v1&quot;, &quot;LLM_MODEL&quot;: &quot;tiny&quot;}
+    assert Settings.from_env(local).prices() == {&quot;input&quot;: 0.0, &quot;output&quot;: 0.0}
+    assert Settings.from_env({**local, &quot;LLM_PRICE_INPUT&quot;: &quot;0.2&quot;, &quot;LLM_PRICE_OUTPUT&quot;: &quot;0.4&quot;}).prices() == {&quot;input&quot;: 0.2, &quot;output&quot;: 0.4}</code></pre></details><details><summary>Piece 4: the same API, two writers (run for real)</summary><div class="out"><b>You should see</b><br>stand-in:&nbsp;&nbsp;&nbsp;&nbsp; Calibrate the sensor once a month [manual-calibration#0].<br>local model:&nbsp;&nbsp;You should calibrate the sensor once a month according to the calibration guide. [manual-calibration#0]<br>local model:&nbsp;&nbsp;(Where can I buy a coffee?)&nbsp;&nbsp;I could not find that in the knowledge base.&nbsp;&nbsp; refused: True, no sources</div><div class="out"><b>You should see</b><br>stand-in&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 41 requests<br>cache&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 3 requests<br>mlx-community/Qwen2.5-1.5B-Instruct-4bit&nbsp;&nbsp;&nbsp;&nbsp;2 requests&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(the model column says who answered)</div><p>The local model refused the coffee question by the rule of your prompt, with no sources, as it should.</p></details><details><summary>Break it: the config errors</summary><div class="out"><b>You should see</b><br>LLM_PROVIDER is openai_compatible, but LLM_BASE_URL is not set<br>LLM_PROVIDER is openai_compatible, but LLM_MODEL is not set (the name differs between servers)<br>LLM_PROVIDER is 'ollama': use 'anthropic' or 'openai_compatible'</div><p>The API refuses to start with a wrong setting, with a message that names it.</p></details><details><summary>Piece 5: the cost column, and a bug it showed</summary><p>The first run stored this (run for real):</p><div class="out"><b>You should see</b><br>model&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;&nbsp;output&nbsp;&nbsp;cost_usd<br>mlx-community/Qwen2.5-1.5B-Instruct-4bit&nbsp;&nbsp;&nbsp;&nbsp; 220&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;22&nbsp;&nbsp;0.000330&nbsp;&nbsp;&nbsp;&nbsp; &lt;- the example API price, applied to a model on a laptop<br>mlx-community/Qwen2.5-1.5B-Instruct-4bit&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0&nbsp;&nbsp;0.000000&nbsp;&nbsp;&nbsp;&nbsp; (refused before the model: no tokens)</div><p>The cost used the <em>example</em> price list of Day 130 for a model that has no price per token. The dashboard would have shown money for a laptop. The fix is a price list that comes from the settings, with 0 as the default for a local provider. (0 means no fee per token. It does not mean free: the laptop, its electricity and your time cost something.)</p><pre><code>    def prices(self) -&gt; dict[str, float]:
+        &quot;&quot;&quot;Dollars per million tokens for the cost column. A model on your own machine has no per-token fee, so it is 0 by default
+        (that is NOT the same as free: hardware and electricity cost something). Set LLM_PRICE_INPUT and LLM_PRICE_OUTPUT to override.&quot;&quot;&quot;
+        if self.price_input_per_million is not None and self.price_output_per_million is not None:
+            return {&quot;input&quot;: self.price_input_per_million, &quot;output&quot;: self.price_output_per_million}
+        if self.llm_provider == &quot;openai_compatible&quot;:
+            return {&quot;input&quot;: 0.0, &quot;output&quot;: 0.0}
+        return {&quot;input&quot;: 1.00, &quot;output&quot;: 5.00}   # the EXAMPLE prices of Day 130: put the real ones of your model here</code></pre><p>After the fix (run for real):</p><div class="out"><b>You should see</b><br>model&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;input&nbsp;&nbsp;output&nbsp;&nbsp;cost_usd<br>mlx-community/Qwen2.5-1.5B-Instruct-4bit&nbsp;&nbsp;&nbsp;&nbsp; 255&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;20&nbsp;&nbsp;0.000000&nbsp;&nbsp;&nbsp;&nbsp; &lt;- no per-token fee</div></details></section>
+<section><h2><span class="n">6</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Where is the choice of provider made, and why only there?</li><li>Why does the API refuse to start with <code>LLM_PROVIDER=ollama</code>?</li><li>What did the cost column show for the local model before the fix, and why was it wrong?</li></ol><details><summary>Answers</summary><ol><li>In one function (<code>make_client</code>) that takes the settings. The rest of the code receives a writer and never asks which provider it is, so adding a third provider changes one place.</li><li>The value is not one of the allowed ones; failing at start with the name of the setting is better than failing later inside a request.</li><li>A small amount of money, computed with the example price list of an API. A model on your own machine has no per-token price, so the number was invented by the default.</li></ol></details></section>
+<section id="game-day159" class="game"><h2><span class="n">+</span> &middot; Game: Provider Switch <span class="t">5 min</span></h2>
+<p><p>You switch the provider by configuration. Pick the answer, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day159-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day159-play">Start the game</button></div>
+<div id="day159-round" hidden><div class="gtop"><span id="day159-num">Round 1</span><span id="day159-score">Score 0</span></div>
+<pre hidden><code id="day159-code"></code></pre><div class="q" id="day159-q"></div><div class="choices" id="day159-opts"></div>
+<div class="fb" id="day159-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day159-next" hidden>Next round</button></p></div>
+<div id="day159-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day159",[{"c": "LLM_PROVIDER=openai_compatible and no LLM_BASE_URL", "q": "What happens at start?", "o": ["A ConfigError that names LLM_BASE_URL", "It uses the hosted model", "It crashes in a request"], "a": 0, "out": "LLM_PROVIDER is openai_compatible, but LLM_BASE_URL is not set", "why": "Fail early with the name of the setting."}, {"c": "LLM_PROVIDER=ollama", "q": "What does from_env say?", "o": ["LLM_PROVIDER is 'ollama': use 'anthropic' or 'openai_compatible'", "It works", "A warning"], "a": 0, "out": "LLM_PROVIDER is 'ollama': use 'anthropic' or 'openai_compatible'", "why": "Only values the code knows."}, {"c": "Same API, same question 'How often should I calibrate the sensor?'", "q": "Do the stand-in and the local model both cite the right page?", "o": ["Yes: [manual-calibration#0]", "Only the stand-in", "Neither"], "a": 0, "out": "stand-in:    Calibrate the sensor once a month [manual-calibration#0].\nlocal model: You should calibrate the sensor once a month according to the calibration guide. [manual-calibration#0]", "why": "Different words, same grounded citation."}, {"c": "'Where can I buy a coffee?' to the local model through the API", "q": "What came back?", "o": ["The refusal sentence, with no sources", "A shop", "An error"], "a": 0, "out": "I could not find that in the knowledge base.   refused: True, sources: []", "why": "The rule of the prompt worked."}, {"c": "The first run stored cost_usd 0.000330 for the local model", "q": "What was wrong?", "o": ["The example API price list was applied to a model with no per-token fee", "Nothing", "The tokens"], "a": 0, "out": "mlx-community/Qwen2.5-1.5B-Instruct-4bit  220  22  0.000330", "why": "The default invented a price."}, {"c": "After the fix: cost_usd 0.000000 for the local model", "q": "Does 0 mean free?", "o": ["No: no fee per token, but hardware and electricity cost something", "Yes", "It means unknown"], "a": 0, "out": "mlx-community/Qwen2.5-1.5B-Instruct-4bit  255  20  0.000000", "why": "Say it next to the number."}],["Switch rookie", "Switch regular", "Provider switcher"],"One function chooses the client from the settings; wrong settings stop at start with a clear message; the metrics name the model; and a local model has no per-token price, which is not the same as free.");</script>
+<p><small>Tick &ldquo;Play the Provider Switch game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">7</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a provider chosen by configuration only, a client that is built in one place, tests that need no server, a real run through the same API with two writers, and a cost column that no longer invents prices.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 159 checklist.</li><li>Share one line in the comments: what did the metrics say about your local model?</li><li><strong>Next:</strong> Friday is a teach-back: explain VRAM and quantization in 5 sentences.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
