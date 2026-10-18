@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 145 - Mixed practice: health checks and compose up</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 145 &middot; LEVEL 13: DEPLOYMENT &middot; MIXED PRACTICE</div><h1>Mixed practice: health checks and compose up</h1>
+<div class="meta"><span>40 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write health checks and a start order in a Compose file, from a blank file.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What does <code>depends_on</code> without a condition wait for?</li><li>Why does the service reach the database as <code>db</code> and not <code>localhost</code>?</li></ol><details><summary>Answers</summary><ol><li>Only for the other container to <em>start</em>, not to be ready.</li><li><code>localhost</code> is the container itself. The service name is the address on the Compose network.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Today <span class="t">2 min</span></h2><p><strong>Today you practise without the lesson open.</strong> Goal: <em>one command, <code>docker compose up -d --build</code>, starts the database, fills it, and starts the AI service only when both are ready.</em> You write the pieces from a blank file, then compare with the model below.</p><div class="box"><strong>Be clear about what was run.</strong> No container was started for this lesson (the Docker engine on the author&rsquo;s laptop did not respond). Checked for real: the files with <code>docker compose config</code>, two error messages, and the health command with exit codes 0 and 1. That a service really waits for <code>healthy</code> is standard Compose behaviour, and you will see it on your own machine.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan first <span class="t">5 min</span></h2><p>Draw the order on paper before you write a line. Who must be ready before whom? Which part runs once and stops? Then open the sketch.</p><details><summary>The order</summary><pre><code>db        healthy (pg_isready says yes)
+ingest    starts when db is healthy, fills the table, exits 0
+ai        starts when ingest has exited 0, then is healthy when /health answers
+gateway   starts when ai is healthy
+web       starts when gateway has started</code></pre></details></section>
+<section><h2><span class="n">4</span> &middot; Do it from a blank file <span class="t">25 min</span></h2>
+<p>On the branch <code>compose</code>, in <code>compose.yaml</code>. Write each piece <strong>before</strong> you open the model. Run <code>docker compose config -q</code> after each one: it needs no engine.</p>
+<ol>
+<li><strong>A health check for the database.</strong> The program that asks PostgreSQL is <code>pg_isready</code>. It exits 0 when the server accepts connections. Give it an interval of 3 seconds and 15 tries.</li>
+<li><strong>A one-off ingest service.</strong> The same image as the AI service, with the command <code>python ingest.py</code>, that is not restarted when it stops, and starts only when the database is <em>healthy</em>.</li>
+<li><strong>The AI service waits for the ingest to finish with success.</strong> There is a condition for a service that runs and exits.</li>
+<li><strong>The health check of the AI service itself.</strong> It belongs in the Dockerfile as <code>HEALTHCHECK</code>. A slim image has no <code>curl</code>: use the Python one-liner that exits 0 or 1.</li>
+<li><strong>Run it.</strong> <code>docker compose up -d --build</code>, then <code>docker compose ps</code>: what states do you see, and in what order do they change?</li>
+</ol>
+<p><strong>Break it on purpose:</strong> misspell a condition (<code>service_healty</code>), and point <code>depends_on</code> at a service that does not exist. Run <code>docker compose config</code> each time and read the message.</p></section>
+<section><h2><span class="n">5</span> &middot; Compare with the model <span class="t">10 min</span></h2><p>Open these only after your own try. Piece 1, the database check (note the doubled dollar sign: Compose would otherwise fill the variable in <em>itself</em>, before the shell in the container sees it):</p><details><summary>Piece 1</summary><pre><code>  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the file .env}
+    healthcheck:
+      test: [&quot;CMD-SHELL&quot;, &quot;pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}&quot;]
+      interval: 3s
+      timeout: 3s
+      retries: 15</code></pre></details><details><summary>Pieces 2 and 3</summary><pre><code>  ingest:   # runs once, fills the table, and stops
+    build: ./python-service
+    command: [&quot;python&quot;, &quot;ingest.py&quot;]
+    restart: &quot;no&quot;
+    depends_on:
+      db:
+        condition: service_healthy
+
+  ai:
+    build: ./python-service
+    depends_on:
+      ingest:
+        condition: service_completed_successfully</code></pre><p>What Compose resolves from it (run for real, with the engine off):</p><div class="out"><b>You should see</b><br>&nbsp;&nbsp;ai:<br>&nbsp;&nbsp;&nbsp;&nbsp;depends_on:<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ingest:<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;condition: service_completed_successfully<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;required: true<br>&nbsp;&nbsp;ingest:<br>&nbsp;&nbsp;&nbsp;&nbsp;depends_on:<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;db:<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;condition: service_healthy<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;required: true<br>&nbsp;&nbsp;(from docker compose config, which also fills in required: true)</div></details><details><summary>Piece 4</summary><pre><code>HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
+  CMD [&quot;python&quot;, &quot;-c&quot;, &quot;import urllib.request, sys; sys.exit(0 if urllib.request.urlopen(&#x27;http://localhost:8000/health&#x27;, timeout=3).status == 200 else 1)&quot;]</code></pre><p>The command, against a local server that was up and then stopped (run for real, outside Docker):</p><div class="out"><b>You should see</b><br>service up:    exit code 0<br>service down:  exit code 1</div><p>The <code>start-period</code> gives a slow start (loading the model) time before failures count.</p></details><details><summary>Piece 5</summary><pre><code>docker compose up -d --build
+docker compose ps
+docker compose logs ingest
+docker compose logs ai</code></pre><p>The output is not shown, because no container was started for this lesson. Expect <code>db</code> to be <code>healthy</code> first, <code>ingest</code> to end as <code>Exited (0)</code>, and <code>ai</code> to move from <code>starting</code> to <code>healthy</code>. If yours differs, <code>logs</code> says why.</p></details><details><summary>Break it</summary><p>The two errors, run for real:</p><div class="out"><b>You should see</b><br>validating <path>/compose.yaml: services.ingest.depends_on.db.condition value must be one of 'service_started', 'service_healthy', 'service_completed_successfully'</div><div class="out"><b>You should see</b><br>service "web" depends on undefined service "gatway": invalid compose project</div></details><p>Both stop at <code>config</code>, before anything is started. That is why you run it first.</p></section>
+<section><h2><span class="n">6</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What is the difference between <code>service_started</code>, <code>service_healthy</code> and <code>service_completed_successfully</code>?</li><li>Why is the ingest a separate service and not part of the AI service?</li><li>What does <code>start-period</code> in a health check do?</li></ol><details><summary>Answers</summary><ol><li>Started: the container is running. Healthy: its health check passes. Completed successfully: it ran and exited with code 0.</li><li>It runs once and stops, while the AI service runs for ever and may restart. Filling the table on every restart would be slow and wrong.</li><li>Failures during that time do not count, so a service that needs a long time to start is not marked unhealthy.</li></ol></details></section>
+<section id="game-day145" class="game"><h2><span class="n">+</span> &middot; Game: Start Order <span class="t">5 min</span></h2>
+<p><p>You decide who waits for whom. The messages are from the real docker compose config.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day145-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day145-play">Start the game</button></div>
+<div id="day145-round" hidden><div class="gtop"><span id="day145-num">Round 1</span><span id="day145-score">Score 0</span></div>
+<pre hidden><code id="day145-code"></code></pre><div class="q" id="day145-q"></div><div class="choices" id="day145-opts"></div>
+<div class="fb" id="day145-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day145-next" hidden>Next round</button></p></div>
+<div id="day145-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day145",[{"c": "depends_on: [db] with no condition", "q": "What does ai wait for?", "o": ["Only for db to start, not to be ready", "For db to be healthy", "Nothing"], "a": 0, "out": "", "why": "Started is not ready."}, {"c": "condition: service_healthy", "q": "What must be true?", "o": ["The health check of that service passes", "It has exited", "It has been started"], "a": 0, "out": "db:\n  condition: service_healthy\n  required: true", "why": "The health check is the contract."}, {"c": "ingest runs python ingest.py and exits", "q": "Which condition does ai use for it?", "o": ["service_completed_successfully", "service_healthy", "service_started"], "a": 0, "out": "ingest:\n  condition: service_completed_successfully", "why": "A one-off job finishes with exit code 0."}, {"c": "condition: service_healty (a typo)", "q": "What does config say?", "o": ["The value must be one of service_started, service_healthy, service_completed_successfully", "Nothing, it starts", "A warning"], "a": 0, "out": "services.ingest.depends_on.db.condition value must be one of 'service_started', 'service_healthy', 'service_completed_successfully'", "why": "Check before you start."}, {"c": "depends_on: - gatway (a typo)", "q": "What is the result?", "o": ["service \"web\" depends on undefined service \"gatway\": invalid compose project", "web starts without it", "A new service is created"], "a": 0, "out": "service \"web\" depends on undefined service \"gatway\": invalid compose project", "why": "A name that does not exist is an error."}, {"c": "pg_isready -U $${POSTGRES_USER}", "q": "Why two dollar signs?", "o": ["Compose would otherwise fill the variable in itself; $$ passes one $ to the shell in the container", "A typo", "It doubles the value"], "a": 0, "out": "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}", "why": "The shell in the container reads its own environment."}],["Order rookie", "Order regular", "Start-order keeper"],"Started is not ready: use a health check for a service that runs, completed successfully for a one-off job, and let docker compose config catch the typos before anything starts.");</script>
+<p><small>Tick &ldquo;Play the Start Order game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">7</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a start order written in a file instead of in your head: a database check, a one-off ingest, a service that waits for both, and two errors you can recognise before anything starts.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 145 checklist.</li><li>Share one line in the comments: which state did you watch change in <code>compose ps</code>?</li><li><strong>Next:</strong> Friday is a teach-back: explain image versus container in 5 sentences.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 142 - Docker for the Python AI service</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 142 &middot; LEVEL 13: DEPLOYMENT</div><h1>Docker for the Python AI service</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write a Dockerfile for the Python service, build and run one image, and say why the order of its layers and the host address matter.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Last Sunday you counted the terminals and commands that start your four parts. What was the number, and what do you want it to be?</li><li>Why does your Python service read <code>DATABASE_URL</code> from the environment and not from the code?</li></ol><details><summary>Answers</summary><ol><li>Your own number (for example four terminals and six commands). The goal of this module is one command.</li><li>The address and the password change between your laptop and any other place the service runs. Code that reads them from the environment can run in both without an edit.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>&ldquo;It works on my machine.&rdquo; Your service needs Python 3.12, 191 MB of packages and a 64 MB model file. A friend has Python 3.9 and no uv. How do you send them <em>your machine</em> and not a list of steps?</strong></p><details><summary>Guess first, then open</summary><p>You send a <strong>box</strong> with the Python, the packages, the model and your code already inside. That box is a Docker <strong>image</strong>. When you start it, the running copy is a <strong>container</strong>. Today you write the recipe for the box.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<div class="box"><strong>Be clear about what was run.</strong> The Docker engine on the author&rsquo;s laptop did not respond, and the disk was too full to pull images, so the image of this lesson was <strong>never built</strong> and no container was started. What was run for real is every step of the recipe by hand, outside Docker: the same <code>uv</code> commands, the same model download and the same server, with the sizes and outputs shown below. The <code>docker build</code> and <code>docker run</code> commands are standard, but their output is <strong>not</strong> shown, because it was never produced. If your build fails, the error message is the lesson: read it and tell us.</div>
+<h3>Piece 1: image and container</h3>
+<p>An <strong>image</strong> is a read-only package: a small Linux system, your files and your settings. A <strong>container</strong> is one running copy of an image. You can start ten containers from one image, and deleting a container does not delete the image. Analogy: the image is a recipe card with the ingredients; the container is the dish you cooked from it today.</p>
+<h3>Piece 2: a Dockerfile is a list of layers</h3>
+<p>Each line of a <code>Dockerfile</code> that changes files makes a <strong>layer</strong>. Docker keeps the layers it has built before and reuses them while nothing above has changed. So the order matters: put what changes <em>rarely</em> (the list of packages) first and what changes <em>often</em> (your code) last. A <strong>multi-stage</strong> build uses one stage to install and build and a second, clean stage that only copies the result: the tools stay behind and the final image is smaller.</p>
+<h3>Piece 3: a container has its own network and its own user</h3>
+<p>Inside a container, <code>127.0.0.1</code> means <em>that container only</em>. A server that listens on <code>127.0.0.1</code> cannot be reached through <code>-p 8000:8000</code>; it must listen on <code>0.0.0.0</code> (all addresses). And a process should not run as <code>root</code> inside the box: create a plain user and switch to it with <code>USER</code>.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> a multi-stage Dockerfile is the same idea as <code>dotnet publish</code>: the SDK compiles, and only the output goes on a smaller runtime. The Python stage plays the SDK, the second stage plays <code>aspnet</code>. On Day 147 you write the real .NET one.</div>
+<div class="box cap"><strong>Capstone:</strong> this is the first of three images (Python, gateway, page). One command will start all of them on Saturday.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. The Dockerfile for the service sits next to <code>pyproject.toml</code>, in the project folder. Four things to look for: two stages; the packages before the code; <code>--no-editable</code>; and <code>0.0.0.0</code> with a non-root user.</p><pre><code># syntax=docker/dockerfile:1
+
+# ---- stage 1: build the environment (this stage is thrown away) ----
+FROM python:3.12-slim AS build
+COPY --from=ghcr.io/astral-sh/uv:0.12.23 /uv /usr/local/bin/uv
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv
+WORKDIR /app
+# 1. only the files that decide the dependencies: this layer is cached until they change
+COPY pyproject.toml uv.lock README.md ./
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
+# 2. then the code, installed as a real package (--no-editable): an editable install points at /app/src, which the last stage does not have
+COPY src ./src
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable
+# 3. bake the embedding model into the image, so that no container downloads 64 MB at start
+ENV FASTEMBED_CACHE_PATH=/opt/models
+RUN /opt/venv/bin/python -c &quot;from fastembed import TextEmbedding; TextEmbedding(&#x27;BAAI/bge-small-en-v1.5&#x27;)&quot;
+
+# ---- stage 2: the image that runs ----
+FROM python:3.12-slim
+RUN useradd --create-home --uid 10001 app &amp;&amp; mkdir /data &amp;&amp; chown app /data
+COPY --from=build /opt/venv /opt/venv
+COPY --from=build /opt/models /opt/models
+WORKDIR /app
+COPY data/kb ./data/kb
+COPY ingest.py ./
+ENV PATH=/opt/venv/bin:$PATH FASTEMBED_CACHE_PATH=/opt/models PYTHONUNBUFFERED=1 AUDIT_LOG=/data/audit.jsonl
+USER app
+EXPOSE 8000
+# no curl in a slim image: the health check is a tiny Python call. Exit code 0 = healthy, 1 = not.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
+  CMD [&quot;python&quot;, &quot;-c&quot;, &quot;import urllib.request, sys; sys.exit(0 if urllib.request.urlopen(&#x27;http://localhost:8000/health&#x27;, timeout=3).status == 200 else 1)&quot;]
+# 0.0.0.0, not 127.0.0.1: inside a container, 127.0.0.1 is reachable only from inside that container
+CMD [&quot;uvicorn&quot;, &quot;my_ai_project.api:app&quot;, &quot;--host&quot;, &quot;0.0.0.0&quot;, &quot;--port&quot;, &quot;8000&quot;]</code></pre><p>A <code>.dockerignore</code> keeps what must not go into the image out of the build (the repository history, the virtual environment, caches, tests, and above all <code>.env</code>):</p><pre><code>.git
+.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+tests
+reports
+logs
+docs
+.env
+*.pyc</code></pre><p>Build, run and call it (the standard commands; the output is not shown, see the box in section 3):</p><pre><code>docker build -t pumpguard-ai python-service
+docker run --rm -p 8000:8000 -e DATABASE_URL=postgresql://assistant:change-me@host.docker.internal:5433/assistant pumpguard-ai
+curl http://localhost:8000/health</code></pre><p>What <em>was</em> run for real, step by step outside Docker. The environment and the model, the two big things in the image:</p><div class="out"><b>You should see</b><br>no-dev environment (uv sync --frozen --no-dev): 191 MB, pytest and pgserver are not in it, the app imports
+embedding model cache (BAAI/bge-small-en-v1.5): 64 MB</div><p><code>pytest</code> and the throwaway database package are absent from the 191 MB: they sit in the <code>dev</code> group, not in the image. And the reason for <code>--no-editable</code>, from a real run:</p><div class="out"><b>You should see</b><br>editable install (uv sync):<br>&nbsp;&nbsp;python -c "import my_ai_project; print(my_ai_project.__file__)"&nbsp;&nbsp; (run from /)<br>&nbsp;&nbsp;&lt;scratch>/proj/src/my_ai_project/__init__.py&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &lt;- points back at the source folder<br><br>--no-editable:<br>&nbsp;&nbsp;&lt;scratch>/venv-noeditable/lib/python3.12/site-packages/my_ai_project/__init__.py&nbsp;&nbsp; &lt;- a real copy inside the environment</div><p>The second stage copies only <code>/opt/venv</code>. With an editable install it would copy a file that says &ldquo;my code is in <code>/app/src</code>&rdquo;, a folder the second stage does not have. And the binding, from a real run on a laptop:</p><div class="out"><b>You should see</b><br>uvicorn --host 127.0.0.1 --port 8041<br>&nbsp;&nbsp;curl http://127.0.0.1:8041/health&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> HTTP 200<br>&nbsp;&nbsp;curl http://&lt;this machine's LAN address>:8041/health&nbsp;&nbsp;-> connection refused<br><br>uvicorn --host 0.0.0.0 --port 8042<br>&nbsp;&nbsp;curl http://127.0.0.1:8042/health&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> HTTP 200<br>&nbsp;&nbsp;curl http://&lt;this machine's LAN address>:8042/health&nbsp;&nbsp;-> HTTP 200</div><p>The health command used in the Dockerfile (a Python one-liner, because a slim image has no <code>curl</code>), run against a running and a stopped service:</p><div class="out"><b>You should see</b><br>service up:&nbsp;&nbsp;&nbsp;&nbsp;exit code 0<br>service down:&nbsp;&nbsp;exit code 1</div></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>python-service</code> (your <code>my-ai-project</code>), on a branch: <code>git switch -c docker</code>. You need Docker Desktop (or another Docker engine) running. Check with <code>docker version</code>: if it hangs, restart Docker and try again. If you cannot run Docker today, do steps 1 and 4 on paper and read the lesson for the rest: nothing is lost.</p>
+<h3><span class="step">Step 1</span> Copy and build</h3>
+<p>Add the <code>Dockerfile</code> and the <code>.dockerignore</code>. Move <code>pgserver</code> from the dependencies to the <code>dev</code> group of <code>pyproject.toml</code> and run <code>uv lock</code>, so the image does not carry a test database. Then run <code>docker build -t pumpguard-ai .</code>. The first build is slow: it downloads the base image, the packages and the model.</p>
+<h3><span class="step">Step 2</span> Run it</h3>
+<p>Run the container with the port open and a <code>DATABASE_URL</code> (the database of Day 60 on port 5433; from inside a container the laptop is <code>host.docker.internal</code>). Call <code>/health</code>. Then run <code>docker ps</code> and <code>docker images</code> and find the container and the image: which is which?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Change <code>--host 0.0.0.0</code> to <code>--host 127.0.0.1</code>, rebuild, run and call <code>/health</code> again. <strong>Predict first:</strong> will it answer? Read what you get, then put it back. (On the laptop, outside Docker, the same change made the machine&rsquo;s own network address refuse the connection.)</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Prove that the order of layers matters. Edit one line of a <code>.py</code> file and build again: it should take seconds, because the package layers are reused. Then try the slow order from Stuck, edit the same file, and build again. Write down both times. Finally commit: <code>git add Dockerfile .dockerignore pyproject.toml uv.lock</code> and <code>git commit -m &quot;Add a Dockerfile for the AI service&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The build cannot reach the Docker engine</strong> (it hangs or says it cannot connect): Docker Desktop is not running. Start it and wait until it says it is running.</li><li><strong>&ldquo;no space left on device&rdquo;</strong>: images are big. Run <code>docker system df</code> to see the use, and remove only what you know is yours (<code>docker image rm</code>), never a blanket prune of things you did not create.</li><li><strong><code>ModuleNotFoundError: my_ai_project</code> in the container</strong>: the editable install problem. Check that the second <code>uv sync</code> has <code>--no-editable</code>.</li><li><strong>The container starts and stops at once</strong>: run <code>docker logs</code> with the container name and read the last lines. A missing <code>DATABASE_URL</code> or a database that is not reachable shows there.</li><li><strong>The call to <code>/health</code> gets no answer</strong>: check the host in <code>CMD</code> (<code>0.0.0.0</code>) and the <code>-p 8000:8000</code> on the run command.</li></ul><details><summary>Hint: Step 4</summary><p>Layers are cached from the first line that changed. If the <code>COPY</code> of the code comes before the install, then every edit of the code throws away the install layer as well.</p></details><details><summary>Solution: Step 4 (the two orders)</summary><pre><code># slow: the code comes first, so every edit of a .py file re-installs all the packages
+COPY . .
+RUN uv sync --frozen --no-dev
+
+# fast: the files that decide the packages come first
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
+COPY src ./src</code></pre><p>Your times will differ by machine. The pattern is what matters: the right order rebuilds only the last layer.</p></details><details><summary>Why a slim image has no curl</summary><p>The base image is small on purpose. A health check that needs a tool must carry it. A Python one-liner uses what is already there. The exit code is the whole contract: <code>0</code> healthy, <code>1</code> not.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>What is the difference between an image and a container?</li><li>Why do the packages come before the code in the Dockerfile?</li><li>Why <code>0.0.0.0</code> and not <code>127.0.0.1</code> in the container?</li></ol><details><summary>Answers</summary><ol><li>An image is the read-only package; a container is a running copy of it. Many containers can come from one image.</li><li>Layers are reused until a line changes. The packages change rarely and the code often, so this order keeps the slow layer cached.</li><li>Inside a container <code>127.0.0.1</code> is only that container, so a published port cannot reach it. <code>0.0.0.0</code> listens on every address of the container.</li></ol></details></section>
+<section id="game-day142" class="game"><h2><span class="n">+</span> &middot; Game: Image or Container <span class="t">5 min</span></h2>
+<p><p>You read a Docker case. Pick the answer. Outputs shown are from runs outside Docker; the image itself was not built.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day142-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day142-play">Start the game</button></div>
+<div id="day142-round" hidden><div class="gtop"><span id="day142-num">Round 1</span><span id="day142-score">Score 0</span></div>
+<pre hidden><code id="day142-code"></code></pre><div class="q" id="day142-q"></div><div class="choices" id="day142-opts"></div>
+<div class="fb" id="day142-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day142-next" hidden>Next round</button></p></div>
+<div id="day142-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day142",[{"c": "You run the same image three times", "q": "How many images and how many containers?", "o": ["One image, three containers", "Three images", "One of each"], "a": 0, "out": "", "why": "A container is a running copy; many copies can come from one image."}, {"c": "uvicorn --host 127.0.0.1 --port 8041, then a call to the machine's network address", "q": "What happened (run for real, outside Docker)?", "o": ["Connection refused", "HTTP 200", "A redirect"], "a": 0, "out": "127.0.0.1:8041 -> HTTP 200\n<LAN address>:8041 -> connection refused", "why": "A server on 127.0.0.1 answers only from inside. In a container, use 0.0.0.0."}, {"c": "uvicorn --host 0.0.0.0 --port 8042", "q": "Which addresses answer?", "o": ["Both 127.0.0.1 and the network address", "Only 127.0.0.1", "Neither"], "a": 0, "out": "127.0.0.1:8042 -> HTTP 200\n<LAN address>:8042 -> HTTP 200", "why": "0.0.0.0 means every address of the machine, or of the container."}, {"c": "COPY . . comes before the install of the packages", "q": "What does a one-line edit of a .py file cost?", "o": ["A full re-install: the cached layer is thrown away", "Nothing", "Only the last line"], "a": 0, "out": "", "why": "Put what changes rarely first, so the slow layer stays cached."}, {"c": "An editable install in the first stage, then COPY of /opt/venv to the last stage", "q": "What does import my_ai_project find?", "o": ["A path to the source folder that the last stage does not have", "The copied package", "Nothing, always"], "a": 0, "out": "editable:     <scratch>/proj/src/my_ai_project/__init__.py\n--no-editable: .../site-packages/my_ai_project/__init__.py", "why": "That is why the Dockerfile uses --no-editable."}, {"c": "The health command: a Python one-liner that exits 0 when /health answers 200", "q": "What does it exit with when the service is stopped?", "o": ["1", "0", "It hangs"], "a": 0, "out": "service up:   exit code 0\nservice down: exit code 1", "why": "The exit code is the whole contract."}],["Docker rookie", "Docker regular", "Image builder"],"An image is the package, a container is a running copy; order layers from rare to often changed; listen on 0.0.0.0 inside a container; and copy a real package, not an editable link.");</script>
+<p><small>Tick &ldquo;Play the Image or Container game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a multi-stage Dockerfile for the Python service, a <code>.dockerignore</code> that keeps secrets and junk out, an image that runs as a plain user, and a clear idea of why the order of layers, <code>--no-editable</code> and <code>0.0.0.0</code> matter.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 142 checklist.</li><li>Share one line in the comments: how long did your first build take, and your second?</li><li><strong>Next:</strong> Tuesday is a class day. On Wednesday you write a Compose file that starts the database and the service together.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

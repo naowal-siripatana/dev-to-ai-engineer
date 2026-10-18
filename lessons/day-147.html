@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 147 - Project Lab 21: docker-compose for the whole system</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 147 &middot; LEVEL 13: DEPLOYMENT &middot; PROJECT LAB</div><h1>Project Lab 21: docker-compose for the whole system</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to start the page, the gateway, the Python service and PostgreSQL with one command, with one open port and an honest README.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What are the three conditions of <code>depends_on</code>?</li><li>Why does the page reach the gateway as <code>gateway</code> and not as <code>localhost</code>?</li><li>What was your count of terminals and commands on Day 141?</li></ol><details><summary>Answers</summary><ol><li><code>service_started</code>, <code>service_healthy</code>, <code>service_completed_successfully</code>.</li><li>Inside a container <code>localhost</code> is that container. The service name is the address on the Compose network.</li><li>Your own number. Today it becomes one command.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p><strong>Done looks like:</strong> from a clean checkout, a person copies <code>.env.example</code> to <code>.env</code>, runs <code>docker compose up -d --build</code>, opens <code>http://localhost:8080</code>, asks a question in the page, and gets an answer with sources. Only <strong>one port</strong> is open to the outside. The password is in no committed file. The README says how to start it, what you ran and what you did not.</p><div class="box"><strong>Be clear about what was run.</strong> The Docker engine on the author&rsquo;s laptop did not respond, and the disk was too full to pull images. So <strong>no image was built, no container was started, and the page was never opened through Compose</strong>. What was checked for real: the whole Compose file with <code>docker compose config</code> (the Docker command-line tool reads and resolves it without an engine); each Dockerfile step for the gateway and the page <em>by hand outside Docker</em>; and the gateway taking its Python address from the environment. The nginx file could not be tested at all (no nginx on that machine). This lab is therefore a recipe that is checked as far as it can be, and <strong>your run is the first real one</strong>. If it fails, the log is the lesson: read it, fix it, and tell us what you found.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Draw the four boxes and the arrows before you write a file. Browser to <code>web</code> (nginx, port 80), <code>web</code> to <code>gateway</code> (8080), <code>gateway</code> to <code>ai</code> (8000), <code>ai</code> to <code>db</code> (5432). Which arrow crosses to the outside? Only the first. Then the start order: the database first, then the ingest (once), then the AI service, then the gateway, then the page.</p><p>Three jobs: (1) a Dockerfile for the gateway, (2) a Dockerfile and an nginx file for the page, (3) the Compose file with all four services and the one-off ingest. Checkpoints: after (1) and (2), build each image alone; after (3), <code>docker compose config</code>.</p></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2>
+<h3>Job 1: the gateway image</h3>
+<p>The same two-stage idea as Day 142: the .NET SDK builds, a smaller ASP.NET runtime image runs. Restore comes first, so the packages are cached until the project file changes. <code>gateway/Dockerfile</code>:</p><pre><code># syntax=docker/dockerfile:1
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+# restore first: this layer is cached until the .csproj changes
+COPY AskGateway/AskGateway.csproj AskGateway/
+RUN dotnet restore AskGateway/AskGateway.csproj
+COPY AskGateway/ AskGateway/
+RUN dotnet publish AskGateway/AskGateway.csproj -c Release -o /out --no-restore
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /app
+COPY --from=build /out .
+# the address of the Python service comes from the environment (PythonService__BaseUrl), set by Compose: no address is written in the image
+ENV ASPNETCORE_URLS=http://+:8080
+USER $APP_UID
+EXPOSE 8080
+ENTRYPOINT [&quot;dotnet&quot;, &quot;AskGateway.dll&quot;]</code></pre>
+<p>Two things to notice. The Python address is <strong>not</strong> in the image: the code reads the setting <code>PythonService:BaseUrl</code>, and the environment variable <code>PythonService__BaseUrl</code> overrides it (double underscore for the colon). And the runtime image has no <code>curl</code>, so this service has no health check of its own; the page starts when the gateway has <em>started</em>. <code>gateway/.dockerignore</code>:</p><pre><code>**/bin
+**/obj
+.git
+AskGateway.Tests</code></pre>
+<p>Run for real, outside Docker, the same steps the Dockerfile runs, and then the published program with settings from the environment:</p><div class="out"><b>You should see</b><br>dotnet restore AskGateway/AskGateway.csproj&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> Restored ... AskGateway.csproj<br>dotnet publish AskGateway -c Release -o &lt;out> --no-restore<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> AskGateway -> &lt;out>/<br>ls &lt;out>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> AskGateway.dll, AskGateway.deps.json, AskGateway.runtimeconfig.json, appsettings.json, ...</div><div class="out"><b>You should see</b><br>ASPNETCORE_URLS=http://0.0.0.0:8080 PythonService__BaseUrl=http://localhost:9 dotnet AskGateway.dll<br>&nbsp;&nbsp;info: Microsoft.Hosting.Lifetime[14] Now listening on: http://0.0.0.0:8080<br><br>curl -X POST http://127.0.0.1:8080/api/ask -H 'content-type: application/json' -d '{"question":"hi"}'<br>&nbsp;&nbsp;HTTP 502<br>&nbsp;&nbsp;warn: AskGateway.PythonServiceClient[0] ... python service is not reachable: Connection refused (localhost:9)</div>
+<p>The wrong address (<code>localhost:9</code>) gave a 502 and a log line that names the address: proof that the address came from the environment and that a wrong one is easy to find. In Compose the value is <code>http://ai:8000</code>.</p>
+<h3>Job 2: the page image</h3>
+<p>Node builds the static files, nginx serves them. <code>web/chat-ui/Dockerfile</code>:</p><pre><code># syntax=docker/dockerfile:1
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80</code></pre>
+<p>The nginx file does two things: it serves the page (any unknown path falls back to <code>index.html</code>), and it forwards <code>/api/</code> to the gateway, so the browser only ever talks to <strong>one</strong> address. It also gives the request an id at the edge (<code>$request_id</code> in the <code>X-Request-Id</code> header), the id that Day 128 followed through the logs. <code>web/chat-ui/nginx.conf</code>:</p><pre><code>server {
+    listen 80;
+    root /usr/share/nginx/html;
+
+    # the page: any unknown path falls back to index.html (the page has its own #/ routes)
+    location / {
+        try_files $uri /index.html;
+    }
+
+    # the API: the browser only talks to this address; nginx forwards to the gateway and gives the request an id at the edge
+    location /api/ {
+        proxy_pass http://gateway:8080;
+        proxy_set_header X-Request-Id $request_id;
+        proxy_set_header Host $host;
+    }
+}</code></pre>
+<p><strong>Not tested:</strong> this file was not run, because there was no nginx to run it. Read it carefully, and if the page loads but the question gets a 404 or 502, this is the first place to look. <code>web/chat-ui/.dockerignore</code>:</p><pre><code>node_modules
+dist
+.git</code></pre>
+<p>Run for real, outside Docker, the build steps of the first stage:</p><div class="out"><b>You should see</b><br>npm ci&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-> added 28 packages<br>npm run build&nbsp;&nbsp;&nbsp;&nbsp; -> 18 modules transformed.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; dist/index.html&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0.45 kB<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; dist/assets/index-....css&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.87 kB<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; dist/assets/index-....js&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;225.13 kB<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; built in 261ms</div>
+<h3>Job 3: the Compose file</h3>
+<p>Five services: the database, the one-off ingest, the AI service, the gateway and the page. The ingest and the AI service share one image and one block of settings (a YAML anchor, <code>&amp;ai</code> and <code>&lt;&lt;: *ai</code>), so they cannot drift apart. <code>compose.yaml</code>:</p><pre><code>name: pumpguard
+
+x-ai: &amp;ai   # the same image for the service and for the one-off ingest job
+  build: ./python-service
+  image: pumpguard-ai
+  environment:
+    DATABASE_URL: postgresql://${POSTGRES_USER:-assistant}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-assistant}
+    LLM_MODE: ${LLM_MODE:-fake}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-assistant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the file .env}
+      POSTGRES_DB: ${POSTGRES_DB:-assistant}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./python-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: [&quot;CMD-SHELL&quot;, &quot;pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}&quot;]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    # no &#x27;ports&#x27;: nothing outside needs the database
+
+  ingest:   # runs once, fills the table, and stops
+    &lt;&lt;: *ai
+    command: [&quot;python&quot;, &quot;ingest.py&quot;]
+    restart: &quot;no&quot;
+    depends_on:
+      db:
+        condition: service_healthy
+
+  ai:
+    &lt;&lt;: *ai
+    volumes:
+      - auditlogs:/data
+    depends_on:
+      ingest:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    # the health check is in the image (HEALTHCHECK in the Dockerfile)
+
+  gateway:
+    build: ./gateway
+    environment:
+      PythonService__BaseUrl: http://ai:8000
+    depends_on:
+      ai:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./web/chat-ui
+    ports:
+      - &quot;8080:80&quot;   # the only door to the outside
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  auditlogs:</code></pre>
+<p>Resolved by the real <code>docker compose config</code> (the engine was not needed). The list of services, and the only published port:</p><div class="out"><b>You should see</b><br>docker compose config --services<br>db<br>ingest<br>ai<br>gateway<br>web</div><div class="out"><b>You should see</b><br>&nbsp;&nbsp;web:<br>&nbsp;&nbsp;&nbsp;&nbsp;ports:<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- mode: ingress<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;target: 80<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;published: "8080"<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;protocol: tcp<br>(only the web service has a ports: block in the resolved file; the database, the AI service and the gateway have none)</div>
+<p>And three mistakes, caught before anything starts:</p><div class="out"><b>You should see</b><br>no .env file:<br>&nbsp;&nbsp;error while interpolating services.db.environment.POSTGRES_PASSWORD: required variable POSTGRES_PASSWORD is missing a value: set POSTGRES_PASSWORD in the file .env<br><br>a misspelt condition (service_healty):<br>&nbsp;&nbsp;validating &lt;path>/compose.yaml: services.ingest.depends_on.db.condition value must be one of 'service_started', 'service_healthy', 'service_completed_successfully'<br><br>a service name with a typo in depends_on (gatway):<br>&nbsp;&nbsp;service "web" depends on undefined service "gatway": invalid compose project</div></section>
+<section><h2><span class="n">5</span> &middot; Run it, and write what you ran <span class="t">30 min</span></h2><p>Now the part that was not run. Docker Desktop must be on. Use a clean state, so that you do not trust leftovers: <code>docker compose down -v</code> first, then:</p><pre><code>docker compose up -d --build
+docker compose ps
+curl -X POST http://localhost:8080/api/ask -H &#x27;content-type: application/json&#x27; -d &#x27;{&quot;question&quot;:&quot;What does E104 mean?&quot;}&#x27;
+docker compose logs gateway
+docker compose down</code></pre><p><strong>Predict first:</strong> in what order will <code>docker compose ps</code> show the services, and which one stays <code>Exited (0)</code> on purpose? Then check, in the page and with <code>curl</code>. Output is not shown here, because it was never produced. Compare your <code>ps</code> with the plan: <code>db</code> healthy, <code>ingest</code> exited with 0, <code>ai</code> healthy, <code>gateway</code> and <code>web</code> up.</p><p><strong>Check the outside.</strong> Run <code>docker compose ps</code> again and count the published ports (the <code>PORTS</code> column). Only <code>8080</code> should appear. Try <code>curl http://localhost:8000/health</code> and <code>curl http://localhost:5432</code>: both should fail, on purpose.</p><p><strong>Check the secrets.</strong> Run <code>git status</code> (no <code>.env</code>), <code>git grep -n change-me</code> (only the example file) and <code>docker compose config | grep PASSWORD</code>: it prints your password, which shows why you must never paste that command&rsquo;s output in public.</p><p>Finally write the README section, with the real list of what you ran. Use this shape, and fill in the two lines honestly:</p><pre><code>## Run everything
+
+    cp .env.example .env      # then set your own POSTGRES_PASSWORD
+    docker compose up -d --build
+    open http://localhost:8080
+
+Stop: `docker compose down` (add `-v` to delete the database volume).
+
+What I ran: ...            (write the real list: which commands, on which machine, with which Docker version)
+What I did not run: ...    (for example: the real model, a second machine)</code></pre></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The page loads but a question gets a 502</strong>: the gateway cannot reach the AI service, or nginx cannot reach the gateway. <code>docker compose logs gateway</code> names the address it tried.</li><li><strong>The page loads but a question gets a 404</strong>: check the <code>location /api/</code> block and the trailing slash of <code>proxy_pass</code> in <code>nginx.conf</code>: a slash after the host changes how the path is forwarded.</li><li><strong><code>ai</code> never becomes healthy</strong>: <code>docker compose logs ai</code>. A model that has to download, or a database address with the wrong password, shows there. The health check has a 30 second start period.</li><li><strong><code>ingest</code> exits with an error</strong>: the AI service will not start (that is the condition working). Read its log: usually the database address or password.</li><li><strong>You changed <code>.env</code> and nothing changed</strong>: run <code>docker compose up -d</code> again so the containers are recreated; a database password is set only when the volume is created (use <code>down -v</code> for a clean start).</li><li><strong>The build is slow every time</strong>: look at the order of the <code>COPY</code> lines and at the <code>.dockerignore</code>: if <code>node_modules</code> or <code>.git</code> are copied into the build, every build is slow.</li></ul><details><summary>Hint: a 502 through the page</summary><p>Go one hop at a time. From the host you cannot reach the gateway (no published port), so use <code>docker compose exec web wget -qO- http://gateway:8080/</code> to test the hop from the page container, then the same from the gateway to <code>http://ai:8000/health</code>. Each failed hop tells you which service to read the log of.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Commit the Dockerfiles, the <code>.dockerignore</code> files, <code>nginx.conf</code>, <code>compose.yaml</code>, <code>.env.example</code>, <code>.gitignore</code> and the README: <code>git add</code> by name (not <code>git add .</code>: that is how a <code>.env</code> reaches Git), then <code>git status</code> to be sure, and <code>git commit -m &quot;Start the whole system with docker compose&quot;</code>. Then the 10-minute reflection: what worked, what broke, what you would change. Count your start again: terminals and commands, against Day 141.</p></section>
+<section><h2><span class="n">8</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why does only the <code>web</code> service publish a port?</li><li>Why is the Python address an environment variable in the gateway?</li><li>What did you check for real, and what did you not run?</li></ol><details><summary>Answers</summary><ol><li>Everything else is reached by name on the private network. Fewer open doors means fewer ways in. The database and the AI service need no one outside.</li><li>The address is different in every place it runs (<code>localhost</code> on a laptop, <code>ai</code> in Compose). Settings that change by place belong in the environment, not in the image.</li><li>Your own list. If you cannot name what you did not run, the README is not honest yet.</li></ol></details></section>
+<section id="game-day147" class="game"><h2><span class="n">+</span> &middot; Game: Whole System Check <span class="t">5 min</span></h2>
+<p><p>You read the Compose lab. The outputs are from real runs OUTSIDE Docker (no image was built).</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day147-start"><p>Ready? 7 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day147-play">Start the game</button></div>
+<div id="day147-round" hidden><div class="gtop"><span id="day147-num">Round 1</span><span id="day147-score">Score 0</span></div>
+<pre hidden><code id="day147-code"></code></pre><div class="q" id="day147-q"></div><div class="choices" id="day147-opts"></div>
+<div class="fb" id="day147-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day147-next" hidden>Next round</button></p></div>
+<div id="day147-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day147",[{"c": "ports: appear on web only (8080:80)", "q": "Why is that good?", "o": ["Everything else is reached by name on the private network: fewer open doors", "It is faster", "It is required"], "a": 0, "out": "web:\n  ports:\n    - target: 80\n      published: \"8080\"", "why": "The database and the AI service need no one outside."}, {"c": "docker compose config --services", "q": "How many services in the lab?", "o": ["Five: db, ingest, ai, gateway, web", "Four", "Three"], "a": 0, "out": "db\ningest\nai\ngateway\nweb", "why": "The ingest is a one-off job that stops."}, {"c": "dotnet AskGateway.dll with PythonService__BaseUrl=http://localhost:9", "q": "What does a question return?", "o": ["HTTP 502, and the log names Connection refused (localhost:9)", "HTTP 200", "HTTP 404"], "a": 0, "out": "HTTP 502\nwarn: AskGateway.PythonServiceClient ... python service is not reachable: Connection refused (localhost:9)", "why": "The address came from the environment; a wrong one is easy to see."}, {"c": "In Compose, the gateway's Python address", "q": "What is it?", "o": ["http://ai:8000, the service name and the port inside", "http://localhost:8000", "http://localhost:5432"], "a": 0, "out": "PythonService__BaseUrl: http://ai:8000", "why": "localhost would be the gateway container."}, {"c": "nginx.conf was not run in this lab", "q": "What should the README say?", "o": ["What was run and what was not", "That everything works", "Nothing"], "a": 0, "out": "", "why": "Never claim a run you did not do."}, {"c": "git add .", "q": "What is the risk in a Compose project?", "o": ["A .env file with the password can reach Git", "Nothing", "The build gets slower"], "a": 0, "out": "", "why": "Add files by name, and check git status."}, {"c": "npm ci && npm run build, the first stage of the page image (run outside Docker)", "q": "What did it produce?", "o": ["A dist folder of static files (225 kB of JavaScript)", "A running server", "A container"], "a": 0, "out": "added 28 packages\n18 modules transformed.\ndist/assets/index-....js  225.13 kB\nbuilt in 261ms", "why": "nginx only serves these files; Node is not in the final image."}],["Compose rookie", "Compose regular", "System starter"],"One command, one open port, secrets out of Git, settings from the environment, and a README that says what was run and what was not.");</script>
+<p><small>Tick &ldquo;Play the Whole System Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">9</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> three Dockerfiles, an nginx file, a Compose file with five services where one command starts the whole system and one port is open, a password kept out of Git, and a README that says what was run.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 147 checklist.</li><li>Share one line in the comments: how many commands to start now?</li><li><strong>Next:</strong> Sunday is the review of Module 13 part 1, and the plan for week 22: configuration, secrets and a first CI pipeline.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 144 - Docker Compose: the database and the Python service together</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 144 &middot; LEVEL 13: DEPLOYMENT</div><h1>Docker Compose: the database and the Python service together</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to start the database and the Python service together from one file, with the password kept out of Git.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>What is the difference between an image and a container?</li><li>Why does a container that listens on <code>127.0.0.1</code> not answer a published port?</li></ol><details><summary>Answers</summary><ol><li>The image is the read-only package, the container a running copy.</li><li>Inside a container <code>127.0.0.1</code> is only that container. Listen on <code>0.0.0.0</code>.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>On Monday you started one container by a long <code>docker run</code> line. Your system needs a database, the Python service, the gateway and a page. Do you type four long lines every morning, in the right order, and remember the passwords?</strong></p><details><summary>Guess first, then open</summary><p>You write the lines <em>once</em>, in a file, and Docker Compose reads it: <code>docker compose up</code>. The file also says which part needs which, so the order is not in your head any more.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<div class="box"><strong>Be clear about what was run.</strong> The Docker engine on the author&rsquo;s laptop did not respond, so <strong>no image was built and no container was started</strong>. What was run for real: <code>docker compose config</code> on the exact file below (the Docker command-line tool checks and prints the file without an engine), including the error you get for a missing password. How the services then talk to each other is standard Compose behaviour that was <strong>not</strong> run here. If a command below behaves differently for you, trust your screen, and tell us.</div>
+<h3>Piece 1: one file, many services</h3>
+<p>A <code>compose.yaml</code> lists <strong>services</strong>. Each service is one container made from an image (<code>image:</code>) or from a Dockerfile (<code>build:</code>). Compose puts all of them on one private network.</p>
+<h3>Piece 2: services find each other by name</h3>
+<p>On that network the name of a service is its address. The Python service does not call <code>localhost</code> to reach the database: it calls <code>db</code>. And the port is the one <em>inside</em> the container (5432), not the one you may publish on your laptop. A service with no <code>ports:</code> cannot be reached from your laptop at all, which is exactly right for a database.</p>
+<h3>Piece 3: settings and data live outside the container</h3>
+<p>The password does not go in the file. Compose reads a <code>.env</code> file next to <code>compose.yaml</code> and fills <code>${POSTGRES_PASSWORD}</code>. The <code>.env</code> file stays out of Git (it goes in <code>.gitignore</code>); an <code>.env.example</code> with a fake value is what you commit. And a database inside a container would lose its data when the container is removed, so the data lives in a named <strong>volume</strong> (<code>pgdata</code>) that outlives the container.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> <code>${POSTGRES_PASSWORD}</code> is the same idea as a connection string from <code>appsettings</code> overridden by an environment variable (<code>ConnectionStrings__Db</code>), and a service name as a host name is like a name registered in a service registry.</div>
+<div class="box cap"><strong>Capstone:</strong> today two services (the database and the AI service); on Saturday four, and the one command.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. <code>compose.yaml</code> in the folder that holds <code>python-service</code>:</p><pre><code>name: pumpguard
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-assistant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the file .env}
+      POSTGRES_DB: ${POSTGRES_DB:-assistant}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./python-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    # no &#x27;ports&#x27;: only the other services need the database, and they reach it by its name, db
+
+  ai:
+    build: ./python-service
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-assistant}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-assistant}
+      LLM_MODE: ${LLM_MODE:-fake}
+    ports:
+      - &quot;8000:8000&quot;   # for today only, so that you can open it from your own machine
+    depends_on:
+      - db
+
+volumes:
+  pgdata:</code></pre><p>Look for: the project <code>name</code>; <code>${POSTGRES_USER:-assistant}</code> (a default if the variable is empty) against <code>${POSTGRES_PASSWORD:?...}</code> (stop with this message if it is empty); <code>@db:5432</code> in the address; a named volume and a bind of <code>init.sql</code> (which only runs the first time the data folder is empty). The <code>.env</code> file, with a fake value (the example file is committed, the real one is not):</p><pre><code>POSTGRES_PASSWORD=change-me-before-you-share-anything
+# LLM_MODE=real
+# ANTHROPIC_API_KEY=</code></pre><pre><code>.env</code></pre><p>Check the file <em>before</em> you start anything. This was run for real, with no engine:</p><div class="out"><b>You should see</b><br>docker compose config --services<br>db<br>ai<br><br>docker compose config -q<br>(no output, exit code 0)</div><p>And without a <code>.env</code> file, the same command refuses to continue and says what to do:</p><div class="out"><b>You should see</b><br>error while interpolating services.db.environment.POSTGRES_PASSWORD: required variable POSTGRES_PASSWORD is missing a value: set POSTGRES_PASSWORD in the file .env</div><p>The commands you will use (the standard ones, output not shown, see the box in section 3):</p><pre><code>docker compose up -d --build
+docker compose ps
+docker compose run --rm ai python ingest.py
+curl http://localhost:8000/health
+docker compose logs ai
+docker compose down</code></pre><pre><code># on your laptop:       postgresql://assistant:...@localhost:5433/assistant
+# inside Compose:       postgresql://assistant:...@db:5432/assistant
+#                                                   ^^ the service name, and the port INSIDE the container</code></pre></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in the folder that contains <code>python-service</code>, on a branch: <code>git switch -c compose</code>. Docker Desktop must be running for steps 2 to 4. Step 1 needs only the Docker command-line tool, so you can do it even when the engine is off.</p>
+<h3><span class="step">Step 1</span> Write and check</h3>
+<p>Add <code>compose.yaml</code>, <code>.env</code> (with your own throwaway password, and never a real one) and <code>.env.example</code>, and put <code>.env</code> in <code>.gitignore</code>. Run <code>docker compose config --services</code> and <code>docker compose config -q</code>. Then run <code>git status</code>: <code>.env</code> must <strong>not</strong> be listed.</p>
+<h3><span class="step">Step 2</span> Start</h3>
+<p>Run <code>docker compose up -d --build</code>, then <code>docker compose ps</code>. Find both services. Fill the table once: <code>docker compose run --rm ai python ingest.py</code>. Call <code>http://localhost:8000/health</code> and ask one question at <code>/docs</code>.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Two breaks, one at a time. First delete the password line from <code>.env</code> and run <code>docker compose config</code>: read the message. Then put it back and change <code>@db:</code> to <code>@localhost:</code> in the address, restart the service and look at <code>docker compose logs ai</code>. <strong>Predict first:</strong> what does &ldquo;localhost&rdquo; mean inside the AI container, and is a database there?</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Does your data survive? Run <code>docker compose down</code>, then <code>up -d</code> again and count the chunks (the ingest prints a count; or ask a question). <strong>Predict first.</strong> Then find out what <code>docker compose down -v</code> does differently, and write one sentence on when you would want each. Commit: <code>git add compose.yaml .env.example .gitignore</code> and <code>git commit -m &quot;Add a Compose file for the database and the AI service&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong><code>required variable POSTGRES_PASSWORD is missing a value</code></strong>: there is no <code>.env</code> next to <code>compose.yaml</code>, or the line is empty. This is the check doing its job.</li><li><strong>The service says the connection was refused</strong>: the database needs a few seconds to start, and <code>depends_on</code> without a condition only waits for the container to <em>start</em>, not to be ready. Tomorrow fixes that with a health check. For today, restart the service.</li><li><strong>Port 8000 or 5433 is already in use</strong>: another program (or your Day 60 database) has it. Stop it, or publish a different port on the left of the colon.</li><li><strong>You changed the password in <code>.env</code> but the database still wants the old one</strong>: the user and password are set only when the data folder is created. Remove the volume (<code>down -v</code>, which deletes the data) and start again.</li></ul><details><summary>Hint: Step 3</summary><p>Inside a container, <code>localhost</code> is that container. The database is another container, with its own network name.</p></details><details><summary>Solution: Step 3</summary><p>The AI container looks for PostgreSQL on its own port 5432, finds nothing and fails to connect; the logs show a connection error to <code>localhost</code>. The service name <code>db</code> is the address that works on the Compose network.</p></details><details><summary>Solution: Step 4</summary><p><code>down</code> removes the containers and the network but keeps the named volume, so the chunks are still there after <code>up</code>. <code>down -v</code> also removes the volumes: the next start is an empty database and <code>init.sql</code> runs again. Use <code>-v</code> when you want a clean start, never when the data matters.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>How does the AI service find the database in Compose?</li><li>Why is the password in <code>.env</code> and not in <code>compose.yaml</code>?</li><li>What does <code>down</code> keep and what does <code>down -v</code> remove?</li></ol><details><summary>Answers</summary><ol><li>By the service name, <code>db</code>, on the network Compose creates, with the port inside the container (5432).</li><li>The Compose file is committed to Git and shared. The <code>.env</code> file stays on one machine and is ignored by Git, and an example file with a fake value shows what to fill in.</li><li><code>down</code> removes containers and the network and keeps the named volumes. <code>down -v</code> removes the volumes too, so the data is gone.</li></ol></details></section>
+<section id="game-day144" class="game"><h2><span class="n">+</span> &middot; Game: Compose Check <span class="t">5 min</span></h2>
+<p><p>You read a Compose case. Pick the answer. The outputs are from the real docker compose config (no engine needed).</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day144-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day144-play">Start the game</button></div>
+<div id="day144-round" hidden><div class="gtop"><span id="day144-num">Round 1</span><span id="day144-score">Score 0</span></div>
+<pre hidden><code id="day144-code"></code></pre><div class="q" id="day144-q"></div><div class="choices" id="day144-opts"></div>
+<div class="fb" id="day144-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day144-next" hidden>Next round</button></p></div>
+<div id="day144-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day144",[{"c": "DATABASE_URL: postgresql://assistant:...@db:5432/assistant", "q": "What is db?", "o": ["The name of the database service on the Compose network", "A file", "The password"], "a": 0, "out": "", "why": "On the Compose network a service name is its address."}, {"c": "The AI container uses @localhost:5432 in the address", "q": "What does localhost mean there?", "o": ["The AI container itself, where no database runs", "The database", "Your laptop"], "a": 0, "out": "", "why": "Inside a container localhost is that container."}, {"c": "No .env file, and ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the file .env}", "q": "What does docker compose config say?", "o": ["It stops and prints your message", "It uses an empty password", "It starts anyway"], "a": 0, "out": "error while interpolating services.db.environment.POSTGRES_PASSWORD: required variable POSTGRES_PASSWORD is missing a value: set POSTGRES_PASSWORD in the file .env", "why": "A required variable fails early, with a clear message."}, {"c": "docker compose config --services", "q": "What does it list for the file of the lesson?", "o": ["db and ai", "Only ai", "Nothing, the engine is off"], "a": 0, "out": "db\nai", "why": "It reads the file; no engine needed."}, {"c": "The .env file", "q": "Where does it go?", "o": ["In .gitignore; an .env.example with a fake value is committed", "Into Git", "Into the image"], "a": 0, "out": "", "why": "A secret that reaches Git is public for good."}, {"c": "docker compose down, then up again", "q": "What happens to the data in the named volume?", "o": ["It stays; only down -v removes it", "It is lost", "It is copied twice"], "a": 0, "out": "", "why": "Containers are disposable; a named volume outlives them. (Standard behaviour, not run for this lesson.)"}],["Compose rookie", "Compose regular", "Service wirer"],"A service is reached by name; a required variable stops early; secrets stay out of Git; and a named volume keeps data when containers go.");</script>
+<p><small>Tick &ldquo;Play the Compose Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a Compose file with two services, a database that is only reachable by name, a password that stays out of Git, a data volume, and a check that stops with a clear message when the password is missing.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 144 checklist.</li><li>Share one line in the comments: what did <code>localhost</code> do inside your container?</li><li><strong>Next:</strong> Thursday is mixed practice: health checks, so that the service waits until the database is ready.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
