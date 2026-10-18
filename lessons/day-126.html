@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 126 - Project Lab 18: a guardrail and an audit log</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 126 &middot; LEVEL 11: SECURITY &middot; PROJECT LAB</div><h1>Project Lab 18: a guardrail and an audit log</h1>
+<div class="meta"><span>2.5 h</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to show a blocked tool call and its audit log line, with tests, and state the security gap that is left.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">5 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Name the three levers that limit excessive agency.</li><li>Why is a person who approves every action not enough?</li></ol><details><summary>Answers</summary><ol><li>Permissions (what it may do), autonomy (how much without asking), blast radius (how much damage in one run, for example a budget).</li><li>People get tired and click yes. A budget and least privilege cover the case where they do.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; The goal <span class="t">5 min</span></h2><p>This is the <strong>Module 11 checkpoint</strong>: <strong>one guardrail and one audit log</strong>. By the end:</p><ul><li><strong>The guardrail</strong>: an allow-list for tool arguments. A call with an unexpected tool, an unexpected argument or a value that does not match is <em>blocked before it runs</em>, with a clear error the model can read.</li><li><strong>The audit log</strong>: one JSON line for every question and every tool call, with the role, the time, the arguments, the outcome (<code>ok</code>, <code>error</code>, <code>blocked</code>) and the reason; private strings hidden; append-only; it never breaks a request.</li><li>The proof: <strong>one blocked call and its log line</strong>, shown.</li></ul><div class="box cap"><strong>Capstone:</strong> this is the security story of <code>ai-knowledge-assistant</code> for a reviewer: &ldquo;I assume the model can be fooled; here is what stops it, here is the record, and here is the gap I know about.&rdquo;</div><div class="box"><strong>What is real, and what is not.</strong> The guardrail, the log and the tests are real code. The model that asks for the bad call is a <strong>hostile stand-in</strong> (it asks for a given call, whatever the user wrote): it is not a real model, and that is the point. We test the system on the assumption that the model gives way. The role still comes from a forgeable demo header: the README says so.</div></section>
+<section><h2><span class="n">3</span> &middot; Plan the work <span class="t">10 min</span></h2><p>Cut the work in small pieces, and commit after each one:</p><ol><li><strong>The allow-list</strong> (<code>guardrails.py</code>) and its tests.</li><li><strong>The audit log</strong> (<code>audit.py</code>) replacing the question log, with redaction.</li><li><strong>The wiring</strong>: <code>execute</code>, the tool loop, the API.</li><li><strong>The proof</strong>: a test and a demo that shows one blocked call and its log line.</li><li><strong>The check</strong>: tests, types, the golden table.</li><li><strong>README</strong>, <code>AGENTS.md</code> and push.</li></ol></section>
+<section><h2><span class="n">4</span> &middot; Build <span class="t">90 min</span></h2><h3>Step 1: the allow-list</h3><p>Today&rsquo;s file, with the output check and the scan of Monday (use the same, or write your own):</p><pre><code>import re
+from typing import Any
+from urllib.parse import urlparse
+
+# An allow-list, not a deny-list: only what is written here is accepted. ASCII digits only ([0-9], not \d, which also matches other scripts).
+ALLOWED_ARGUMENTS: dict[str, dict[str, re.Pattern[str]]] = {
+    &quot;lookup_error&quot;: {&quot;code&quot;: re.compile(r&quot;[Ee][0-9]{3}&quot;)},
+    &quot;close_incident&quot;: {&quot;code&quot;: re.compile(r&quot;[Ee][0-9]{3}&quot;)},
+    &quot;list_error_codes&quot;: {},
+}
+HINTS = {
+    &quot;lookup_error&quot;: &quot;send only the argument &#x27;code&#x27;: the letter E and three digits, like E104&quot;,
+    &quot;close_incident&quot;: &quot;send only the argument &#x27;code&#x27;: the letter E and three digits, like E104&quot;,
+    &quot;list_error_codes&quot;: &quot;send no arguments&quot;,
+}
+INJECTION_PATTERNS = [
+    re.compile(r&quot;ignore\s+(all\s+)?(the\s+)?(previous|prior|above|earlier)\s+(instructions|rules|prompts?)&quot;, re.IGNORECASE),
+    re.compile(r&quot;disregard\s+(all\s+)?(the\s+)?(previous|prior|above|earlier|your)\s+(instructions|rules)&quot;, re.IGNORECASE),
+    re.compile(r&quot;(reveal|show|print)\s+(your\s+|the\s+)?system\s+prompt&quot;, re.IGNORECASE),
+]
+URL = re.compile(r&quot;https?://[^\s)&gt;\]\&quot;&#x27;]+&quot;, re.IGNORECASE)
+ALLOWED_DOMAINS = (&quot;pumpguard.example&quot;,)
+
+
+def hint_for(name: str) -&gt; str:
+    return HINTS.get(name, &quot;this tool has no argument policy&quot;)
+
+
+def check_arguments(name: str, tool_input: dict[str, Any]) -&gt; str | None:
+    &quot;&quot;&quot;Return a reason if the call must be blocked, or None. Unknown tools and unexpected arguments are blocked (fail closed).&quot;&quot;&quot;
+    allowed = ALLOWED_ARGUMENTS.get(name)
+    if allowed is None:
+        return f&quot;there is no argument policy for the tool {name!r}&quot;
+    unexpected = sorted(set(tool_input) - set(allowed))
+    if unexpected:
+        return f&quot;the argument {unexpected[0]!r} is not allowed for {name}&quot;
+    for key, pattern in allowed.items():
+        if key in tool_input and not (isinstance(tool_input[key], str) and pattern.fullmatch(tool_input[key])):
+            return f&quot;the argument {key!r} does not match the allow-list for {name}&quot;
+    return None
+
+
+def check_output(text: str, allowed_domains: tuple[str, ...] = ALLOWED_DOMAINS) -&gt; str | None:
+    &quot;&quot;&quot;Return a reason if an answer links to a site that is not on the allow-list. It only sees full http(s) links: a first layer, not a wall.&quot;&quot;&quot;
+    for link in URL.findall(text):
+        host = (urlparse(link).hostname or &quot;&quot;).lower()
+        if not any(host == domain or host.endswith(&quot;.&quot; + domain) for domain in allowed_domains):
+            return f&quot;the answer links to {host or link!r}, which is not on the allow-list&quot;
+    return None
+
+
+def scan_for_injection(text: str) -&gt; str | None:
+    &quot;&quot;&quot;A weak, cheap check for text that talks TO the model instead of ABOUT the product. Easy to get around: use it to warn, never to trust.&quot;&quot;&quot;
+    for pattern in INJECTION_PATTERNS:
+        found = pattern.search(text)
+        if found:
+            return f&quot;looks like an instruction to the model: {found.group(0)!r}&quot;
+    return None</code></pre><h3>Step 2: the audit log</h3><p>It replaces <code>question_log.py</code>. One class for every event:</p><pre><code>import json
+import logging
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+
+logger = logging.getLogger(&quot;audit&quot;)
+
+EMAIL = re.compile(r&quot;[\w.+-]+@[\w-]+\.[\w.-]+&quot;)
+KEY = re.compile(r&quot;\b(?:sk|pk|key)-[A-Za-z0-9_-]{12,}&quot;)
+
+
+def redact(value: object) -&gt; object:
+    &quot;&quot;&quot;Hide the most common private strings (emails, API-key shapes) before anything is written. A safety net, not a guarantee.&quot;&quot;&quot;
+    if isinstance(value, str):
+        return KEY.sub(&quot;[key]&quot;, EMAIL.sub(&quot;[email]&quot;, value))
+    if isinstance(value, dict):
+        return {k: redact(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    return value
+
+
+class AuditLog:
+    &quot;&quot;&quot;An append-only record of what happened: every question, every tool call, and what was blocked. One JSON line per event.&quot;&quot;&quot;
+
+    def __init__(self, path: Path) -&gt; None:
+        self.path = path
+
+    def record(self, event: str, role: str, **details: object) -&gt; None:
+        &quot;&quot;&quot;Never raises: a log that cannot be written must not cost the user their answer.&quot;&quot;&quot;
+        line = {&quot;time&quot;: datetime.now(timezone.utc).isoformat(), &quot;event&quot;: event, &quot;role&quot;: role, **{k: redact(v) for k, v in details.items()}}
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open(&quot;a&quot;, encoding=&quot;utf-8&quot;) as file:
+                file.write(json.dumps(line) + &quot;\n&quot;)
+        except OSError as err:
+            logger.warning(&quot;could not write the audit log %s: %s&quot;, self.path, err)</code></pre><h3>Step 3: the wiring</h3><p>The tool executor (the allow-list after the role check, and every call logged):</p><pre><code>diff --git a/src/my_ai_project/tool_design.py b/src/my_ai_project/tool_design.py
+index d35570d..bc57039 100644
+--- a/src/my_ai_project/tool_design.py
++++ b/src/my_ai_project/tool_design.py
+@@ -5,6 +5,8 @@ from typing import Any
+ from pydantic import BaseModel, Field, ValidationError
+ 
+ from my_ai_project.access import allowed_kinds
++from my_ai_project.audit import AuditLog
++from my_ai_project.guardrails import check_arguments, hint_for
+ from my_ai_project.incident import UnknownErrorCode, load_incidents, lookup_error
+ 
+ 
+@@ -28,8 +30,20 @@ def tool_error(tool_use_id: str, code: str, message: str, **hints: Any) -&gt; dict[
+     return {&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: tool_use_id, &quot;content&quot;: json.dumps(body), &quot;is_error&quot;: True}
+ 
+ 
+-def execute(tool_use_id: str, name: str, tool_input: dict[str, Any], role: str = &quot;customer&quot;) -&gt; dict[str, Any]:
+-    &quot;&quot;&quot;Run a tool on behalf of a user with this role. Always returns a tool_result block; never raises.&quot;&quot;&quot;
++def execute(tool_use_id: str, name: str, tool_input: dict[str, Any], role: str = &quot;customer&quot;, audit: AuditLog | None = None) -&gt; dict[str, Any]:
++    &quot;&quot;&quot;Run a tool on behalf of a user with this role, and write the call to the audit log. Always returns a tool_result block; never raises.&quot;&quot;&quot;
++    result = run_checked(tool_use_id, name, tool_input, role)
++    if audit is not None:
++        outcome = &quot;ok&quot;
++        error_code = &quot;&quot;
++        if result.get(&quot;is_error&quot;):
++            error_code = str(json.loads(str(result[&quot;content&quot;]))[&quot;error&quot;][&quot;code&quot;])
++            outcome = &quot;blocked&quot; if error_code in (&quot;blocked_by_policy&quot;, &quot;permission_denied&quot;, &quot;unknown_tool&quot;) else &quot;error&quot;
++        audit.record(&quot;tool_call&quot;, role, tool=name, arguments=tool_input, outcome=outcome, code=error_code)
++    return result
++
++
++def run_checked(tool_use_id: str, name: str, tool_input: dict[str, Any], role: str) -&gt; dict[str, Any]:
+     if name != &quot;lookup_error&quot;:
+         return tool_error(tool_use_id, &quot;unknown_tool&quot;, f&quot;there is no tool named {name!r}&quot;, available=[&quot;lookup_error&quot;])
+     try:
+@@ -39,6 +53,9 @@ def execute(tool_use_id: str, name: str, tool_input: dict[str, Any], role: str =
+     if not permitted:
+         # Checked before the input, so a refused caller learns nothing about which codes exist.
+         return tool_error(tool_use_id, &quot;permission_denied&quot;, &quot;this user may not read error records&quot;, hint=&quot;tell the user to ask support staff&quot;)
++    violation = check_arguments(name, tool_input)
++    if violation is not None:
++        return tool_error(tool_use_id, &quot;blocked_by_policy&quot;, violation, hint=f&quot;{hint_for(name)}. This call was blocked and written to the audit log&quot;)
+     try:
+         args = LookupInput.model_validate(tool_input)
+         incident = lookup_error(args.code)</code></pre><p>And the rest: the output check in the pipeline (a refusal with the reason), the audit log as a dependency, and the two routes (an unexpected extra: <code>audit</code> goes down into the tool loop):</p><pre><code>diff --git a/src/my_ai_project/api.py b/src/my_ai_project/api.py
+index f4e2415..2b66821 100644
+--- a/src/my_ai_project/api.py
++++ b/src/my_ai_project/api.py
+@@ -13,7 +13,7 @@ from my_ai_project.llm import LlmError
+ from my_ai_project.structured import StructuredOutputError, ask_structured, extract_json, schema_prompt
+ from my_ai_project.extractor import Extraction, ExtractionError, extract
+ from my_ai_project.access import allowed_kinds
+-from my_ai_project.deps import EmbedderDep, KeywordsDep, LlmDep, QuestionLogDep, RoleDep, StoreDep, SummaryDep, ToolModelDep, WriterDep
++from my_ai_project.deps import AuditLogDep, EmbedderDep, KeywordsDep, LlmDep, RoleDep, StoreDep, SummaryDep, ToolModelDep, WriterDep
+ from my_ai_project.pipeline import retrieve
+ from my_ai_project.rag import answer_question
+ from my_ai_project.tool_loop import assist
+@@ -185,13 +185,13 @@ class AskResponse(BaseModel):
+ 
+ @app.post(&quot;/api/ask&quot;)
+ def ask(
+-    request: AskRequest, embedder: EmbedderDep, store: StoreDep, keywords: KeywordsDep, writer: WriterDep, role: RoleDep, log: QuestionLogDep
++    request: AskRequest, embedder: EmbedderDep, store: StoreDep, keywords: KeywordsDep, writer: WriterDep, role: RoleDep, audit: AuditLogDep
+ ) -&gt; AskResponse:
+     try:
+         result = answer_question(request.question, embedder, store, keywords, writer, top_k=request.top_k, allowed_kinds=allowed_kinds(role))
+     except psycopg.OperationalError as err:
+         raise HTTPException(status_code=503, detail=&quot;the database is not available&quot;) from err
+-    log.record(role, request.question, result.refused, [s.doc_id for s in result.sources])
++    audit.record(&quot;question&quot;, role, question=request.question, refused=result.refused, reason=result.reason, sources=[s.doc_id for s in result.sources])
+     sources = [
+         SearchHit(citation=f.citation, doc_id=f.doc_id, chunk_index=f.chunk_index, title=f.title, kind=f.kind, text=f.text, similarity=f.similarity)
+         for f in result.sources
+@@ -217,9 +217,10 @@ class AssistResponse(BaseModel):
+ 
+ 
+ @app.post(&quot;/api/assist&quot;)
+-def assist_with_tools(request: AssistRequest, model: ToolModelDep, role: RoleDep) -&gt; AssistResponse:
++def assist_with_tools(request: AssistRequest, model: ToolModelDep, role: RoleDep, audit: AuditLogDep) -&gt; AssistResponse:
++    audit.record(&quot;question&quot;, role, question=request.question, via=&quot;assist&quot;)
+     try:
+-        result = assist(request.question, model, role)
++        result = assist(request.question, model, role, audit=audit)
+     except anthropic.APIError as err:
+         raise HTTPException(status_code=502, detail=&quot;the model call failed&quot;) from err
+     calls = [ToolCallInfo(name=c.name, tool_input=c.tool_input, is_error=c.is_error) for c in result.tool_calls]
+diff --git a/src/my_ai_project/deps.py b/src/my_ai_project/deps.py
+index 3b5afbd..1d99a00 100644
+--- a/src/my_ai_project/deps.py
++++ b/src/my_ai_project/deps.py
+@@ -11,10 +11,10 @@ from my_ai_project.embedder import Embedder, FastEmbedder
+ from my_ai_project.llm import AnthropicClient, FakeLlmClient, StreamingClient
+ from my_ai_project.retry import RetryingClient
+ from my_ai_project.access import ALLOWED_KINDS
++from my_ai_project.audit import AuditLog
+ from my_ai_project.grounding import Writer
+ from my_ai_project.hybrid import KeywordIndex
+ from my_ai_project.pipeline import Searcher
+-from my_ai_project.question_log import QuestionLog
+ from my_ai_project.simulated import SimulatedWriter
+ from my_ai_project.tool_loop import AnthropicToolModel, PretendToolModel, ToolModel
+ from my_ai_project.services import SummaryService
+@@ -99,8 +99,8 @@ def get_tool_model() -&gt; ToolModel:
+ ToolModelDep = Annotated[ToolModel, Depends(get_tool_model)]
+ 
+ 
+-def get_question_log() -&gt; QuestionLog:
+-    return QuestionLog(Path(os.environ.get(&quot;QUESTION_LOG&quot;, &quot;logs/questions.jsonl&quot;)))
++def get_audit_log() -&gt; AuditLog:
++    return AuditLog(Path(os.environ.get(&quot;AUDIT_LOG&quot;, &quot;logs/audit.jsonl&quot;)))
+ 
+ 
+-QuestionLogDep = Annotated[QuestionLog, Depends(get_question_log)]
++AuditLogDep = Annotated[AuditLog, Depends(get_audit_log)]
+diff --git a/src/my_ai_project/rag.py b/src/my_ai_project/rag.py
+index 23826e3..f56a287 100644
+--- a/src/my_ai_project/rag.py
++++ b/src/my_ai_project/rag.py
+@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
+ 
+ from my_ai_project.embedder import Embedder
+ from my_ai_project.grounding import GroundedAnswer, Writer, ground
++from my_ai_project.guardrails import check_output
+ from my_ai_project.hybrid import KeywordIndex, hybrid_search
+ from my_ai_project.pipeline import Searcher
+ from my_ai_project.prompts import NO_ANSWER
+@@ -45,4 +46,7 @@ def answer_question(
+         return refuse(question, f&quot;the answer cited {grounded.invented[0]}, which was not retrieved&quot;)
+     if not grounded.sources:
+         return refuse(question, &quot;the answer cited no source&quot;)
++    violation = check_output(grounded.text)
++    if violation is not None:
++        return refuse(question, f&quot;output check: {violation}&quot;)
+     return RagAnswer(question, grounded.text, grounded.sources)
+diff --git a/src/my_ai_project/tool_loop.py b/src/my_ai_project/tool_loop.py
+index 90d5521..1b57479 100644
+--- a/src/my_ai_project/tool_loop.py
++++ b/src/my_ai_project/tool_loop.py
+@@ -5,6 +5,7 @@ from typing import Any, Protocol
+ 
+ import anthropic
+ 
++from my_ai_project.audit import AuditLog
+ from my_ai_project.tool_design import LOOKUP_TOOL, execute
+ 
+ SYSTEM = (
+@@ -44,7 +45,7 @@ def text_of(reply: ToolReply) -&gt; str:
+     return &quot; &quot;.join(block[&quot;text&quot;] for block in reply.content if block[&quot;type&quot;] == &quot;text&quot;).strip()
+ 
+ 
+-def assist(question: str, model: ToolModel, role: str, max_rounds: int = 3) -&gt; AssistResult:
++def assist(question: str, model: ToolModel, role: str, max_rounds: int = 3, audit: AuditLog | None = None) -&gt; AssistResult:
+     &quot;&quot;&quot;The tool loop: ask the model, run the tools it asks for as this user&#x27;s role, send the results back, stop at a final answer.&quot;&quot;&quot;
+     messages: list[dict[str, Any]] = [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: question}]
+     calls: list[ToolCall] = []
+@@ -55,7 +56,7 @@ def assist(question: str, model: ToolModel, role: str, max_rounds: int = 3) -&gt; A
+         results = []
+         for block in reply.content:
+             if block[&quot;type&quot;] == &quot;tool_use&quot;:
+-                result = execute(block[&quot;id&quot;], block[&quot;name&quot;], block[&quot;input&quot;], role)
++                result = execute(block[&quot;id&quot;], block[&quot;name&quot;], block[&quot;input&quot;], role, audit)
+                 calls.append(ToolCall(block[&quot;name&quot;], block[&quot;input&quot;], bool(result.get(&quot;is_error&quot;))))
+                 results.append(result)
+         messages.append({&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: reply.content})</code></pre><p>Also set <code>AUDIT_LOG</code> to a temporary folder in <code>tests/conftest.py</code>, as you did for the question log, so that no test writes into the repository.</p><h3>Step 4: tests</h3><p>Three tests with the hostile stand-in: a blocked call is reported <em>and</em> logged, the question is logged with the email hidden, and a tool that does not exist is blocked and logged:</p><pre><code>import json
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+from my_ai_project.api import app
+from my_ai_project.audit import AuditLog
+from my_ai_project.deps import get_audit_log, get_tool_model
+from my_ai_project.tool_loop import ToolReply
+
+
+class AsksFor:
+    &quot;&quot;&quot;A stand-in that asks for one tool call, whatever the user wrote.&quot;&quot;&quot;
+
+    def __init__(self, name: str, tool_input: dict[str, Any]) -&gt; None:
+        self.name, self.tool_input = name, tool_input
+
+    def create(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], system: str) -&gt; ToolReply:
+        if isinstance(messages[-1][&quot;content&quot;], str):
+            return ToolReply(&quot;tool_use&quot;, [{&quot;type&quot;: &quot;tool_use&quot;, &quot;id&quot;: &quot;toolu_x&quot;, &quot;name&quot;: self.name, &quot;input&quot;: self.tool_input}])
+        return ToolReply(&quot;end_turn&quot;, [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;done&quot;}])
+
+
+@pytest.fixture
+def client(tmp_path: Path) -&gt; Iterator[TestClient]:
+    app.dependency_overrides[get_audit_log] = lambda: AuditLog(tmp_path / &quot;audit.jsonl&quot;)
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def lines(tmp_path: Path) -&gt; list[dict[str, Any]]:
+    return [json.loads(line) for line in (tmp_path / &quot;audit.jsonl&quot;).read_text(encoding=&quot;utf-8&quot;).splitlines()]
+
+
+def test_a_blocked_call_is_reported_to_the_caller_and_written_to_the_log(client: TestClient, tmp_path: Path) -&gt; None:
+    app.dependency_overrides[get_tool_model] = lambda: AsksFor(&quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;, &quot;role&quot;: &quot;admin&quot;})
+    body = client.post(&quot;/api/assist&quot;, json={&quot;question&quot;: &quot;hello&quot;}, headers={&quot;x-demo-role&quot;: &quot;staff&quot;}).json()
+    assert body[&quot;tool_calls&quot;] == [{&quot;name&quot;: &quot;lookup_error&quot;, &quot;tool_input&quot;: {&quot;code&quot;: &quot;E104&quot;, &quot;role&quot;: &quot;admin&quot;}, &quot;is_error&quot;: True}]
+    blocked = [line for line in lines(tmp_path) if line[&quot;event&quot;] == &quot;tool_call&quot;]
+    assert blocked[0][&quot;outcome&quot;] == &quot;blocked&quot; and blocked[0][&quot;code&quot;] == &quot;blocked_by_policy&quot; and blocked[0][&quot;role&quot;] == &quot;staff&quot;
+
+
+def test_the_question_is_logged_too_with_private_strings_hidden(client: TestClient, tmp_path: Path) -&gt; None:
+    app.dependency_overrides[get_tool_model] = lambda: AsksFor(&quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;})
+    client.post(&quot;/api/assist&quot;, json={&quot;question&quot;: &quot;I am ann@example.com, what is E104?&quot;}, headers={&quot;x-demo-role&quot;: &quot;staff&quot;})
+    text = (tmp_path / &quot;audit.jsonl&quot;).read_text(encoding=&quot;utf-8&quot;)
+    assert &quot;ann@example.com&quot; not in text and &quot;[email]&quot; in text
+    assert [line[&quot;event&quot;] for line in lines(tmp_path)] == [&quot;question&quot;, &quot;tool_call&quot;]
+
+
+def test_a_tool_that_does_not_exist_is_blocked_and_logged(client: TestClient, tmp_path: Path) -&gt; None:
+    app.dependency_overrides[get_tool_model] = lambda: AsksFor(&quot;close_incident&quot;, {&quot;code&quot;: &quot;E104&quot;})
+    client.post(&quot;/api/assist&quot;, json={&quot;question&quot;: &quot;hello&quot;}, headers={&quot;x-demo-role&quot;: &quot;staff&quot;})
+    assert lines(tmp_path)[1][&quot;outcome&quot;] == &quot;blocked&quot;</code></pre><h3>Step 5: show one blocked call and its log line</h3><p>This is the checkpoint. <code>blocked_demo.py</code> asks the API as <em>staff</em>, with a stand-in that sends the extra argument <code>role=admin</code>, and prints the response and the log:</p><pre><code>import tempfile
+from pathlib import Path
+from typing import Any
+
+from fastapi.testclient import TestClient
+
+from my_ai_project.api import app
+from my_ai_project.audit import AuditLog
+from my_ai_project.deps import get_audit_log, get_tool_model
+from my_ai_project.tool_loop import ToolReply
+
+
+class AsksFor:
+    &quot;&quot;&quot;A stand-in for a model that has been talked into one tool call. NOT a real model.&quot;&quot;&quot;
+
+    def create(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], system: str) -&gt; ToolReply:
+        if isinstance(messages[-1][&quot;content&quot;], str):
+            call = {&quot;type&quot;: &quot;tool_use&quot;, &quot;id&quot;: &quot;toolu_x&quot;, &quot;name&quot;: &quot;lookup_error&quot;, &quot;input&quot;: {&quot;code&quot;: &quot;E104&quot;, &quot;role&quot;: &quot;admin&quot;}}
+            return ToolReply(&quot;tool_use&quot;, [call])
+        return ToolReply(&quot;end_turn&quot;, [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;I could not do that.&quot;}])
+
+
+log = Path(tempfile.mkdtemp()) / &quot;audit.jsonl&quot;
+app.dependency_overrides[get_audit_log] = lambda: AuditLog(log)
+app.dependency_overrides[get_tool_model] = AsksFor
+client = TestClient(app)
+response = client.post(&quot;/api/assist&quot;, json={&quot;question&quot;: &quot;What does error E104 mean? My email is ann@example.com&quot;}, headers={&quot;x-demo-role&quot;: &quot;staff&quot;})
+print(&quot;response:&quot;, response.json())
+print(&quot;audit log:&quot;)
+for line in log.read_text(encoding=&quot;utf-8&quot;).splitlines():
+    print(&quot; &quot;, line)</code></pre><div class="out"><b>You should see</b><br>response: {'answer': 'I could not do that.', 'tool_calls': [{'name': 'lookup_error', 'tool_input': {'code': 'E104', 'role': 'admin'}, 'is_error': True}], 'rounds': 2, 'gave_up': False}<br>audit log:<br>&nbsp;&nbsp;{"time": "2026-10-18T04:38:26.303984+00:00", "event": "question", "role": "staff", "question": "What does error E104 mean? My email is [email]", "via": "assist"}<br>&nbsp;&nbsp;{"time": "2026-10-18T04:38:26.304372+00:00", "event": "tool_call", "role": "staff", "tool": "lookup_error", "arguments": {"code": "E104", "role": "admin"}, "outcome": "blocked", "code": "blocked_by_policy"}</div><p>Look at both parts. The caller sees <code>is_error: True</code> and the model can explain it. The log has the <strong>role</strong>, the <strong>exact arguments that were sent</strong>, the outcome <code>blocked</code>, and the reason <code>blocked_by_policy</code>. And the email in the question is already <code>[email]</code>.</p><h3>Step 6: check that nothing got worse</h3><div class="out"><b>You should see</b><br>pytest: 174 passed, 4 skipped      mypy: Success: no issues found in 68 source files</div><div class="out"><b>You should see</b><br>run_golden.py: passed 11/18 (61%)   hit@3 100%   MRR 0.97   refusal accuracy 89%      (the same as before the module)</div></section>
+<section><h2><span class="n">5</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>A normal call is blocked</strong>: print the reason; it names the argument. Check the policy for that tool.</li><li><strong>The log has no tool lines</strong>: <code>audit</code> must be passed to <code>assist</code> and on to <code>execute</code>.</li><li><strong>An email is in the log</strong>: check <code>redact</code> is applied to every detail, including nested ones.</li><li><strong>Tests create <code>logs/</code></strong>: the autouse fixture is missing, or still sets the old variable name.</li><li><strong>The role header</strong>: leave it. It is a known gap, and the README must say so.</li></ul></section>
+<section><h2><span class="n">6</span> &middot; Finish and ship <span class="t">15 min</span></h2><p>Add the README section and the rule to <code>AGENTS.md</code>, run the checklist, and push.</p><pre><code>## Security
+
+    Tool calls are checked against an allow-list (guardrails.py): only the listed arguments, only matching values; unknown tools are blocked.
+    Every question and every tool call is written to the audit log (AUDIT_LOG, default logs/audit.jsonl): role, event, time, arguments,
+    outcome (ok, error, blocked) and reason. Emails and key shapes are hidden. The log is append-only and never breaks a request.
+    Answers that link outside the allow-listed domains are refused (output check).
+    KNOWN GAP: the role comes from the demo header x-demo-role, which a caller can forge. Real authentication is needed before real use.</code></pre><pre><code>- Every tool argument must be on the allow-list in `guardrails.py`; a new argument is a deliberate change with a test. Never log secrets, and keep `logs/` out of Git.</code></pre><pre><code>[ ] guardrails.py: an allow-list for each tool&#x27;s arguments (unknown tools and extra arguments blocked, [0-9] not \d)
+[ ] audit.py: one line per event (question, tool call, block), with the role and the time; emails and keys hidden; never raises
+[ ] execute() runs the allow-list after the role check, and writes every call to the log
+[ ] /api/ask and /api/assist write a question event
+[ ] I can SHOW one blocked call and its log line (the output below)
+[ ] tests pass without a model or a database; no test writes into the repository; mypy is clean; the golden table is not worse
+[ ] README says what is guarded and what is NOT (the forgeable role header); committed and pushed</code></pre><p><code>git add .</code>, <code>git commit -m &quot;Add an argument allow-list and an audit log&quot;</code>, <code>git push</code>.</p></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why is the allow-list run after the role check and before the validation?</li><li>Which three things does a log line for a blocked call tell you?</li><li>What known gap does your README state, and why must it?</li></ol><details><summary>Answers</summary><ol><li>After the role check, so that a refused caller learns nothing about what is accepted; before the validation, so that nothing outside the allow-list is parsed or run.</li><li>Who tried (the role), what exactly was sent (the arguments), and what happened (blocked, and why).</li><li>The role comes from a header that a caller can forge. A security document that hides a known gap is worse than none: a reader should see the limit.</li></ol></details></section>
+<section id="game-day126" class="game"><h2><span class="n">+</span> &middot; Game: Blocked and Logged <span class="t">5 min</span></h2>
+<p><p>You show a blocked call and its log. Read the part, pick what it tells you, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day126-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day126-play">Start the game</button></div>
+<div id="day126-round" hidden><div class="gtop"><span id="day126-num">Round 1</span><span id="day126-score">Score 0</span></div>
+<pre hidden><code id="day126-code"></code></pre><div class="q" id="day126-q"></div><div class="choices" id="day126-opts"></div>
+<div class="fb" id="day126-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day126-next" hidden>Next round</button></p></div>
+<div id="day126-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day126",[{"c": "POST /api/assist as staff; the stand-in model sends lookup_error with code E104 and role admin", "q": "What does the caller see?", "o": ["is_error: True for the tool call, and a normal answer text", "A server error", "The record"], "a": 0, "out": "response: {'answer': 'I could not do that.', 'tool_calls': [{'name': 'lookup_error', 'tool_input': {'code': 'E104', 'role': 'admin'}, 'is_error': True}], ...}", "why": "The model gets a result it can explain."}, {"c": "The tool_call line of the audit log", "q": "What is the outcome and the code?", "o": ["blocked, blocked_by_policy", "ok, none", "error, unknown_tool"], "a": 0, "out": "{\"event\": \"tool_call\", \"role\": \"staff\", \"tool\": \"lookup_error\", \"arguments\": {\"code\": \"E104\", \"role\": \"admin\"}, \"outcome\": \"blocked\", \"code\": \"blocked_by_policy\"}", "why": "Who tried, what exactly, and why it was stopped."}, {"c": "The question line: 'What does error E104 mean? My email is ann@example.com'", "q": "What does the log hold for the email?", "o": ["[email]: it is hidden before writing", "The email", "Nothing, the line is missing"], "a": 0, "out": "\"question\": \"What does error E104 mean? My email is [email]\", \"via\": \"assist\"", "why": "Redact before you write, and keep secrets out."}, {"c": "Why is the allow-list after the role check and before the validation?", "q": "What is the reason?", "o": ["A refused caller learns nothing; nothing outside the list is parsed or run", "It is faster", "By accident"], "a": 0, "out": "(permission, then policy, then validation, then the lookup)", "why": "Order is part of the security."}, {"c": "The README of the project", "q": "What must it say?", "o": ["The known gap: the role header can be forged", "That it is fully secure", "Nothing about security"], "a": 0, "out": "KNOWN GAP: the role comes from the demo header x-demo-role, which a caller can forge.", "why": "A document that hides a known gap is worse than none."}, {"c": "After the module: pytest, mypy and the golden table", "q": "What are the results?", "o": ["174 passed, mypy clean, and 11/18 as before", "Failures", "A better golden table"], "a": 0, "out": "174 passed, 4 skipped\nSuccess: no issues found in 68 source files\npassed 11/18 (61%)   hit@3 100%   MRR 0.97", "why": "Security changes must not move the score."}],["Checkpoint rookie", "Checkpoint regular", "Guardrail shipper"],"Show a blocked call and its log line: the caller sees an error result, the log holds the role, the exact arguments and the reason, private strings are hidden, and the README states the gap.");</script>
+<p><small>Tick &ldquo;Play the Blocked and Logged game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a guardrail that blocks unexpected tool calls before they run, an audit log of every question and tool call that hides private strings, a blocked call and its log line as proof, tests that need nothing running, and a README that states the gap that is left. That is the Module 11 checkpoint.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 126 checklist.</li><li>Share one line in the comments: what does your log line look like?</li><li><strong>Next:</strong> Sunday is the review: a self-test on security words, and the plan for Module 12, running an AI system in production.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>

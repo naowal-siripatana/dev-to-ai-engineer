@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 123 - Guardrails, least privilege and audit logs</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 123 &middot; LEVEL 11: SECURITY</div><h1>Guardrails, least privilege and audit logs</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to block unexpected tool calls with an allow-list and record every question and tool call in an audit log.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Name two kinds of prompt injection.</li><li>Which defence stopped the leak of the staff note, and why is it the strongest?</li></ol><details><summary>Answers</summary><ol><li>Direct (the user types it) and indirect (hidden in data the assistant reads).</li><li>The role filter: the secret was never in the customer&rsquo;s prompt, and a model cannot leak what it never received.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A model decides to call <code>lookup_error</code> with <code>{&quot;code&quot;: &quot;E104&quot;, &quot;role&quot;: &quot;admin&quot;}</code>. Your function ignores the extra argument, so nothing bad happens today. Why should you block it anyway, and how will you know it happened?</strong></p><details><summary>Guess first, then open</summary><p>An argument that your tool does not expect is a sign that something is trying things, and tomorrow someone may add code that <em>reads</em> that argument. A strict <strong>allow-list</strong> accepts only what is written down and rejects the rest. And you will know because every call, allowed or blocked, goes into an <strong>audit log</strong>.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: an allow-list, not a deny-list</h3>
+<p>A <strong>deny-list</strong> says what is forbidden, and attackers find what you forgot. An <strong>allow-list</strong> says what is accepted, and everything else is blocked. For a tool: which arguments it takes, and which values are acceptable for each (a pattern, a set). Unknown tools and unexpected arguments are blocked: <strong>fail closed</strong>. Be strict about the details: <code>[0-9]</code> and not <code>\d</code>, because in many regular-expression engines <code>\d</code> also matches digits from other scripts.</p>
+<h3>Piece 2: least privilege, everywhere</h3>
+<p>Give each part only what its job needs: a role for the user, only the needed arguments for the tool, only the needed tools and a budget for the agent, a database user that cannot drop tables, a key with a spending limit. When something goes wrong, the damage is the size of what you gave it. This is the same idea as the budget for risky calls you will see on Friday.</p>
+<h3>Piece 3: an audit log answers &ldquo;what happened?&rdquo;</h3>
+<p>Guardrails stop things; an <strong>audit log</strong> tells you what was tried, what was stopped, and by what. Record every question, every tool call (tool, arguments, outcome, reason) and every block, with the role and the time, one JSON line per event, <strong>append only</strong>. Keep out secrets, and hide private strings such as emails. And it must <strong>never raise</strong>: a log that cannot be written must not cost the user an answer (Day 112).</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> the allow-list is model validation with <code>[RegularExpression]</code> and a rule that rejects unknown properties (<code>JsonUnmappedMemberHandling.Disallow</code>), and the audit log is the structured log every API should keep for security events. Least privilege is the same principle as a database user with only <code>db_datareader</code>.</div>
+<div class="box cap"><strong>Capstone:</strong> on Saturday you add exactly this to <code>ai-knowledge-assistant</code>: the allow-list and the audit log, and show one blocked call with its log line.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>What to give each part, and what to log:</p><pre><code>least privilege: give every part ONLY what its job needs
+  the user       a role: customer or staff (not &#x27;everything&#x27;)
+  the tool       only the arguments it needs, only the values that fit
+  the agent      only the tools of this task, a step limit, a budget for risky calls
+  the database   a user that can read the chunks, not drop the table
+  the key        a key for this service only, with a spending limit</code></pre><pre><code>what to put in an audit log                          what to leave out
+who (the role), what (the event), when (UTC)           secrets, keys, passwords
+every question, and what it was answered from           the text of the answer (it may hold private data)
+every tool call: tool, arguments, outcome, reason       personal data you do not need (emails: hide them)
+every block: what was blocked and why
+rules: append only, never raises, one JSON line per event</code></pre><p>First, a finding. The pattern you wrote for the tool in Day 82 accepts digits from another script:</p><div class="out"><b>You should see</b><br>'E104'    accepted by the Pydantic pattern
+'E١٠٤'    accepted by the Pydantic pattern     (the digits one, zero, four, in Arabic-Indic script)</div><p>That does no harm here (the lookup finds nothing), but it is exactly the kind of gap an allow-list closes. The allow-list, in <code>src/my_ai_project/guardrails.py</code>. It also has the output check of Monday and the scan for instructions:</p><pre><code>import re
+from typing import Any
+from urllib.parse import urlparse
+
+# An allow-list, not a deny-list: only what is written here is accepted. ASCII digits only ([0-9], not \d, which also matches other scripts).
+ALLOWED_ARGUMENTS: dict[str, dict[str, re.Pattern[str]]] = {
+    &quot;lookup_error&quot;: {&quot;code&quot;: re.compile(r&quot;[Ee][0-9]{3}&quot;)},
+    &quot;close_incident&quot;: {&quot;code&quot;: re.compile(r&quot;[Ee][0-9]{3}&quot;)},
+    &quot;list_error_codes&quot;: {},
+}
+HINTS = {
+    &quot;lookup_error&quot;: &quot;send only the argument &#x27;code&#x27;: the letter E and three digits, like E104&quot;,
+    &quot;close_incident&quot;: &quot;send only the argument &#x27;code&#x27;: the letter E and three digits, like E104&quot;,
+    &quot;list_error_codes&quot;: &quot;send no arguments&quot;,
+}
+INJECTION_PATTERNS = [
+    re.compile(r&quot;ignore\s+(all\s+)?(the\s+)?(previous|prior|above|earlier)\s+(instructions|rules|prompts?)&quot;, re.IGNORECASE),
+    re.compile(r&quot;disregard\s+(all\s+)?(the\s+)?(previous|prior|above|earlier|your)\s+(instructions|rules)&quot;, re.IGNORECASE),
+    re.compile(r&quot;(reveal|show|print)\s+(your\s+|the\s+)?system\s+prompt&quot;, re.IGNORECASE),
+]
+URL = re.compile(r&quot;https?://[^\s)&gt;\]\&quot;&#x27;]+&quot;, re.IGNORECASE)
+ALLOWED_DOMAINS = (&quot;pumpguard.example&quot;,)
+
+
+def hint_for(name: str) -&gt; str:
+    return HINTS.get(name, &quot;this tool has no argument policy&quot;)
+
+
+def check_arguments(name: str, tool_input: dict[str, Any]) -&gt; str | None:
+    &quot;&quot;&quot;Return a reason if the call must be blocked, or None. Unknown tools and unexpected arguments are blocked (fail closed).&quot;&quot;&quot;
+    allowed = ALLOWED_ARGUMENTS.get(name)
+    if allowed is None:
+        return f&quot;there is no argument policy for the tool {name!r}&quot;
+    unexpected = sorted(set(tool_input) - set(allowed))
+    if unexpected:
+        return f&quot;the argument {unexpected[0]!r} is not allowed for {name}&quot;
+    for key, pattern in allowed.items():
+        if key in tool_input and not (isinstance(tool_input[key], str) and pattern.fullmatch(tool_input[key])):
+            return f&quot;the argument {key!r} does not match the allow-list for {name}&quot;
+    return None
+
+
+def check_output(text: str, allowed_domains: tuple[str, ...] = ALLOWED_DOMAINS) -&gt; str | None:
+    &quot;&quot;&quot;Return a reason if an answer links to a site that is not on the allow-list. It only sees full http(s) links: a first layer, not a wall.&quot;&quot;&quot;
+    for link in URL.findall(text):
+        host = (urlparse(link).hostname or &quot;&quot;).lower()
+        if not any(host == domain or host.endswith(&quot;.&quot; + domain) for domain in allowed_domains):
+            return f&quot;the answer links to {host or link!r}, which is not on the allow-list&quot;
+    return None
+
+
+def scan_for_injection(text: str) -&gt; str | None:
+    &quot;&quot;&quot;A weak, cheap check for text that talks TO the model instead of ABOUT the product. Easy to get around: use it to warn, never to trust.&quot;&quot;&quot;
+    for pattern in INJECTION_PATTERNS:
+        found = pattern.search(text)
+        if found:
+            return f&quot;looks like an instruction to the model: {found.group(0)!r}&quot;
+    return None</code></pre><p>The audit log, in <code>src/my_ai_project/audit.py</code>. It replaces the question log of Day 112: one class for every event, with emails and key shapes hidden before anything is written:</p><pre><code>import json
+import logging
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+
+logger = logging.getLogger(&quot;audit&quot;)
+
+EMAIL = re.compile(r&quot;[\w.+-]+@[\w-]+\.[\w.-]+&quot;)
+KEY = re.compile(r&quot;\b(?:sk|pk|key)-[A-Za-z0-9_-]{12,}&quot;)
+
+
+def redact(value: object) -&gt; object:
+    &quot;&quot;&quot;Hide the most common private strings (emails, API-key shapes) before anything is written. A safety net, not a guarantee.&quot;&quot;&quot;
+    if isinstance(value, str):
+        return KEY.sub(&quot;[key]&quot;, EMAIL.sub(&quot;[email]&quot;, value))
+    if isinstance(value, dict):
+        return {k: redact(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    return value
+
+
+class AuditLog:
+    &quot;&quot;&quot;An append-only record of what happened: every question, every tool call, and what was blocked. One JSON line per event.&quot;&quot;&quot;
+
+    def __init__(self, path: Path) -&gt; None:
+        self.path = path
+
+    def record(self, event: str, role: str, **details: object) -&gt; None:
+        &quot;&quot;&quot;Never raises: a log that cannot be written must not cost the user their answer.&quot;&quot;&quot;
+        line = {&quot;time&quot;: datetime.now(timezone.utc).isoformat(), &quot;event&quot;: event, &quot;role&quot;: role, **{k: redact(v) for k, v in details.items()}}
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open(&quot;a&quot;, encoding=&quot;utf-8&quot;) as file:
+                file.write(json.dumps(line) + &quot;\n&quot;)
+        except OSError as err:
+            logger.warning(&quot;could not write the audit log %s: %s&quot;, self.path, err)</code></pre><p>The tool executor of Day 86 uses both. The change (the allow-list runs after the role check and before the validation, and the call is logged with its outcome):</p><pre><code>diff --git a/src/my_ai_project/tool_design.py b/src/my_ai_project/tool_design.py
+index d35570d..bc57039 100644
+--- a/src/my_ai_project/tool_design.py
++++ b/src/my_ai_project/tool_design.py
+@@ -5,6 +5,8 @@ from typing import Any
+ from pydantic import BaseModel, Field, ValidationError
+ 
+ from my_ai_project.access import allowed_kinds
++from my_ai_project.audit import AuditLog
++from my_ai_project.guardrails import check_arguments, hint_for
+ from my_ai_project.incident import UnknownErrorCode, load_incidents, lookup_error
+ 
+ 
+@@ -28,8 +30,20 @@ def tool_error(tool_use_id: str, code: str, message: str, **hints: Any) -&gt; dict[
+     return {&quot;type&quot;: &quot;tool_result&quot;, &quot;tool_use_id&quot;: tool_use_id, &quot;content&quot;: json.dumps(body), &quot;is_error&quot;: True}
+ 
+ 
+-def execute(tool_use_id: str, name: str, tool_input: dict[str, Any], role: str = &quot;customer&quot;) -&gt; dict[str, Any]:
+-    &quot;&quot;&quot;Run a tool on behalf of a user with this role. Always returns a tool_result block; never raises.&quot;&quot;&quot;
++def execute(tool_use_id: str, name: str, tool_input: dict[str, Any], role: str = &quot;customer&quot;, audit: AuditLog | None = None) -&gt; dict[str, Any]:
++    &quot;&quot;&quot;Run a tool on behalf of a user with this role, and write the call to the audit log. Always returns a tool_result block; never raises.&quot;&quot;&quot;
++    result = run_checked(tool_use_id, name, tool_input, role)
++    if audit is not None:
++        outcome = &quot;ok&quot;
++        error_code = &quot;&quot;
++        if result.get(&quot;is_error&quot;):
++            error_code = str(json.loads(str(result[&quot;content&quot;]))[&quot;error&quot;][&quot;code&quot;])
++            outcome = &quot;blocked&quot; if error_code in (&quot;blocked_by_policy&quot;, &quot;permission_denied&quot;, &quot;unknown_tool&quot;) else &quot;error&quot;
++        audit.record(&quot;tool_call&quot;, role, tool=name, arguments=tool_input, outcome=outcome, code=error_code)
++    return result
++
++
++def run_checked(tool_use_id: str, name: str, tool_input: dict[str, Any], role: str) -&gt; dict[str, Any]:
+     if name != &quot;lookup_error&quot;:
+         return tool_error(tool_use_id, &quot;unknown_tool&quot;, f&quot;there is no tool named {name!r}&quot;, available=[&quot;lookup_error&quot;])
+     try:
+@@ -39,6 +53,9 @@ def execute(tool_use_id: str, name: str, tool_input: dict[str, Any], role: str =
+     if not permitted:
+         # Checked before the input, so a refused caller learns nothing about which codes exist.
+         return tool_error(tool_use_id, &quot;permission_denied&quot;, &quot;this user may not read error records&quot;, hint=&quot;tell the user to ask support staff&quot;)
++    violation = check_arguments(name, tool_input)
++    if violation is not None:
++        return tool_error(tool_use_id, &quot;blocked_by_policy&quot;, violation, hint=f&quot;{hint_for(name)}. This call was blocked and written to the audit log&quot;)
+     try:
+         args = LookupInput.model_validate(tool_input)
+         incident = lookup_error(args.code)</code></pre><p>A script that tries eight calls and shows the log. <code>guardrails_demo.py</code>:</p><pre><code>import tempfile
+from pathlib import Path
+
+from my_ai_project.audit import AuditLog
+from my_ai_project.guardrails import check_arguments
+from my_ai_project.tool_design import execute
+
+CALLS = [
+    (&quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;}),
+    (&quot;lookup_error&quot;, {&quot;code&quot;: &quot;e104&quot;}),
+    (&quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;, &quot;role&quot;: &quot;admin&quot;}),
+    (&quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104; DROP TABLE chunks&quot;}),
+    (&quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104\n&quot;}),
+    (&quot;lookup_error&quot;, {&quot;code&quot;: &quot;E١٠٤&quot;}),
+    (&quot;lookup_error&quot;, {&quot;code&quot;: 104}),
+    (&quot;delete_everything&quot;, {}),
+]
+print(&quot;1. the allow-list on its own&quot;)
+for name, tool_input in CALLS:
+    reason = check_arguments(name, tool_input)
+    print(f&quot;   {name} {tool_input!r:&lt;45} {&#x27;ALLOWED&#x27; if reason is None else &#x27;BLOCKED: &#x27; + reason}&quot;)
+
+print(&quot;\n2. through execute(), as staff, with an audit log&quot;)
+log = Path(tempfile.mkdtemp()) / &quot;audit.jsonl&quot;
+audit = AuditLog(log)
+for name, tool_input in CALLS[:1] + CALLS[2:3]:
+    result = execute(&quot;t&quot;, name, tool_input, &quot;staff&quot;, audit)
+    print(f&quot;   {name} {tool_input}  -&gt;  is_error={result.get(&#x27;is_error&#x27;, False)}&quot;)
+execute(&quot;t&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;}, &quot;customer&quot;, audit)
+print(&quot;\n3. what the audit log holds&quot;)
+for line in log.read_text(encoding=&quot;utf-8&quot;).splitlines():
+    print(&quot;  &quot;, line)</code></pre><div class="out"><b>You should see</b><br>1. the allow-list on its own<br>&nbsp;&nbsp; lookup_error {'code': 'E104'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ALLOWED<br>&nbsp;&nbsp; lookup_error {'code': 'e104'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ALLOWED<br>&nbsp;&nbsp; lookup_error {'code': 'E104', 'role': 'admin'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; BLOCKED: the argument 'role' is not allowed for lookup_error<br>&nbsp;&nbsp; lookup_error {'code': 'E104; DROP TABLE chunks'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; BLOCKED: the argument 'code' does not match the allow-list for lookup_error<br>&nbsp;&nbsp; lookup_error {'code': 'E104\n'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BLOCKED: the argument 'code' does not match the allow-list for lookup_error<br>&nbsp;&nbsp; lookup_error {'code': 'E١٠٤'}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BLOCKED: the argument 'code' does not match the allow-list for lookup_error<br>&nbsp;&nbsp; lookup_error {'code': 104}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; BLOCKED: the argument 'code' does not match the allow-list for lookup_error<br>&nbsp;&nbsp; delete_everything {}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BLOCKED: there is no argument policy for the tool 'delete_everything'<br><br>2. through execute(), as staff, with an audit log<br>&nbsp;&nbsp; lookup_error {'code': 'E104'}&nbsp;&nbsp;->&nbsp;&nbsp;is_error=False<br>&nbsp;&nbsp; lookup_error {'code': 'E104', 'role': 'admin'}&nbsp;&nbsp;->&nbsp;&nbsp;is_error=True<br><br>3. what the audit log holds<br>&nbsp;&nbsp; {"time": "2026-10-18T04:37:20.178425+00:00", "event": "tool_call", "role": "staff", "tool": "lookup_error", "arguments": {"code": "E104"}, "outcome": "ok", "code": ""}<br>&nbsp;&nbsp; {"time": "2026-10-18T04:37:20.178744+00:00", "event": "tool_call", "role": "staff", "tool": "lookup_error", "arguments": {"code": "E104", "role": "admin"}, "outcome": "blocked", "code": "blocked_by_policy"}<br>&nbsp;&nbsp; {"time": "2026-10-18T04:37:20.179129+00:00", "event": "tool_call", "role": "customer", "tool": "lookup_error", "arguments": {"code": "E104"}, "outcome": "blocked", "code": "permission_denied"}</div><p>Read the log: three lines, one for each call. The allowed call is <code>ok</code>. The call with the extra <code>role</code> argument is <code>blocked</code> by the policy. The customer&rsquo;s call is <code>blocked</code> by the role check. Both blocks are visible afterwards, with who tried and what they sent.</p></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in <code>my-ai-project</code>, on a branch if you like (<code>git switch -c security</code>).</p>
+<h3><span class="step">Step 1</span> Add the allow-list</h3>
+<p>Add <code>guardrails.py</code>, change <code>tool_design.py</code> as in the diff, and run <code>guardrails_demo.py</code>. Match the eight results.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Add a second allowed argument to <code>lookup_error</code> (for example <code>verbose</code>, a boolean). <strong>Predict first:</strong> which of the eight results change? What else must you change for the tool to <em>use</em> it?</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Change <code>[0-9]</code> in the pattern to <code>\d</code> and run the tests. Which test fails? Change it back.</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Replace the question log with the audit log (<code>audit.py</code>), pass it through <code>execute</code> and the tool loop, and make <code>/api/ask</code> and <code>/api/assist</code> write a <code>question</code> event. Write the tests of the template. Then look at your log after a few calls: does it let you answer &ldquo;who tried what, and what was stopped&rdquo;?</p>
+<p>Commit: <code>git add .</code> and <code>git commit -m &quot;Add an argument allow-list and an audit log&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>A good call is blocked</strong>: check the policy for the tool name and the pattern. Print the reason: it names the argument.</li><li><strong>The log file does not appear</strong>: check the <code>AUDIT_LOG</code> path. The log never raises, so a path that cannot be written only gives a warning in the application log.</li><li><strong>Tests write into <code>logs/</code></strong>: the autouse fixture in <code>tests/conftest.py</code> must set <code>AUDIT_LOG</code> to a temporary folder.</li><li><strong>mypy: the details of <code>record</code></strong>: <code>**details: object</code> is enough.</li></ul><details><summary>Solution: Step 2</summary><p>None of the eight results change, because they all fail or pass on <code>code</code> and the extra <code>role</code>. But a call with <code>verbose</code> now passes the allow-list, and nothing happens, because <code>LookupInput</code> and the function do not use it. The allow-list says what <em>may</em> arrive; the tool has to be changed to <em>use</em> it. Both places are written down on purpose, so that a new argument is a decision.</p></details><details><summary>Solution: Step 3</summary><p>The test for the digits from another script fails: <code>E&#1633;&#1632;&#1636;</code> is accepted by <code>\d</code>. Change it back to <code>[0-9]</code>.</p></details><details><summary>Template: tests</summary><pre><code>import json
+from pathlib import Path
+
+import pytest
+
+from my_ai_project.agent import Decision, Step, run_agent
+from my_ai_project.audit import AuditLog, redact
+from my_ai_project.guardrails import check_arguments, check_output
+from my_ai_project.tool_design import execute
+
+
+@pytest.mark.parametrize(&quot;tool_input&quot;, [{&quot;code&quot;: &quot;E104&quot;}, {&quot;code&quot;: &quot;e104&quot;}])
+def test_the_expected_argument_passes(tool_input: dict[str, str]) -&gt; None:
+    assert check_arguments(&quot;lookup_error&quot;, tool_input) is None
+
+
+@pytest.mark.parametrize(
+    &quot;tool_input&quot;,
+    [{&quot;code&quot;: &quot;E104&quot;, &quot;role&quot;: &quot;staff&quot;}, {&quot;code&quot;: &quot;E104; DROP TABLE chunks&quot;}, {&quot;code&quot;: &quot;E104\n&quot;}, {&quot;code&quot;: &quot;E١٠٤&quot;}, {&quot;code&quot;: 104}, {&quot;code&quot;: [&quot;E104&quot;]}],
+)
+def test_anything_else_is_blocked(tool_input: dict[str, object]) -&gt; None:
+    assert check_arguments(&quot;lookup_error&quot;, tool_input) is not None
+
+
+def test_a_tool_without_a_policy_is_blocked() -&gt; None:
+    assert &quot;no argument policy&quot; in str(check_arguments(&quot;delete_everything&quot;, {}))
+
+
+def test_a_blocked_call_is_a_clear_result_and_a_log_line(tmp_path: Path) -&gt; None:
+    audit = AuditLog(tmp_path / &quot;audit.jsonl&quot;)
+    result = execute(&quot;t&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;, &quot;role&quot;: &quot;admin&quot;}, &quot;staff&quot;, audit)
+    assert result[&quot;is_error&quot;] is True and json.loads(str(result[&quot;content&quot;]))[&quot;error&quot;][&quot;code&quot;] == &quot;blocked_by_policy&quot;
+    line = json.loads((tmp_path / &quot;audit.jsonl&quot;).read_text(encoding=&quot;utf-8&quot;).splitlines()[0])
+    assert line[&quot;event&quot;] == &quot;tool_call&quot; and line[&quot;outcome&quot;] == &quot;blocked&quot; and line[&quot;arguments&quot;] == {&quot;code&quot;: &quot;E104&quot;, &quot;role&quot;: &quot;admin&quot;}
+
+
+def test_a_good_call_and_a_refused_call_are_logged_too(tmp_path: Path) -&gt; None:
+    audit = AuditLog(tmp_path / &quot;audit.jsonl&quot;)
+    execute(&quot;t&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;}, &quot;staff&quot;, audit)
+    execute(&quot;t&quot;, &quot;lookup_error&quot;, {&quot;code&quot;: &quot;E104&quot;}, &quot;customer&quot;, audit)
+    lines = [json.loads(line) for line in (tmp_path / &quot;audit.jsonl&quot;).read_text(encoding=&quot;utf-8&quot;).splitlines()]
+    assert [(line[&quot;role&quot;], line[&quot;outcome&quot;]) for line in lines] == [(&quot;staff&quot;, &quot;ok&quot;), (&quot;customer&quot;, &quot;blocked&quot;)]
+
+
+def test_the_audit_log_hides_emails_and_keys(tmp_path: Path) -&gt; None:
+    assert redact(&quot;write to ann@example.com with sk-abcdefghijklmnop1234&quot;) == &quot;write to [email] with [key]&quot;
+    audit = AuditLog(tmp_path / &quot;audit.jsonl&quot;)
+    audit.record(&quot;question&quot;, &quot;customer&quot;, question=&quot;my email is ann@example.com&quot;)
+    assert &quot;ann@example.com&quot; not in (tmp_path / &quot;audit.jsonl&quot;).read_text(encoding=&quot;utf-8&quot;)
+
+
+def test_a_link_off_the_allow_list_is_caught() -&gt; None:
+    assert check_output(&quot;See https://pumpguard.example/manual and https://docs.pumpguard.example/x&quot;) is None
+    assert &quot;evil.example&quot; in str(check_output(&quot;Please sign in at https://evil.example/login now&quot;))
+    assert check_output(&quot;no links here&quot;) is None
+
+
+class Greedy:
+    &quot;&quot;&quot;Worst case: a model that keeps asking to close an incident, whatever happened.&quot;&quot;&quot;
+
+    def decide(self, goal: str, steps: list[Step]) -&gt; Decision:
+        codes = [&quot;E101&quot;, &quot;E102&quot;, &quot;E103&quot;, &quot;E104&quot;]
+        return Decision(&quot;close it&quot;, tool=&quot;close_incident&quot;, tool_input={&quot;code&quot;: codes[len(steps) % 4]})
+
+
+def test_a_budget_for_risky_calls_stops_a_run_even_when_every_call_is_approved() -&gt; None:
+    closed: set[str] = set()
+    run = run_agent(&quot;x&quot;, Greedy(), &quot;staff&quot;, max_steps=4, approve=lambda n, i: True, closed=closed, max_risky_calls=1)
+    assert closed == {&quot;E101&quot;}
+    assert &quot;budget_exceeded&quot; in run.steps[1].observation</code></pre></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>Why an allow-list and not a deny-list?</li><li>What does fail closed mean for an unknown tool?</li><li>What belongs in an audit log, and what does not?</li></ol><details><summary>Answers</summary><ol><li>A deny-list misses what you did not think of; an allow-list accepts only what is written down.</li><li>It is blocked, not allowed by default. A tool without a policy cannot run.</li><li>In: role, event, time, every question and tool call with arguments, outcome and reason, every block. Out: secrets, keys, the text of answers and personal data you do not need (hide emails).</li></ol></details></section>
+<section id="game-day123" class="game"><h2><span class="n">+</span> &middot; Game: Allow-list Check <span class="t">5 min</span></h2>
+<p><p>You guard tool arguments. Read the call, pick what happens, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day123-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day123-play">Start the game</button></div>
+<div id="day123-round" hidden><div class="gtop"><span id="day123-num">Round 1</span><span id="day123-score">Score 0</span></div>
+<pre hidden><code id="day123-code"></code></pre><div class="q" id="day123-q"></div><div class="choices" id="day123-opts"></div>
+<div class="fb" id="day123-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day123-next" hidden>Next round</button></p></div>
+<div id="day123-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day123",[{"c": "lookup_error {'code': 'e104'}", "q": "Allowed?", "o": ["Yes: the pattern allows both cases", "No", "Only for staff"], "a": 0, "out": "lookup_error {'code': 'e104'}   ALLOWED", "why": "The allow-list is strict but not unfriendly."}, {"c": "lookup_error {'code': 'E104', 'role': 'admin'}", "q": "What happens?", "o": ["BLOCKED: the argument 'role' is not allowed for lookup_error", "Allowed: the extra argument is ignored", "A crash"], "a": 0, "out": "BLOCKED: the argument 'role' is not allowed for lookup_error", "why": "An unexpected argument is a sign that something is trying things."}, {"c": "lookup_error {'code': 'E104; DROP TABLE chunks'}", "q": "What happens?", "o": ["BLOCKED: the value does not match the allow-list", "The table is dropped", "Allowed"], "a": 0, "out": "BLOCKED: the argument 'code' does not match the allow-list for lookup_error", "why": "Only values of the right shape are accepted."}, {"c": "lookup_error {'code': 'E١٠٤'}   (the digits in Arabic-Indic script)", "q": "Which pattern blocks it?", "o": ["[0-9]; \\d also matches other scripts", "\\d", "Neither"], "a": 0, "out": "'E١٠٤'  accepted by the Pydantic pattern\nBLOCKED by the allow-list ([0-9])", "why": "Be strict about the details."}, {"c": "delete_everything {}", "q": "What happens?", "o": ["BLOCKED: there is no argument policy for the tool: fail closed", "Allowed", "Unknown tool, ignored"], "a": 0, "out": "BLOCKED: there is no argument policy for the tool 'delete_everything'", "why": "No policy means no call."}, {"c": "An audit log line for a blocked call", "q": "What does it hold?", "o": ["The role, the exact arguments, the outcome 'blocked' and the code", "Only the answer", "Nothing"], "a": 0, "out": "{\"event\": \"tool_call\", \"role\": \"staff\", \"tool\": \"lookup_error\", \"arguments\": {\"code\": \"E104\", \"role\": \"admin\"}, \"outcome\": \"blocked\", \"code\": \"blocked_by_policy\"}", "why": "It answers who tried what, and what was stopped."}],["Allow-list rookie", "Allow-list regular", "Guardrail builder"],"Allow, do not deny: only listed tools, arguments and value shapes pass; unknown means blocked; be strict about details like [0-9]; and log every call with its outcome.");</script>
+<p><small>Tick &ldquo;Play the Allow-list Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> an allow-list that blocks unexpected tools, arguments and values (including digits from other scripts), an audit log that records every question and tool call with its outcome, and tests that prove a blocked call leaves a log line.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 123 checklist.</li><li>Share one line in the comments: which argument of your own tools should be on an allow-list?</li><li><strong>Next:</strong> Thursday is mixed practice: you try five injections on your own assistant and record what happened.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
