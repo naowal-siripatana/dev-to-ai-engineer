@@ -296,7 +296,7 @@ function viewDashboard(){
       const count=d.items.filter(i=>done.has(key(d.id,i.id))).length;
       body.replaceChildren(
         el("p",{text:info.summary}),
-        (info.lesson||info.slides)?el("div",{class:"row"},[info.lesson?el("a",{class:"btn",href:info.lesson,text:"Open the lesson"}):null, info.slides?el("a",{class:"btn alt",href:info.slides,text:"Open the slides"}):null]):null,
+        (info.lesson||info.slides)?el("div",{class:"row"},[info.lesson?el("a",{class:"btn",href:info.lesson,target:"_blank",rel:"noopener",text:"Open the lesson"}):null, info.slides?el("a",{class:"btn alt",href:info.slides,target:"_blank",rel:"noopener",text:"Open the slides"}):null]):null,
         el("p",{class:"small",text:count+" of "+d.items.length+" done"}),
         list,
         finished?el("div",{class:"notice",text: d.gate===false?"Setup complete. You are ready for Day 1.":(idx<CURRICULUM.days.length-1?"Day "+d.id+" complete. Day "+(d.id+1)+" is unlocked.":"Day "+d.id+" complete.")}):null
