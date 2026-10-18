@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day 163 - README and architecture diagram</title>
+<link rel="preload" href="../assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/fonts.css">
+<link rel="stylesheet" href="../assets/lesson.css"></head><body>
+<div class="top"><a class="btn sec" href="../learn.html">&#9664; My Learning</a><a class="btn sec" href="../index.html">Map</a></div>
+<main>
+<div class="hero"><div class="kicker">DAY 163 &middot; LEVEL 15: PORTFOLIO</div><h1>README and architecture diagram</h1>
+<div class="meta"><span>60-70 min</span><span>hands-on</span><span>free</span></div></div>
+<div class="goal">Today you will be able to write a README in the order a stranger reads, draw one architecture diagram, and explain each box in one line.</div>
+
+<section><h2><span class="n">1</span> &middot; Warm-up <span class="t">3 min</span></h2><p>Answer from memory, then open the answers.</p><ol><li>Why does the comparison of two models keep retrieval and prompt the same?</li><li>What does a cost of 0 per token not mean?</li></ol><details><summary>Answers</summary><ol><li>So that any difference comes from the model and not from something else you changed.</li><li>Not free: the machine, its electricity and your time cost something.</li></ol></details></section>
+<section><h2><span class="n">2</span> &middot; Hook <span class="t">2 min</span></h2><p><strong>A recruiter opens your repository for 90 seconds. They do not run anything. What do they see first, and can they tell what you built, how it fits together, and what is real?</strong></p><details><summary>Guess first, then open</summary><p>They see the <strong>README</strong>, and often only the top of it. If the first screen says what it is, shows one picture of how the parts fit, and says honestly what is a stand-in, they will keep reading. If it is the empty template that the tool made, they close the tab.</p></details></section>
+<section><h2><span class="n">3</span> &middot; The idea, in three small pieces <span class="t">8 min</span></h2>
+<h3>Piece 1: write the README for a stranger, in the order they ask</h3>
+<p>A reader asks the same questions in the same order: what is this, how does it fit together, how do I run it, what can I change, how do I know it works, and what should I not trust. Give each one a heading, in that order. Put the honest part (<em>what is real and what is not</em>) near the top: it makes every later claim believable.</p>
+<h3>Piece 2: one diagram, boxes that are real</h3>
+<p>An <strong>architecture diagram</strong> shows the parts that run (boxes) and who calls whom (arrows, with the protocol or port). One diagram, about six boxes, readable in ten seconds. Use <strong>Mermaid</strong>: a diagram written as text in the README, which GitHub draws. Because it is text, a program can check it: the boxes must be the services of your <code>compose.yaml</code>, or the picture is lying.</p>
+<h3>Piece 3: explain each box in one line</h3>
+<p>After the picture, a table: the name of the box, and one line on what it does. If you cannot say it in one line, the box does too much, or you do not know it yet. That table is also your script for the demo.</p>
+<div class="box bridge"><strong>If you know another typed language (C# as the example):</strong> the check is a unit test for documentation: the same way a test fails when a method is renamed, this script fails when the diagram and the compose file drift apart. A README is the XML doc comment of the whole solution.</div>
+<div class="box cap"><strong>Capstone:</strong> your repository gets its real README today. Thursday a fresh clone tests it, and Saturday you polish it for the workshop.</div></section>
+<section><h2><span class="n">4</span> &middot; Worked example <span class="t">5 min</span></h2><p>Read it first. <strong>What was run:</strong> the check below, on the capstone repository, and the README was followed from a fresh clone on Thursday&rsquo;s lesson. The Mermaid picture was not drawn by a tool here: GitHub draws it. The six questions a stranger asks, and where the README answers each:</p><div class="out"><b>You should see</b><br>what a stranger asks, in this order&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;where the README answers it<br>1. What is this, and is it real?&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;first paragraph, and "what is real and what is not"<br>2. What does it look like inside?&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; the diagram and the table of boxes<br>3. How do I run it?&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "Run it with Docker", "Run it without Docker"<br>4. What do I need to change?&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;the table of settings<br>5. How do I know it works?&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"Tests", and the badge<br>6. What should I not trust?&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "What has not been run", "Known limits" </div><p>The diagram, as text:</p><pre><code>flowchart LR
+  user([Browser]) --&gt;|HTTP 8080| web[web: nginx and the React page]
+  web --&gt;|/api| gateway[gateway: ASP.NET Core]
+  gateway --&gt;|HTTP 8000| ai[ai: FastAPI service]
+  ai --&gt;|SQL| db[(db: PostgreSQL with pgvector)]
+  ingest[ingest: one-off job] --&gt;|fills the table| db
+  ai -.-&gt;|chat API| model{{writer: stand-in, local model or hosted model}}</code></pre><p>The boxes <code>web</code>, <code>gateway</code>, <code>ai</code>, <code>db</code> and <code>ingest</code> are the five services of <code>compose.yaml</code>. <code>user</code> (a person) and <code>model</code> (the writer is chosen by settings) are not services, and the check knows that. A small script, with only the standard library, compares the names (<code>scripts/check_diagram.py</code>):</p><pre><code>&quot;&quot;&quot;Check that the boxes of the architecture diagram in README.md are the services of compose.yaml (and nothing else).
+Only the standard library: it reads the node names of the first mermaid block and the keys under &#x27;services:&#x27;. Exit 1 on a difference.&quot;&quot;&quot;
+import re
+import sys
+from pathlib import Path
+
+root = Path(__file__).resolve().parent.parent
+readme = (root / &quot;README.md&quot;).read_text(encoding=&quot;utf-8&quot;)
+block = re.search(r&quot;```mermaid\n(.*?)```&quot;, readme, re.S)
+if block is None:
+    sys.exit(&quot;README.md has no mermaid block&quot;)
+# a node is written like  name[text]  name([text])  name[(text)]  name{{text}}, at the start of a line or after an arrow
+drawn = set(re.findall(r&quot;(?:^|[\s|])([a-z]\w*)(?:\[\(|\(\[|\{\{|\[)&quot;, block.group(1), re.M))
+drawn -= {&quot;flowchart&quot;, &quot;graph&quot;, &quot;subgraph&quot;, &quot;end&quot;}
+
+services: set[str] = set()
+inside = False
+for line in (root / &quot;compose.yaml&quot;).read_text(encoding=&quot;utf-8&quot;).splitlines():
+    if re.match(r&quot;^services:\s*$&quot;, line):
+        inside = True
+    elif inside and re.match(r&quot;^\S&quot;, line):
+        inside = False
+    elif inside and (match := re.match(r&quot;^  ([a-z]\w*):&quot;, line)):
+        services.add(match.group(1))
+
+optional = {&quot;model&quot;, &quot;user&quot;}   # boxes that are not services: the person, and the writer (it is chosen by settings)
+missing = services - drawn
+extra = drawn - services - optional
+print(f&quot;compose services: {sorted(services)}&quot;)
+print(f&quot;diagram boxes:    {sorted(drawn)}&quot;)
+if missing or extra:
+    print(f&quot;NOT in the diagram: {sorted(missing)}   NOT in compose.yaml: {sorted(extra)}&quot;)
+    sys.exit(1)
+print(&quot;the diagram and compose.yaml agree&quot;)</code></pre><div class="out"><b>You should see</b><br>compose services: ['ai', 'db', 'gateway', 'ingest', 'web']<br>diagram boxes:&nbsp;&nbsp;&nbsp;&nbsp;['ai', 'db', 'gateway', 'ingest', 'model', 'user', 'web']<br>the diagram and compose.yaml agree</div><p>And what it says when a box is misspelt (run for real on a copy):</p><div class="out"><b>You should see</b><br>(ingest[ingest: ... changed to ingst[ingest: ...)<br>compose services: ['ai', 'db', 'gateway', 'ingest', 'web']<br>diagram boxes:&nbsp;&nbsp;&nbsp;&nbsp;['ai', 'db', 'gateway', 'ingst', 'model', 'user', 'web']<br>NOT in the diagram: ['ingest']&nbsp;&nbsp; NOT in compose.yaml: ['ingst']<br>(exit code 1)</div><p>The whole README of the capstone, as it was written today. Read how it opens (what it is, then what is real), how each section answers one question, and how the table of settings and the list &ldquo;What has not been run&rdquo; keep it honest:</p><details><summary>The README</summary><pre><code># PumpGuard assistant
+
+A small question-and-answer assistant for a **fictional** product (the PumpGuard pump monitor). It finds the right pages of a knowledge base, asks a writer to answer **only from those pages**, adds citations, and says &quot;I could not find that in the knowledge base.&quot; when the pages do not hold the answer. A page, a gateway and an AI service work together; a dashboard shows how it is doing.
+
+[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+
+(replace OWNER and REPO with yours)
+
+## Read this first: what is real and what is not
+
+- The default writer is a **stand-in** (`LLM_MODE=fake`): a small program, **not a model**, so that everything runs and is tested with no key and no cost.
+- A real writer is a switch away: a hosted model (`LLM_MODE=real`, needs a key) or a model on your own machine (`LLM_PROVIDER=openai_compatible`). The local path was run once, with a small open-weight model; the hosted path is tested only with a fake HTTP server, never against the real service.
+- The knowledge base is made up (26 chunks from 10 pages). The numbers on the dashboard come from a rehearsal, not from users.
+- The Docker images and the CI workflow in this repository were **checked as far as possible but never built or run** by the author (see &quot;What has not been run&quot;).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  user([Browser]) --&gt;|HTTP 8080| web[web: nginx and the React page]
+  web --&gt;|/api| gateway[gateway: ASP.NET Core]
+  gateway --&gt;|HTTP 8000| ai[ai: FastAPI service]
+  ai --&gt;|SQL| db[(db: PostgreSQL with pgvector)]
+  ingest[ingest: one-off job] --&gt;|fills the table| db
+  ai -.-&gt;|chat API| model{{writer: stand-in, local model or hosted model}}
+```
+
+| Box | What it does, in one line |
+|-----|---------------------------|
+| web | Serves the React chat page and forwards `/api/` to the gateway. The only box with a public port (8080). |
+| gateway | The .NET front door: checks the input, gives each request an id, forwards to the AI service, turns failures into clean errors. |
+| ai | The Python service: hybrid search (meaning plus keywords), role filter, grounded answer with citations, guardrails, audit log, metrics. |
+| db | PostgreSQL with the pgvector extension: the chunks and their vectors, and the table of requests. |
+| ingest | Runs once at start: reads the pages, cuts them into chunks, embeds them, stores them. |
+| model | Not a service of this repository: the writer is chosen by settings. |
+
+## Run it with Docker
+
+```bash
+cp .env.example .env          # then set your own POSTGRES_PASSWORD in .env
+docker compose up -d --build
+# then open http://localhost:8080 in your browser
+docker compose down           # add -v to delete the database volume
+```
+
+## Run it without Docker
+
+You need: Python 3.12 with [uv](https://docs.astral.sh/uv/), .NET 10 SDK, Node 22, and a PostgreSQL 16 or newer **with the pgvector extension** that you can reach with a connection string.
+
+```bash
+# 1. the AI service (port 8000)
+cd python-service
+export DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
+uv sync
+uv run python ingest.py
+uv run uvicorn my_ai_project.api:app --port 8000
+
+# 2. the gateway (port 5100), in a second terminal
+cd gateway
+dotnet run --project AskGateway --urls http://localhost:5100
+
+# 3. the page (port 5173), in a third terminal
+cd web/chat-ui
+npm ci
+npm run dev                   # then open http://localhost:5173
+```
+
+In the page, &quot;customer&quot; can ask about the manuals and the FAQ; choose &quot;staff member&quot; to ask about error codes and to see the dashboard.
+
+## Settings
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `DATABASE_URL` | a local test address | PostgreSQL connection string (it holds a password: keep it out of Git) |
+| `LLM_MODE` | `fake` | `fake` = the stand-in writer; `real` = a model |
+| `LLM_PROVIDER` | `anthropic` | with `LLM_MODE=real`: `anthropic` or `openai_compatible` |
+| `ANTHROPIC_API_KEY` | none | needed for `anthropic` |
+| `LLM_BASE_URL`, `LLM_MODEL` | none | needed for `openai_compatible` (for example a local server) |
+| `AUDIT_LOG` | `logs/audit.jsonl` | where the audit log is written |
+
+Wrong or missing settings stop the service at the start with a message that names the setting.
+
+## Tests
+
+```bash
+cd python-service &amp;&amp; uv run pytest -q &amp;&amp; uv run mypy src tests
+cd gateway &amp;&amp; dotnet test AskGateway.Tests
+cd web/chat-ui &amp;&amp; npm run build
+```
+
+The tests that need a database are **skipped** (you will see `skipped` in the summary) unless `TEST_DATABASE_URL` points at a PostgreSQL with pgvector; set it to the same address as `DATABASE_URL` to run them.
+
+CI (`.github/workflows/ci.yml`) runs the same on every push, and builds the images only when the tests are green.
+
+## What has not been run
+
+- The three Docker images were never built, and the Compose stack was never started (checked with `docker compose config` only).
+- The GitHub Actions workflow was never run on GitHub (checked with a linter, and every command run by hand).
+- `nginx.conf` was never run.
+- The hosted model was never called. Ollama and vLLM were never run.
+
+## Known limits
+
+- The role (`staff` or `customer`) comes from a header. It is a demo: a caller can write any role. A real service reads it from a login.
+- The answer cache can serve an answer up to its time to live after a page changes.
+- The keyword index is built when the service starts: run `ingest.py` and restart after a change.
+
+## Layout
+
+```
+python-service/   FastAPI service, ingest, tests, golden questions
+gateway/          ASP.NET Core gateway and its tests
+web/chat-ui/      React page (Vite) and its nginx file
+compose.yaml      the whole system with one command
+scripts/          small checks (the diagram check)
+```</code></pre></details></section>
+<section><h2><span class="n">5</span> &middot; Try it <span class="t">30 min</span></h2>
+<p>Work in the root of your capstone repository, on a branch: <code>git switch -c readme</code>.</p>
+<h3><span class="step">Step 1</span> Copy and run</h3>
+<p>Create <code>README.md</code> in the root (if you have one, rewrite it) with the six sections in the order of the stranger&rsquo;s questions. Copy the shape, not the words: use <em>your</em> project name, <em>your</em> boxes and <em>your</em> commands.</p>
+<h3><span class="step">Step 2</span> Change one thing</h3>
+<p>Draw the Mermaid diagram of <em>your</em> system with six boxes at most, and a label on every arrow (protocol or port). <strong>Predict:</strong> which of your boxes is <em>not</em> a service in your Compose file? (A person, a model, a database that is outside.) Then add <code>scripts/check_diagram.py</code> and run it.</p>
+<h3><span class="step">Step 3</span> Break it on purpose</h3>
+<p>Misspell one box in the diagram and run the check: read the message. Then fix it. Now rename a <em>service</em> in <code>compose.yaml</code> (not the diagram) and run it again. Which side did the script say was wrong? Put both back.</p>
+<h3><span class="step">Step 4</span> Your turn</h3>
+<p>Write the table: one line for each box. If a line needs &ldquo;and&rdquo; twice, split the box or learn what it really does. Add the part everybody skips: <em>what is real and what is not</em> (stand-ins, estimates, things never run), and <em>known limits</em>. Commit: <code>git add README.md scripts/check_diagram.py</code> and <code>git commit -m &quot;Add a README and an architecture diagram&quot;</code>.</p></section>
+<section><h2><span class="n">6</span> &middot; Stuck? <span class="t">anytime</span></h2><ul><li><strong>The diagram shows as text on GitHub</strong>: the code block must start with three backticks and the word <code>mermaid</code>, nothing else on that line.</li><li><strong>The check says a box is missing but you drew it</strong>: it reads names written like <code>name[text]</code>, <code>name([text])</code>, <code>name[(text)]</code> or <code>name{{text}}</code>. A box written another way is not seen.</li><li><strong>The README is long</strong>: put the quick start first and move detail to other files in <code>docs/</code>. The first screen decides.</li><li><strong>You are not sure what is a stand-in</strong>: list everything that was never run against the real thing (a model, a service, a deploy). That list is the section &ldquo;what has not been run&rdquo;.</li></ul><details><summary>Hint: Step 2</summary><p>The person using the page and the writer (model) are drawn but are not services. The check lets you list such names as optional.</p></details><details><summary>Solution: Step 3</summary><div class="out"><b>You should see</b><br>(ingest[ingest: ... changed to ingst[ingest: ...)<br>compose services: ['ai', 'db', 'gateway', 'ingest', 'web']<br>diagram boxes:&nbsp;&nbsp;&nbsp;&nbsp;['ai', 'db', 'gateway', 'ingst', 'model', 'user', 'web']<br>NOT in the diagram: ['ingest']&nbsp;&nbsp; NOT in compose.yaml: ['ingst']<br>(exit code 1)</div><p>If you rename a service in the compose file instead, the script says the <em>old</em> name is &ldquo;NOT in compose.yaml&rdquo; and the new one is &ldquo;NOT in the diagram&rdquo;: it cannot tell which side is right, it only tells you that they differ. You decide which one to change.</p></details></section>
+<section><h2><span class="n">7</span> &middot; Check yourself <span class="t">5 min</span></h2><ol><li>In what order should a README answer a stranger&rsquo;s questions, and why is the honest part near the top?</li><li>What does the diagram check protect against?</li><li>What belongs in &ldquo;what has not been run&rdquo;?</li></ol><details><summary>Answers</summary><ol><li>What is this, how does it fit, how do I run it, what can I change, how do I know it works, what should I not trust. The honest part at the top makes every later claim believable.</li><li>Drift: a diagram that names a box that no longer exists, or lacks one that does. It compares the boxes with the services of the compose file.</li><li>Everything that was never run against the real thing: images never built, a workflow never run on GitHub, a hosted model never called. A reader trusts you more for saying it.</li></ol></details></section>
+<section id="game-day163" class="game"><h2><span class="n">+</span> &middot; Game: README Check <span class="t">5 min</span></h2>
+<p><p>You read a README and a diagram. Pick the answer, then see the real output.</p></p>
+<div class="gbox" aria-live="polite"><svg class="dog" width="70" height="49" viewBox="0 0 70 49" shape-rendering="crispEdges" aria-hidden="true"><g fill="#E8A24A"><rect x="21" y="7" width="35" height="7"/><rect x="14" y="14" width="42" height="14"/><rect x="21" y="28" width="7" height="7"/><rect x="42" y="28" width="7" height="7"/><rect x="49" y="0" width="7" height="14"/></g><g fill="#B86E00"><rect x="49" y="0" width="7" height="7"/><rect x="21" y="35" width="7" height="7"/><rect x="42" y="35" width="7" height="7"/></g><rect x="35" y="14" width="7" height="7" fill="#1C1430"/></svg>
+<div id="day163-start"><p>Ready? 6 rounds. You need no setup: read, decide, then see the real result.</p><button type="button" id="day163-play">Start the game</button></div>
+<div id="day163-round" hidden><div class="gtop"><span id="day163-num">Round 1</span><span id="day163-score">Score 0</span></div>
+<pre hidden><code id="day163-code"></code></pre><div class="q" id="day163-q"></div><div class="choices" id="day163-opts"></div>
+<div class="fb" id="day163-fb" hidden></div><p style="margin-top:12px"><button type="button" id="day163-next" hidden>Next round</button></p></div>
+<div id="day163-end" class="end" hidden></div></div>
+<script src="../assets/game.js"></script>
+<script>initGame("day163",[{"c": "A stranger opens your repository for 90 seconds", "q": "What must the first screen say?", "o": ["What it is, one picture of how it fits, and what is a stand-in", "A list of every library", "The history of the project"], "a": 0, "out": "", "why": "Most readers see only the top."}, {"c": "The README sections, in order", "q": "Which order matches a stranger's questions?", "o": ["What is it, how it fits, how to run, what to change, how to know it works, what not to trust", "Tests first, then licence, then install", "Alphabetical"], "a": 0, "out": "", "why": "Answer the questions in the order they are asked."}, {"c": "check_diagram.py on the capstone", "q": "What does it say?", "o": ["The diagram and compose.yaml agree", "A box is missing", "A syntax error"], "a": 0, "out": "compose services: ['ai', 'db', 'gateway', 'ingest', 'web']\ndiagram boxes:    ['ai', 'db', 'gateway', 'ingest', 'model', 'user', 'web']\nthe diagram and compose.yaml agree", "why": "user and model are boxes that are not services: the script knows."}, {"c": "One box is misspelt in the diagram (ingst)", "q": "What does the script say?", "o": ["NOT in the diagram: ['ingest']   NOT in compose.yaml: ['ingst']", "Nothing", "Only a warning"], "a": 0, "out": "NOT in the diagram: ['ingest']   NOT in compose.yaml: ['ingst']   (exit code 1)", "why": "It cannot tell which side is right, only that they differ."}, {"c": "Where does 'what has not been run' go in the README?", "q": "Why include it?", "o": ["It makes every other claim believable", "It is required by GitHub", "It lowers trust"], "a": 0, "out": "", "why": "A reader trusts you more for saying it."}, {"c": "A box you cannot explain in one line", "q": "What does it mean?", "o": ["It does too much, or you do not know it yet", "Nothing", "The line is too short"], "a": 0, "out": "", "why": "The one-line table is also your demo script."}],["README rookie", "README regular", "README writer"],"A README answers a stranger's questions in order, with the honest part near the top; one diagram whose boxes are checked against compose.yaml; and a line for every box.");</script>
+<p><small>Tick &ldquo;Play the README Check game&rdquo; on My Learning when you reach the end. Any score counts, and the rounds are shuffled when you play again.</small></p></section>
+<section><h2><span class="n">8</span> &middot; Your win, and what&rsquo;s next <span class="t">3 min</span></h2><p><strong>You made:</strong> a README in the order a stranger reads, an architecture diagram as text with a one-line explanation of every box, a check that keeps the diagram true, and an honest list of what was not run.</p><ul><li>Go to <a href="../learn.html">My Learning</a> and tick your Day 163 checklist.</li><li>Share one line in the comments: which box was hardest to explain in one line?</li><li><strong>Next:</strong> Tuesday is a study block. On Wednesday you write a 3-minute demo script and your portfolio story.</li></ul></section>
+</main>
+<footer><div class="byline"><img class="av" src="../assets/naowal-avatar.jpg" width="48" height="48" alt="Naowal" loading="lazy"><span><a href="https://naowal-siripatana.github.io/?lang=en" target="_blank" rel="noopener">Meet Naowal</a>, a learning designer and software developer, learning AI engineering in public.</span></div><a href="../learn.html">My Learning</a><a href="../index.html">Map</a></footer>
+</body></html>
