@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<title>Admin - From Dev to AI Engineer</title>
+<link rel="preload" href="assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/jersey-15-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="assets/admin.css">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/admin.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="top">
+  <strong class="brand">Admin</strong>
+  <span class="spacer"></span>
+  <span id="who" class="who" hidden></span>
+  <button id="signout" class="btn sec" type="button" hidden>Sign out</button>
+</header>
+<main id="main" tabindex="-1">
+  <section id="state-loading" class="panel"><p>Loading...</p></section>
+
+  <section id="state-signin" class="panel" hidden>
+    <h1>Admin</h1>
+    <p>Only the owner of this site can open this page. Sign in with the Google account of the owner.</p>
+    <p><button id="signin" class="btn" type="button">Sign in with Google</button></p>
+    <p class="note">Anyone else who signs in is told that this account is not allowed, and sees nothing: the check is made in the database.</p>
+  </section>
+
+  <section id="state-denied" class="panel" hidden>
+    <h1>This account is not allowed</h1>
+    <p id="denied-who"></p>
+    <p>Sign out, and sign in with the owner&rsquo;s Google account.</p>
+  </section>
+
+  <section id="state-error" class="panel" hidden>
+    <h1>Something went wrong</h1>
+    <p id="error-text"></p>
+    <p><button id="retry" class="btn" type="button">Try again</button></p>
+  </section>
+
+  <div id="state-dash" hidden>
+    <div class="bar">
+      <h1>Members</h1>
+      <span class="spacer"></span>
+      <label class="check"><input id="show-emails" type="checkbox"> Show emails</label>
+      <button id="refresh" class="btn sec" type="button">Refresh</button>
+    </div>
+    <p id="updated" class="note"></p>
+    <div id="cards" class="cards"></div>
+
+    <section class="panel"><h2>Joined each week</h2><div id="weeks" class="bars"></div></section>
+    <section class="panel"><h2>How far members got (by level)</h2><p class="note">A member counts in a level when they finished at least one day of it.</p><div id="levels" class="bars"></div></section>
+    <section class="panel"><h2>The first 14 days</h2><p class="note">Members who finished each day (every item ticked).</p><div id="firstdays" class="bars"></div></section>
+
+    <section class="panel">
+      <div class="bar"><h2>Member list</h2><span class="spacer"></span><label class="sr" for="filter">Filter</label><input id="filter" type="search" placeholder="Filter by name or email" autocomplete="off"></div>
+      <div class="tablewrap"><table id="members"><thead></thead><tbody></tbody></table></div>
+      <p id="members-note" class="note"></p>
+    </section>
+
+    <section class="panel"><h2>Email list (visitors who did not sign in)</h2><p id="subscribers" class="note"></p></section>
+  </div>
+</main>
+</body>
+</html>

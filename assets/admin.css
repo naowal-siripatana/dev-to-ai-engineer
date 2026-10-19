@@ -1,0 +1,41 @@
+/* Admin page. Same look as the site; colours chosen for contrast (text 12:1, links 5.8:1). */
+:root{--cream:#FFF1E2;--card:#FFF9F2;--peach:#FFE9D2;--ink:#3A2450;--muted:#6B5680;--line:#E3C3A5;--outline:#1C1430;--honey:#FFC15E;--mint:#7FE0C2;--mint-d:#136B58;--coral-d:#C23A1F;
+  --px:'Jersey 15',monospace;--body:'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif}
+*{box-sizing:border-box;margin:0}
+[hidden]{display:none !important}   /* .btn and others set display, which would otherwise win over the hidden attribute */
+body{font-family:var(--body);color:var(--ink);line-height:1.5;min-height:100vh;background:linear-gradient(180deg,#2A1F45 0%,#4B3873 30%,#B77C9E 75%,#FFC4A3 100%) fixed}
+a{color:var(--mint-d);font-weight:700}
+.skip{position:absolute;left:12px;top:-60px;z-index:20;background:var(--ink);color:var(--cream);padding:10px 16px;border-radius:0 0 10px 10px;font-weight:800;text-decoration:none}.skip:focus{top:0;outline:3px solid var(--honey)}
+.top{display:flex;align-items:center;gap:12px;padding:14px max(16px,4vw);flex-wrap:wrap}
+.brand{font-family:var(--px);font-size:1.4rem;font-weight:400;color:var(--cream);letter-spacing:.06em}
+.who{font-family:var(--px);color:var(--cream);font-size:1rem}
+.spacer{flex:1}
+main{max-width:1100px;margin:0 auto;padding:8px max(16px,4vw) 64px}main:focus{outline:none}
+h1,h2{font-family:var(--px);font-weight:400}
+h1{font-size:1.9rem;color:var(--ink)}h2{font-size:1.3rem;color:var(--coral-d);margin-bottom:6px}
+.panel{background:var(--card);border:3px solid var(--outline);border-radius:14px;box-shadow:4px 4px 0 var(--outline);padding:16px 18px;margin:14px 0}
+.panel p{margin:8px 0}
+.note{font-size:.9rem;color:var(--muted)}
+.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}
+#state-dash>.bar h1{color:var(--cream)}#updated{color:var(--cream)}
+.btn{font-family:var(--px);font-size:1.05rem;color:var(--ink);background:var(--mint);border:3px solid var(--outline);border-radius:12px;padding:0 18px;min-height:44px;display:inline-flex;align-items:center;cursor:pointer;text-decoration:none}
+.btn.sec{background:var(--cream)}
+.btn:hover{transform:translateY(-2px);box-shadow:0 5px 0 var(--outline)}
+.btn:focus-visible,input:focus-visible,.sortbtn:focus-visible{outline:3px solid var(--coral-d);outline-offset:2px}
+.check{display:inline-flex;align-items:center;gap:8px;color:var(--cream);font-weight:700;min-height:44px}.check input{width:20px;height:20px}
+input[type=search]{font:inherit;min-height:44px;padding:0 12px;border:3px solid var(--outline);border-radius:12px;background:#fff;color:var(--ink);min-width:min(100%,260px)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:12px 0}
+.card{background:var(--card);border:3px solid var(--outline);border-radius:14px;box-shadow:4px 4px 0 var(--outline);padding:12px 14px}
+.card .num{font-family:var(--px);font-size:2.4rem;line-height:1;color:var(--ink)}.card .lab{font-weight:800;margin-top:4px}.card .sub{font-size:.82rem;color:var(--muted)}
+.bars .row{display:grid;grid-template-columns:minmax(110px,260px) 1fr 40px;gap:10px;align-items:center;margin:5px 0}
+.bars .lab{font-size:.9rem;font-weight:700;overflow-wrap:anywhere}.bars .val{font-family:var(--px);font-size:1.1rem;text-align:right}
+.bars .track{display:block;height:16px;background:var(--peach);border:2px solid var(--outline);border-radius:99px;overflow:hidden}
+.bars .fill{display:block;height:100%;background:var(--mint-d);min-width:0}
+.tablewrap{overflow-x:auto;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{background:var(--peach)}
+.sortbtn{font:inherit;font-weight:800;color:var(--ink);background:none;border:0;cursor:pointer;padding:4px 0}
+tbody tr:hover{background:#fff}
+@media(max-width:620px){.bars .row{grid-template-columns:1fr 40px}.bars .track{grid-column:1 / -1;grid-row:2}.bars .val{grid-column:2;grid-row:1}}
