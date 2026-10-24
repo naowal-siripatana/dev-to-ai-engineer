@@ -68,9 +68,9 @@
   ],
   "redirects": [
     {
-      "source": "/:path*",
+      "source": "/(.*)",
       "has": [{ "type": "host", "value": "dev-to-ai-engineer.vercel.app" }],
-      "destination": "https://devtoai.tech/:path*",
+      "destination": "https://devtoai.tech/$1",
       "permanent": true
     }
   ],
