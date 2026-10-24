@@ -66,6 +66,14 @@
       ]
     }
   ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "dev-to-ai-engineer.vercel.app" }],
+      "destination": "https://devtoai.tech/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/admin",
